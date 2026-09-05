@@ -6,14 +6,7 @@ cli.start()
 cli.connect()
 
 time.sleep(2)
-try:
-    ver = cli.conn.version
-    print("Connected! Firmware version:", ver)
-except Exception:
-    print("Connected but no version info")
-
-packet_count = cli.conn.pkt_cnt
-print("Packets received:", packet_count)
+print("Connected to Cozmo successfully")
 
 cli.disconnect()
 cli.stop()
