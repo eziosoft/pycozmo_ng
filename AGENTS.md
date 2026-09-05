@@ -4,6 +4,8 @@
 
 PyCozmo is a pure-Python library for direct Cozmo robot control over Wi-Fi, replacing the Cozmo app. This is the `cube_detection` branch implementing computer vision features.
 
+**Agent is responsible for this project.** User reviews results and sets direction. Goal: extend pycozmo with new features, maintain good code quality, and upstream working features as PRs to the real pycozmo repository.
+
 ## Quick Start
 
 ```bash
