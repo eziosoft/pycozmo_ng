@@ -9,15 +9,23 @@ PyCozmo is a pure-Python library for direct Cozmo robot control over Wi-Fi, repl
 ## Quick Start
 
 ```bash
+# Always use a virtual environment — never install packages system-wide
+python3 -m venv venv
+source venv/bin/activate
+
 # Install for development
 pip install -e .
 pip install -r requirements-dev.txt
 
-# Run linting
-flake8 pycozmo/
+# Run linting (every Python file must pass ruff before committing)
+ruff check pycozmo/
+ruff format --check pycozmo/
 
 # Run type checking
 mypy pycozmo/
+
+# Run JS linting (for web_viewer JS)
+npx eslint pycozmo/web_viewer/
 
 # Run tests
 pytest pycozmo/tests/ -v
@@ -27,7 +35,8 @@ pytest pycozmo/tests/ -v
 
 | Task | Command |
 |------|---------|
-| Lint | `flake8 pycozmo/` |
+| Lint | `ruff check pycozmo/` |
+| Format check | `ruff format --check pycozmo/` |
 | Type check | `mypy pycozmo/` |
 | Test | `pytest pycozmo/tests/ -v` |
 | Install | `pip install -e .` |
@@ -43,6 +52,10 @@ pycozmo/           # Main library
 │   ├── cubeDetector.py  # CozmoCubeDetector + CubeFusionTracker
 │   ├── cube_faces/      # Marker templates (JPGs)
 │   └── world_3d_viewer.py  # 3D visualization
+├── web_viewer_server.py  # WebSocket server for browser viewer
+├── web_viewer/     # Three.js browser viewer
+│   ├── index.html
+│   └── style.css
 ├── tests/         # Unit tests (pytest)
 └── audiokinetic/  # SoundBank module (has own tests)
 
@@ -73,14 +86,15 @@ This branch adds:
 - Head tilt compensation required for accurate tracking
 
 ### Dependencies
-- Runtime: opencv-python, numpy, Pillow, scipy, PyOpenGL, pygame
-- Dev: pytest, flake8, mypy
+- Runtime: opencv-python, numpy, Pillow, scipy, PyOpenGL, pygame, aiohttp, websockets
+- Dev: pytest, ruff, mypy
+- JS: eslint (for web_viewer)
 - No CI/CD workflows configured
 
 ## Code Style
 
-- Max line length: 120 (flake8)
-- PEP 8 compliant
+- **Python**: ruff (max line length 120, PEP 8). Every `.py` file must pass `ruff check` and `ruff format --check` before committing.
+- **JS**: eslint (recommended: `@eslint/js` + `eslint-plugin-unicorn`). Web viewer files live in `pycozmo/web_viewer/`.
 - Type hints encouraged
 - Docstrings encouraged
 
@@ -101,6 +115,7 @@ Live robot code runs on a Raspberry Pi 5, NOT on the dev Mac.
 - **Mac** = dev workstation (`/Users/bartosz.szczygiel/Downloads/pycozmo`), SSH + rsync to Pi.
 - **Pi** = `192.168.10.100`, hostname `Pi`, Debian 12 (aarch64), Python 3.13.5.
   - Login: user `e`, password `e`. SSH key from Mac installed (`~/.ssh/id_rsa.pub`) — use key auth, fallback sshpass.
+  - **Always use a venv on Pi** — `python3 -m venv ~/pycozmo/venv && source ~/pycozmo/venv/bin/activate`. Never install packages system-wide.
 - **Network split**:
   - `eth0` = wired LAN `192.168.10.0/24` — management path (SSH/rsync). Default route stays here (`ipv4.never-default` unset).
   - `wlan0` = Cozmo AP only. SSID **`Cozmo_7144B4`**, password **`973-37134-7253402`**. Set `ipv4.never-default yes` so robot AP never becomes gateway.

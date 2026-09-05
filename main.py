@@ -15,12 +15,13 @@ Controls:
 
 """
 
+import argparse
+import os
+import sys
 import time
+
 import cv2
 import numpy as np
-import sys
-import os
-import argparse
 
 import pycozmo
 from pycozmo import vision
@@ -28,7 +29,7 @@ from pycozmo.camera_calibration import CameraCalibrationRetriever
 
 # Import 3D viewer
 try:
-    sys.path.append(os.path.join(os.path.dirname(__file__), 'pycozmo', 'cubeDetector'))
+    sys.path.append(os.path.join(os.path.dirname(__file__), "pycozmo", "cubeDetector"))
     from world_3d_viewer import World3DViewer
 
     VIEWER_3D_AVAILABLE = True
@@ -36,11 +37,19 @@ except ImportError:
     VIEWER_3D_AVAILABLE = False
     print("⚠️  3D Viewer not available")
 
+# Import web viewer server
+try:
+    from pycozmo.web_viewer_server import WebViewerServer
+
+    WEB_VIEWER_AVAILABLE = True
+except ImportError:
+    WEB_VIEWER_AVAILABLE = False
+
 
 class VisionDisplay:
     """Handles display of normal and annotated frames."""
 
-    def __init__(self, use_3d_viewer=True):
+    def __init__(self, use_3d_viewer=True, use_web_viewer=False):
         self.latest_raw_frame = None
         self.latest_annotated_frame = None
         self.latest_detections = []
@@ -54,9 +63,15 @@ class VisionDisplay:
         self.vision_processor = None
 
         # 3D viewer setup
-        self.use_3d_viewer = use_3d_viewer and VIEWER_3D_AVAILABLE
+        self.use_3d_viewer = (
+            use_3d_viewer and VIEWER_3D_AVAILABLE and not use_web_viewer
+        )
         self.viewer_3d = None
         self.show_3d = True
+
+        # Web viewer setup
+        self.use_web_viewer = use_web_viewer and WEB_VIEWER_AVAILABLE
+        self.web_viewer = None
 
         if self.use_3d_viewer:
             try:
@@ -66,12 +81,23 @@ class VisionDisplay:
                 print(f"⚠️  Failed to initialize 3D viewer: {e}")
                 self.use_3d_viewer = False
 
+        if self.use_web_viewer:
+            try:
+                self.web_viewer = WebViewerServer()
+                self.web_viewer.start()
+                print("✅ Web Viewer server started")
+            except Exception as e:
+                print(f"⚠️  Failed to start web viewer: {e}")
+                self.use_web_viewer = False
+
         # Window names
         self.window_name = "PyCozmo Vision Test - Normal (Left) | Annotated (Right)"
 
         # Cube tracking variables
         self.cube_factory_id_map = {}  # Map detected cube_id (1,2,3) to factory_id
-        self.currently_connected_cube_id = None  # Track which cube is currently connected
+        self.currently_connected_cube_id = (
+            None  # Track which cube is currently connected
+        )
 
     def on_raw_camera_image(self, cli, image):
         """Handler for raw camera images."""
@@ -102,7 +128,7 @@ class VisionDisplay:
         self.latest_debug_images = debug_images
 
     def update_3d_viewer(self):
-        """Update 3D viewer with current cube states."""
+        """Update 3D viewer (local or web) with current cube states."""
         if not self.vision_processor:
             return
 
@@ -110,15 +136,25 @@ class VisionDisplay:
         fused_cubes = self.vision_processor.get_fused_cube_states()
 
         # Track which cubes are present
-        if not hasattr(self, '_prev_cube_ids'):
+        if not hasattr(self, "_prev_cube_ids"):
             self._prev_cube_ids = set()
 
         current_cube_ids = set(fused_cubes.keys())
 
+        # Determine active viewer
+        active_viewer = None
+        if self.use_web_viewer and self.web_viewer:
+            active_viewer = self.web_viewer
+        elif self.use_3d_viewer and self.show_3d and self.viewer_3d:
+            active_viewer = self.viewer_3d
+
+        if active_viewer is None:
+            return
+
         # Only clear if the set of cubes changed (expensive operation)
         if current_cube_ids != self._prev_cube_ids:
             try:
-                self.viewer_3d.clear_cubes()
+                active_viewer.clear_cubes()
                 self._prev_cube_ids = current_cube_ids
             except Exception as e:
                 print(f"⚠️  Error clearing 3D viewer: {e}")
@@ -128,12 +164,15 @@ class VisionDisplay:
         try:
             for cube_id, cube_state in fused_cubes.items():
                 cube_name = f"cube_{cube_id + 1}"
-                self.viewer_3d.update_cube(
+                active_viewer.update_cube(
                     cube_name,
-                    cube_state['position'],
-                    cube_state['rotation_matrix'],
-                    cube_size=44
+                    cube_state["position"],
+                    cube_state["rotation_matrix"],
+                    cube_size=44,
                 )
+            # Broadcast to browser clients if web viewer
+            if self.use_web_viewer:
+                active_viewer.broadcast()
         except Exception as e:
             print(f"⚠️  Error updating 3D viewer: {e}")
 
@@ -160,17 +199,11 @@ class VisionDisplay:
                 (x - 5, y_pos - text_height - 5),
                 (x + text_width + 5, y_pos + 5),
                 (0, 0, 0),
-                -1
+                -1,
             )
             # Draw text
             cv2.putText(
-                frame,
-                line,
-                (x, y_pos),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 255, 0),
-                2
+                frame, line, (x, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2
             )
 
     def display_frames(self):
@@ -189,7 +222,7 @@ class VisionDisplay:
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1,
                 (255, 255, 255),
-                2
+                2,
             )
             cv2.imshow(self.window_name, waiting_frame)
             return
@@ -216,7 +249,7 @@ class VisionDisplay:
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (255, 255, 255),
-            2
+            2,
         )
 
         # Add "Annotated" label to annotated frame
@@ -228,7 +261,7 @@ class VisionDisplay:
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (0, 255, 255),
-            2
+            2,
         )
 
         # Add FPS and detection info
@@ -236,7 +269,7 @@ class VisionDisplay:
             info_lines = [
                 f"FPS: {self.fps:.1f}",
                 f"Cubes: {len(self.latest_detections)}",
-                f"Detection: {'ON' if self.detection_enabled else 'OFF'}"
+                f"Detection: {'ON' if self.detection_enabled else 'OFF'}",
             ]
             self.add_text_overlay(raw_labeled, info_lines, (10, height - 90))
 
@@ -244,9 +277,7 @@ class VisionDisplay:
             if self.latest_detections:
                 det_lines = [f"Detected Cubes: {len(self.latest_detections)}"]
                 for i, det in enumerate(self.latest_detections[:3]):  # Show max 3
-                    det_lines.append(
-                        f"  ID:{det.cube_id} Conf:{det.confidence:.2f}"
-                    )
+                    det_lines.append(f"  ID:{det.cube_id} Conf:{det.confidence:.2f}")
                 self.add_text_overlay(annotated_labeled, det_lines, (10, height - 90))
 
         # Combine frames side by side
@@ -282,9 +313,9 @@ class VisionDisplay:
 
     def setup_cube_mapping(self, cli):
         """Discover available cubes and create mapping from detected cube_id to factory_id."""
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("🔗 DISCOVERING CUBES")
-        print("="*70)
+        print("=" * 70)
 
         # Wait for objects to be discovered
         timeout = 5.0
@@ -297,7 +328,7 @@ class VisionDisplay:
                 break
             time.sleep(0.1)
         else:
-            print(f"   ⏱️  Timeout waiting for objects")
+            print("   ⏱️  Timeout waiting for objects")
 
         available_objects = dict(cli.available_objects)
         if not available_objects:
@@ -308,7 +339,7 @@ class VisionDisplay:
         cube_types = [
             pycozmo.protocol_encoder.ObjectType.Block_LIGHTCUBE1,
             pycozmo.protocol_encoder.ObjectType.Block_LIGHTCUBE2,
-            pycozmo.protocol_encoder.ObjectType.Block_LIGHTCUBE3
+            pycozmo.protocol_encoder.ObjectType.Block_LIGHTCUBE3,
         ]
 
         available_cubes = []
@@ -320,7 +351,7 @@ class VisionDisplay:
             print("⚠️  No light cubes found")
             return
 
-        print(f"\n📋 Available cubes:")
+        print("\n📋 Available cubes:")
         # Map detected cube_id to factory_id based on ObjectType
         # The cube detector assigns:
         # cube_id 1 (markers 0-5)   -> Block_LIGHTCUBE1
@@ -337,13 +368,15 @@ class VisionDisplay:
                 continue
 
             self.cube_factory_id_map[detected_cube_id] = factory_id
-            print(f"   Detected cube_id {detected_cube_id} -> Factory ID 0x{factory_id:08x} ({obj_type.name})")
+            print(
+                f"   Detected cube_id {detected_cube_id} -> Factory ID 0x{factory_id:08x} ({obj_type.name})"
+            )
 
         print(f"\n✅ Discovered {len(self.cube_factory_id_map)} cube(s)")
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
         print("⚠️  Note: Cozmo can only connect to ONE cube at a time")
         print("   Cubes will be connected on-demand when detected")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
     def update_cube_lights_on_detection(self, cli):
         """Update cube lights based on current detections."""
@@ -356,7 +389,7 @@ class VisionDisplay:
 
         # Throttle updates to once per second to avoid slowing down video
         current_time = time.time()
-        if not hasattr(self, '_last_light_update'):
+        if not hasattr(self, "_last_light_update"):
             self._last_light_update = 0
 
         if current_time - self._last_light_update < 1.0:
@@ -365,10 +398,10 @@ class VisionDisplay:
         self._last_light_update = current_time
 
         # Get currently detected cube IDs
-        detected_cube_ids = set(det.cube_id for det in self.latest_detections)
+        detected_cube_ids = {det.cube_id for det in self.latest_detections}
 
         # Only print when detections change
-        if not hasattr(self, '_last_detected_ids'):
+        if not hasattr(self, "_last_detected_ids"):
             self._last_detected_ids = set()
 
         if detected_cube_ids != self._last_detected_ids:
@@ -383,7 +416,9 @@ class VisionDisplay:
                 # Connect to this cube if not already connected
                 if self.currently_connected_cube_id != cube_id:
                     try:
-                        pkt = pycozmo.protocol_encoder.ObjectConnect(factory_id=factory_id, connect=True)
+                        pkt = pycozmo.protocol_encoder.ObjectConnect(
+                            factory_id=factory_id, connect=True
+                        )
                         cli.conn.send(pkt)
                         time.sleep(0.1)  # Brief wait for connection
                         self.currently_connected_cube_id = cube_id
@@ -394,7 +429,9 @@ class VisionDisplay:
                 # Get the object_id from connected_objects
                 connected_objects = dict(cli.connected_objects)
                 if connected_objects:
-                    object_id = list(connected_objects.keys())[0]  # Should only be one
+                    object_id = next(
+                        iter(connected_objects.keys())
+                    )  # Should only be one
 
                     try:
                         # Select cube
@@ -402,12 +439,14 @@ class VisionDisplay:
                         cli.conn.send(pkt)
 
                         # Set blue lights
-                        pkt = pycozmo.protocol_encoder.CubeLights(states=(
-                            pycozmo.lights.blue_light,
-                            pycozmo.lights.blue_light,
-                            pycozmo.lights.blue_light,
-                            pycozmo.lights.blue_light
-                        ))
+                        pkt = pycozmo.protocol_encoder.CubeLights(
+                            states=(
+                                pycozmo.lights.blue_light,
+                                pycozmo.lights.blue_light,
+                                pycozmo.lights.blue_light,
+                                pycozmo.lights.blue_light,
+                            )
+                        )
                         cli.conn.send(pkt)
 
                     except Exception as e:
@@ -428,7 +467,7 @@ class VisionDisplay:
         # Robot state is available in cli.pose, cli.pose_pitch, etc.
         # State updates arrive every 30ms (~33Hz)
         # For now, just store for potential use (could update 3D viewer robot position)
-        if not hasattr(self, 'latest_robot_state'):
+        if not hasattr(self, "latest_robot_state"):
             self.latest_robot_state = None
 
         # Access state from cli object if needed:
@@ -445,31 +484,43 @@ class VisionDisplay:
             self.display_frames()
 
             # Render 3D viewer
-            if self.use_3d_viewer and self.show_3d and self.viewer_3d:
-                if not self.viewer_3d.render():
-                    print("\n🛑 3D viewer closed")
-                    self.running = False
+            if (
+                self.use_3d_viewer
+                and self.show_3d
+                and self.viewer_3d
+                and not self.viewer_3d.render()
+            ):
+                print("\n🛑 3D viewer closed")
+                self.running = False
 
             # Handle keyboard input for robot control
             key = cv2.waitKey(1) & 0xFF
 
-            if key == ord('i') or key == ord('I'):
+            if key == ord("i") or key == ord("I"):
                 # Forward
-                pkt = pycozmo.protocol_encoder.DriveWheels(lwheel_speed_mmps=50, rwheel_speed_mmps=50)
+                pkt = pycozmo.protocol_encoder.DriveWheels(
+                    lwheel_speed_mmps=50, rwheel_speed_mmps=50
+                )
                 cli.conn.send(pkt)
-            elif key == ord('k') or key == ord('K'):
+            elif key == ord("k") or key == ord("K"):
                 # Backward
-                pkt = pycozmo.protocol_encoder.DriveWheels(lwheel_speed_mmps=-50, rwheel_speed_mmps=-50)
+                pkt = pycozmo.protocol_encoder.DriveWheels(
+                    lwheel_speed_mmps=-50, rwheel_speed_mmps=-50
+                )
                 cli.conn.send(pkt)
-            elif key == ord('j') or key == ord('J'):
+            elif key == ord("j") or key == ord("J"):
                 # Left turn
-                pkt = pycozmo.protocol_encoder.DriveWheels(lwheel_speed_mmps=-50, rwheel_speed_mmps=50)
+                pkt = pycozmo.protocol_encoder.DriveWheels(
+                    lwheel_speed_mmps=-50, rwheel_speed_mmps=50
+                )
                 cli.conn.send(pkt)
-            elif key == ord('l') or key == ord('L'):
+            elif key == ord("l") or key == ord("L"):
                 # Right turn
-                pkt = pycozmo.protocol_encoder.DriveWheels(lwheel_speed_mmps=50, rwheel_speed_mmps=-50)
+                pkt = pycozmo.protocol_encoder.DriveWheels(
+                    lwheel_speed_mmps=50, rwheel_speed_mmps=-50
+                )
                 cli.conn.send(pkt)
-            elif key == ord(' '):
+            elif key == ord(" "):
                 # Stop
                 pkt = pycozmo.protocol_encoder.StopAllMotors()
                 cli.conn.send(pkt)
@@ -477,18 +528,30 @@ class VisionDisplay:
         cv2.destroyAllWindows()
         if self.viewer_3d:
             self.viewer_3d.close()
+        if self.web_viewer:
+            self.web_viewer.close()
 
 
 def main():
     """Main entry point."""
 
     parser = argparse.ArgumentParser(description="PyCozmo Vision System Test")
-    parser.add_argument('--no-undistort', action='store_true',
-                       help='Disable image undistortion (disabled by default - undistortion may cause warping)')
+    parser.add_argument(
+        "--no-undistort",
+        action="store_true",
+        help="Disable image undistortion (disabled by default - undistortion may cause warping)",
+    )
+    parser.add_argument(
+        "--web-viewer",
+        action="store_true",
+        help="Use browser-based Three.js viewer instead of local 3D viewer",
+    )
     args = parser.parse_args()
 
-    # Create display handler with 3D viewer
-    display = VisionDisplay(use_3d_viewer=VIEWER_3D_AVAILABLE)
+    # Create display handler with 3D or web viewer
+    display = VisionDisplay(
+        use_3d_viewer=VIEWER_3D_AVAILABLE, use_web_viewer=args.web_viewer
+    )
 
     try:
         # Connect to Cozmo
@@ -498,8 +561,10 @@ def main():
 
             # Position robot for better viewing
             print("📷 Positioning robot...")
-            angle = (pycozmo.robot.MAX_HEAD_ANGLE.radians -
-                     pycozmo.robot.MIN_HEAD_ANGLE.radians) / 80.0
+            angle = (
+                pycozmo.robot.MAX_HEAD_ANGLE.radians
+                - pycozmo.robot.MIN_HEAD_ANGLE.radians
+            ) / 80.0
 
             cli.set_head_angle(angle)
             time.sleep(1.0)
@@ -509,29 +574,34 @@ def main():
             calibration_retriever = CameraCalibrationRetriever(cli)
             camera_calibration = calibration_retriever.get_calibration(timeout=10.0)
 
-            print(f"✅ Camera calibration retrieved:")
+            print("✅ Camera calibration retrieved:")
             print(f"   fx={camera_calibration.fx:.2f}, fy={camera_calibration.fy:.2f}")
             print(f"   cx={camera_calibration.cx:.2f}, cy={camera_calibration.cy:.2f}")
-            print(f"   k1={camera_calibration.k1:.6f}, k2={camera_calibration.k2:.6f}, k3={camera_calibration.k3:.6f}")
+            print(
+                f"   k1={camera_calibration.k1:.6f}, k2={camera_calibration.k2:.6f}, k3={camera_calibration.k3:.6f}"
+            )
             print(f"   p1={camera_calibration.p1:.6f}, p2={camera_calibration.p2:.6f}")
-            print(f"   Image size: {camera_calibration.image_width}x{camera_calibration.image_height}")
+            print(
+                f"   Image size: {camera_calibration.image_width}x{camera_calibration.image_height}"
+            )
             print("   ℹ️  Using zero distortion coefficients for Cozmo reliability")
 
             # Register handler for raw frames
             cli.add_handler(
-                pycozmo.event.EvtNewRawCameraImage,
-                display.on_raw_camera_image
+                pycozmo.event.EvtNewRawCameraImage, display.on_raw_camera_image
             )
 
             # Create vision processor with cubeDetector.py
             print("🎨 Initializing vision processor with cubeDetector.py...")
             undistort_enabled = not args.no_undistort
-            print(f"   Undistortion: {'ENABLED' if undistort_enabled else 'DISABLED (default - undistortion may cause warping)'}")
+            print(
+                f"   Undistortion: {'ENABLED' if undistort_enabled else 'DISABLED (default - undistortion may cause warping)'}"
+            )
             vision_processor = vision.AnnotatedVisionProcessor(
                 client=cli,
                 camera_calibration=camera_calibration,
                 process_every_n_frames=1,  # Process every frame (fast computer)
-                undistort=undistort_enabled
+                undistort=undistort_enabled,
             )
 
             print("✅ Cube detector initialized with camera calibration")
@@ -546,14 +616,12 @@ def main():
 
             # Register handler for annotated frames
             cli.add_handler(
-                pycozmo.event.EvtAnnotatedCameraImage,
-                display.on_annotated_camera_image
+                pycozmo.event.EvtAnnotatedCameraImage, display.on_annotated_camera_image
             )
 
             # Register handler for debug images
             cli.add_handler(
-                pycozmo.event.EvtCubeDetectorDebugImages,
-                display.on_debug_images
+                pycozmo.event.EvtCubeDetectorDebugImages, display.on_debug_images
             )
 
             # Enable camera
@@ -576,13 +644,14 @@ def main():
 
             # Register handler for robot state updates (position/orientation every 30ms)
             # Note: EvtDelocalized not available in this pycozmo version
-            cli.add_handler(
-                pycozmo.event.EvtRobotStateUpdated,
-                display.on_robot_state
-            )
+            cli.add_handler(pycozmo.event.EvtRobotStateUpdated, display.on_robot_state)
 
             print("✨ Starting display...\n")
-            if display.use_3d_viewer:
+            if display.use_web_viewer:
+                print(
+                    "🌐 Web Viewer active — open http://<this-machine-ip>:8766 in a browser\n"
+                )
+            elif display.use_3d_viewer:
                 print("🎮 3D Viewer Controls:")
                 print("   W/S/A/D - Move camera")
                 print("   Q/E - Move camera up/down")
@@ -598,10 +667,11 @@ def main():
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         print("\n👋 Goodbye!\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

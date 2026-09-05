@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cozmo 3D World Viewer</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- UI overlays -->
+  <div id="hud">
+    <span id="fps">-- FPS</span>
+    <span id="status" class="disconnected">disconnected</span>
+    <span id="cube-count">0 cubes</span>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // -----------------------------------------------------------------------
+    // Configuration
+    // -----------------------------------------------------------------------
+    const WS_PORT = 8765;
+    const WS_URL = `ws://${location.hostname || 'localhost'}:${WS_PORT}`;
+    const CUBE_SIZE = 44;  // mm
+    const CUBE_COLORS = [0xff4444, 0x4444ff, 0x44cc44]; // red, blue, green
+
+    // -----------------------------------------------------------------------
+    // Renderer
+    // -----------------------------------------------------------------------
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x1a1a2e);
+    document.body.appendChild(renderer.domElement);
+
+    // -----------------------------------------------------------------------
+    // Scene + camera
+    // -----------------------------------------------------------------------
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x1a1a2e, 1500, 4000);
+
+    const camera = new THREE.PerspectiveCamera(
+      45, window.innerWidth / window.innerHeight, 0.1, 5000
+    );
+    camera.position.set(200, 100, 200);
+    camera.lookAt(0, 0, 0);
+
+    // -----------------------------------------------------------------------
+    // Controls
+    // -----------------------------------------------------------------------
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.12;
+    controls.target.set(0, 0, 0);
+
+    // -----------------------------------------------------------------------
+    // Lighting
+    // -----------------------------------------------------------------------
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(0, 300, -200);
+    scene.add(dirLight);
+
+    const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    backLight.position.set(0, 200, 400);
+    scene.add(backLight);
+
+    // -----------------------------------------------------------------------
+    // Grid  (2000mm, 20 divisions = 100mm spacing)
+    // -----------------------------------------------------------------------
+    const grid = new THREE.GridHelper(2000, 20, 0x555555, 0x333333);
+    grid.material.opacity = 0.4;
+    grid.material.transparent = true;
+    scene.add(grid);
+
+    // -----------------------------------------------------------------------
+    // Axes (RGB = XYZ, 100mm)
+    // -----------------------------------------------------------------------
+    const axes = new THREE.AxesHelper(100);
+    scene.add(axes);
+
+    // -----------------------------------------------------------------------
+    // Floor plane
+    // -----------------------------------------------------------------------
+    const floorGeo = new THREE.PlaneGeometry(4000, 4000);
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0x888888, side: THREE.DoubleSide });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.1;
+    scene.add(floor);
+
+    // -----------------------------------------------------------------------
+    // Robot box  (55 x 60 x 90 mm)
+    // -----------------------------------------------------------------------
+    function createRobot() {
+      const group = new THREE.Group();
+
+      const geo = new THREE.BoxGeometry(55, 60, 90);
+      // Wireframe
+      const wire = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: 0xcccccc })
+      );
+      group.add(wire);
+      // Semi-transparent fill
+      const fill = new THREE.Mesh(
+        geo,
+        new THREE.MeshLambertMaterial({
+          color: 0x888888,
+          transparent: true,
+          opacity: 0.25,
+        })
+      );
+      group.add(fill);
+
+      // Position: front at Z=0, bottom at Y=0 → translate(0, 30, 45)
+      group.position.set(0, 30, 45);
+
+      // Camera origin marker (sphere at Y=40)
+      const camGeo = new THREE.SphereGeometry(3, 12, 8);
+      const camMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
+      const camMarker = new THREE.Mesh(camGeo, camMat);
+      camMarker.position.set(0, 40, 0);
+      group.add(camMarker);
+
+      return group;
+    }
+    scene.add(createRobot());
+
+    // -----------------------------------------------------------------------
+    // Cube management
+    // -----------------------------------------------------------------------
+    const cubeGroups = {};  // cube_id → THREE.Group
+
+    function createCube(id) {
+      const group = new THREE.Group();
+
+      const idx = parseInt(id.replace('cube_', ''), 10) - 1;
+      const color = CUBE_COLORS[idx] || 0x00ccaa;
+
+      // Wireframe edges
+      const geo = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
+      const wire = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: 0xffffff })
+      );
+      group.add(wire);
+
+      // Semi-transparent colored faces
+      const mat = new THREE.MeshLambertMaterial({
+        color,
+        transparent: true,
+        opacity: 0.45,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+
+      // Small axes at cube center
+      const axLen = CUBE_SIZE * 0.6;
+      const axGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(axLen, 0, 0),
+      ]);
+      const redLine = new THREE.Line(axGeo, new THREE.LineBasicMaterial({ color: 0xff0000 }));
+      group.add(redLine);
+
+      const ayGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, axLen, 0),
+      ]);
+      const greenLine = new THREE.Line(ayGeo, new THREE.LineBasicMaterial({ color: 0x00ff00 }));
+      group.add(greenLine);
+
+      const azGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, axLen),
+      ]);
+      const blueLine = new THREE.Line(azGeo, new THREE.LineBasicMaterial({ color: 0x0000ff }));
+      group.add(blueLine);
+
+      group.userData = { targetPos: new THREE.Vector3(), targetQuat: new THREE.Quaternion() };
+      scene.add(group);
+      cubeGroups[id] = group;
+      return group;
+    }
+
+    function removeCube(id) {
+      const g = cubeGroups[id];
+      if (g) {
+        scene.remove(g);
+        delete cubeGroups[id];
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // WebSocket
+    // -----------------------------------------------------------------------
+    let ws;
+    let reconnectTimer;
+
+    function connectWS() {
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => {
+        setStatus('connected');
+      };
+      ws.onclose = () => {
+        setStatus('disconnected');
+        reconnectTimer = setTimeout(connectWS, 2000);
+      };
+      ws.onerror = () => {
+        ws.close();
+      };
+      ws.onmessage = (evt) => {
+        try {
+          const state = JSON.parse(evt.data);
+          applyState(state);
+        } catch (e) {
+          console.warn('bad message', e);
+        }
+      };
+    }
+
+    function applyState(state) {
+      // Cubes
+      const seen = new Set();
+      for (const c of state.cubes || []) {
+        seen.add(c.id);
+        let g = cubeGroups[c.id];
+        if (!g) g = createCube(c.id);
+
+        g.userData.targetPos.set(c.position[0], c.position[1], c.position[2]);
+
+        // Rotation matrix → quaternion
+        const m = new THREE.Matrix4();
+        m.set(
+          c.rotation[0][0], c.rotation[0][1], c.rotation[0][2], 0,
+          c.rotation[1][0], c.rotation[1][1], c.rotation[1][2], 0,
+          c.rotation[2][0], c.rotation[2][1], c.rotation[2][2], 0,
+          0, 0, 0, 1
+        );
+        g.userData.targetQuat.setFromRotationMatrix(m);
+      }
+      // Remove cubes no longer present
+      for (const id of Object.keys(cubeGroups)) {
+        if (!seen.has(id)) removeCube(id);
+      }
+      document.getElementById('cube-count').textContent = `${seen.size} cubes`;
+    }
+
+    // -----------------------------------------------------------------------
+    // HUD helpers
+    // -----------------------------------------------------------------------
+    function setStatus(s) {
+      const el = document.getElementById('status');
+      el.textContent = s;
+      el.className = s === 'connected' ? 'connected' : 'disconnected';
+    }
+
+    // -----------------------------------------------------------------------
+    // Render loop
+    // -----------------------------------------------------------------------
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+
+    const _tmpPos = new THREE.Vector3();
+    const _tmpQuat = new THREE.Quaternion();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Lerp cubes toward target poses
+      for (const g of Object.values(cubeGroups)) {
+        const lerp = 0.35;
+        _tmpPos.copy(g.userData.targetPos);
+        g.position.lerp(_tmpPos, lerp);
+        _tmpQuat.copy(g.userData.targetQuat);
+        g.quaternion.slerp(_tmpQuat, lerp);
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      // FPS counter
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        document.getElementById('fps').textContent = `${frameCount} FPS`;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Resize
+    // -----------------------------------------------------------------------
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // -----------------------------------------------------------------------
+    // Start
+    // -----------------------------------------------------------------------
+    connectWS();
+    animate();
+  </script>
+</body>
+</html>
