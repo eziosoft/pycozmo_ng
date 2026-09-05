@@ -91,6 +91,11 @@ class VisionDisplay:
         self.fps = 0.0
         self.vision_processor = None
 
+        # Detect headless (no display available)
+        self.headless = not os.environ.get("DISPLAY")
+        if self.headless:
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
         # Web viewer
         self.web_viewer = WebViewerServer()
         self.web_viewer.start()
@@ -180,6 +185,9 @@ class VisionDisplay:
 
     def display_frames(self):
         """Display both raw and annotated frames side by side."""
+        if self.headless:
+            return
+
         raw_cv2 = self.pil_to_cv2(self.latest_raw_frame)
         annotated_cv2 = self.pil_to_cv2(self.latest_annotated_frame)
 
@@ -398,10 +406,15 @@ class VisionDisplay:
 
     def run(self, cli):
         """Main display loop."""
-        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+        if not self.headless:
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
         while self.running:
             self.display_frames()
+
+            if self.headless:
+                time.sleep(0.01)
+                continue
 
             key = cv2.waitKey(1) & 0xFF
 
@@ -429,7 +442,8 @@ class VisionDisplay:
                 pkt = pycozmo.protocol_encoder.StopAllMotors()
                 cli.conn.send(pkt)
 
-        cv2.destroyAllWindows()
+        if not self.headless:
+            cv2.destroyAllWindows()
         self.web_viewer.close()
 
 
