@@ -1,7 +1,7 @@
 import pycozmo
 import time
 
-cli = pycozmo.Client(enable_procedural=False)
+cli = pycozmo.Client()
 cli.start()
 cli.connect()
 
