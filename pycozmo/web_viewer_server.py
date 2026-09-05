@@ -130,7 +130,10 @@ class WebViewerServer:
     def close(self):
         """Stop the background server."""
         if self._loop and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(self._shutdown(), self._loop)
+            try:
+                asyncio.run_coroutine_threadsafe(self._shutdown(), self._loop)
+            except RuntimeError:
+                pass  # Loop already closed
 
     # -- internal -----------------------------------------------------------
 
@@ -189,7 +192,7 @@ class WebViewerServer:
 
     def start(self):
         """Start the WebSocket + HTTP server in a background thread."""
-        if self._thread and self._thread.is_running():
+        if self._thread and self._thread.is_alive():
             return
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_server, daemon=True)
@@ -201,7 +204,12 @@ class WebViewerServer:
 
     async def _serve(self):
         # WebSocket server
-        ws_server = await websockets.serve(self._handler, self.host, self.port)
+        ws_server = await websockets.serve(
+            self._handler,
+            self.host,
+            self.port,
+            reuse_address=True,
+        )
 
         # HTTP server (if aiohttp available) on port+1
         http_runner = None
