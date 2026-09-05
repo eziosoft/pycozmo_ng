@@ -17,11 +17,19 @@ Controls:
 
 import argparse
 import os
+import subprocess
 import sys
 import time
 
 import cv2
 import numpy as np
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 import pycozmo
 from pycozmo import vision
@@ -44,6 +52,45 @@ try:
     WEB_VIEWER_AVAILABLE = True
 except ImportError:
     WEB_VIEWER_AVAILABLE = False
+
+
+def connect_to_cozmo_wifi():
+    """Auto-connect to Cozmo WiFi AP if not already connected."""
+    ssid = os.environ.get("COZMO_WIFI_SSID")
+    password = os.environ.get("COZMO_WIFI_PASSWORD")
+    if not ssid:
+        return True  # No credentials configured, skip
+
+    # Check current WiFi
+    try:
+        result = subprocess.run(
+            ["iwgetid", "-r"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        current_ssid = result.stdout.strip()
+        if current_ssid == ssid:
+            print(f"✅ Already connected to {ssid}")
+            return True
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Connect via nmcli
+    print(f"📡 Connecting to {ssid}...")
+    try:
+        result = subprocess.run(
+            ["sudo", "nmcli", "dev", "wifi", "connect", ssid, "password", password],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        if result.returncode == 0:
+            print(f"✅ Connected to {ssid}")
+            time.sleep(2)  # Wait for DHCP
+            return True
+        else:
+            print(f"⚠️  WiFi connect failed: {result.stderr.strip()}")
+            return False
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        print(f"⚠️  WiFi connect error: {e}")
+        return False
 
 
 class VisionDisplay:
@@ -554,6 +601,9 @@ def main():
     )
 
     try:
+        # Auto-connect to Cozmo WiFi if credentials in .env
+        connect_to_cozmo_wifi()
+
         # Connect to Cozmo
         print("🤖 Connecting to Cozmo...")
         with pycozmo.connect() as cli:
