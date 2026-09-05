@@ -42,16 +42,17 @@ def connect_to_cozmo_wifi():
     if not ssid:
         return True  # No credentials configured, skip
 
-    # Check current WiFi
+    # Check if already connected to this SSID via nmcli
     try:
         result = subprocess.run(
-            ["iwgetid", "-r"],
+            ["nmcli", "-t", "-f", "NAME,DEVICE,STATE", "con", "show"],
             capture_output=True, text=True, timeout=5, check=False,
         )
-        current_ssid = result.stdout.strip()
-        if current_ssid == ssid:
-            print(f"✅ Already connected to {ssid}")
-            return True
+        for line in result.stdout.strip().splitlines():
+            parts = line.split(":")
+            if len(parts) >= 3 and parts[0] == ssid and parts[2] == "activated":
+                print(f"✅ Already connected to {ssid}")
+                return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
