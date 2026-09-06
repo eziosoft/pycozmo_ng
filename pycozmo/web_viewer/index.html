@@ -46,11 +46,12 @@
     // -----------------------------------------------------------------------
     // Renderer
     // -----------------------------------------------------------------------
+    const viewerPanel = document.getElementById('viewer-panel');
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x1a1a2e);
-    document.getElementById('viewer-panel').appendChild(renderer.domElement);
-    renderer.setSize(document.getElementById('viewer-panel').clientWidth, document.getElementById('viewer-panel').clientHeight);
+    viewerPanel.appendChild(renderer.domElement);
+    renderer.setSize(viewerPanel.clientWidth, viewerPanel.clientHeight);
 
     // -----------------------------------------------------------------------
     // Scene + camera
@@ -59,7 +60,7 @@
     scene.fog = new THREE.Fog(0x1a1a2e, 1500, 4000);
 
     const camera = new THREE.PerspectiveCamera(
-      45, window.innerWidth / window.innerHeight, 0.1, 5000
+      45, viewerPanel.clientWidth / viewerPanel.clientHeight, 0.1, 5000
     );
     camera.position.set(200, 100, 200);
     camera.lookAt(0, 0, 0);
@@ -134,14 +135,16 @@
       );
       group.add(fill);
 
-      // Position: front at Z=0, bottom at Y=0 → translate(0, 30, 45)
-      group.position.set(0, 30, 45);
+      // Robot body: front face at Z=0, bottom at Y=0, body extends to -Z
+      // (matches World3DViewer._draw_camera convention: camera at (0,40,0),
+      //  boxes in front of the robot are at positive Z).
+      group.position.set(0, 30, -45);
 
-      // Camera origin marker (sphere at Y=40)
+      // Camera origin marker (sphere at world Y=40, Z=0)
       const camGeo = new THREE.SphereGeometry(3, 12, 8);
       const camMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
       const camMarker = new THREE.Mesh(camGeo, camMat);
-      camMarker.position.set(0, 40, 0);
+      camMarker.position.set(0, 10, 45);
       group.add(camMarker);
 
       return group;
