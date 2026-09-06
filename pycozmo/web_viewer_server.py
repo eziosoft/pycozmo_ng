@@ -237,9 +237,40 @@ class WebViewerServer:
         """Start the WebSocket + HTTP server in a background thread."""
         if self._thread and self._thread.is_alive():
             return
+        self._kill_stale_ports()
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_server, daemon=True)
         self._thread.start()
+
+    def _kill_stale_ports(self):
+        """Kill any process still holding our ports from a previous run."""
+        import socket
+        import subprocess
+
+        for port in (self.port, self.port + 1):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(0.5)
+                result = s.connect_ex(("127.0.0.1", port))
+                s.close()
+                if result == 0:
+                    # Port in use — find and kill the process
+                    out = subprocess.run(
+                        ["lsof", "-ti", f":{port}"],
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                        check=False,
+                    )
+                    for pid in out.stdout.strip().splitlines():
+                        subprocess.run(
+                            ["kill", "-9", pid],
+                            capture_output=True,
+                            timeout=3,
+                            check=False,
+                        )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
     def _run_server(self):
         asyncio.set_event_loop(self._loop)
