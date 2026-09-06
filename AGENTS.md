@@ -98,6 +98,10 @@ This branch adds:
 - Type hints encouraged
 - Docstrings encouraged
 
+## Library-First Approach
+
+PyCozmo is a **library**, not a script collection. New functionality must be added inside `pycozmo/` with a clean public API so others can `import pycozmo` and use it independently. `main.py` is a simple test/demo script that exercises the library — never put core logic there. When adding a feature, ask: "could someone use this without main.py?" If yes, the API is right.
+
 ## Testing
 
 Tests are in `pycozmo/tests/` and `pycozmo/audiokinetic/tests/`. No conftest.py or fixtures found.
