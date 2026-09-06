@@ -18,6 +18,7 @@ import asyncio
 import json
 import os
 import time
+import threading
 
 import numpy as np
 
@@ -43,12 +44,39 @@ except ImportError:
 _T = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32)
 
 
-def _encode_jpeg(image, quality: int = 70) -> bytes:
-    """Encode a PIL image to JPEG bytes (runs on a worker thread)."""
-    import io
+def _apply_image_enhance(image, brightness: float, gamma: float):
+    """Apply brightness/gamma corrections in-place on a copy of the image.
+
+    Both factors default to 1.0 (identity). ``brightness`` is a linear
+    multiplier (0.0 = black, 1.0 = unchanged, 2.0 = doubled). ``gamma``
+    is an exponent applied to normalised pixel values (1.0 = identity,
+    <1 = brighter, >1 = darker). For typical Cozmo raw feeds a gamma
+    in the 0.4-0.7 range tames the over-bright / washed-out look.
+    """
+    from PIL import ImageEnhance
 
     if image.mode != "RGB":
         image = image.convert("RGB")
+
+    if brightness != 1.0:
+        image = ImageEnhance.Brightness(image).enhance(brightness)
+
+    if gamma != 1.0:
+        # LUT-based gamma: cheap, runs entirely in C on the worker thread.
+        lut = [int(((i / 255.0) ** gamma) * 255.0 + 0.5) for i in range(256)]
+        lut = lut * 3  # one entry per channel (R, G, B)
+        image = image.point(lut)
+
+    return image
+
+
+def _encode_jpeg(
+    image, quality: int = 70, brightness: float = 1.0, gamma: float = 1.0
+) -> bytes:
+    """Encode a PIL image to JPEG bytes (runs on a worker thread)."""
+    import io
+
+    image = _apply_image_enhance(image, brightness, gamma)
     buf = io.BytesIO()
     image.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
@@ -81,9 +109,19 @@ class WebViewerServer:
     Streams camera frames as MJPEG via ``push_frame()``.
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8765):
+    def __init__(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8765,
+        brightness: float = 1.0,
+        gamma: float = 1.0,
+    ):
         self.host = host
         self.port = port
+        # Camera-feed tuning. brightness is a linear multiplier (1.0 = identity).
+        # gamma is an exponent on normalised pixel values (1.0 = identity, <1 = brighter).
+        self.brightness = brightness
+        self.gamma = gamma
         self.cubes: dict[str, dict] = {}
         self._clients: set = set()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -222,8 +260,16 @@ class WebViewerServer:
         try:
             # Send current state immediately on connect
             await websocket.send(self._build_state_json())
-            async for _ in websocket:
-                pass  # We don't expect client messages
+            async for raw in websocket:
+                try:
+                    msg = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if msg.get("type") == "config":
+                    if "brightness" in msg:
+                        self.brightness = float(msg["brightness"])
+                    if "gamma" in msg:
+                        self.gamma = float(msg["gamma"])
         finally:
             self._clients.discard(websocket)
 
@@ -274,7 +320,9 @@ class WebViewerServer:
                     continue
 
                 last_frame_id = current_id
-                jpeg = await asyncio.to_thread(_encode_jpeg, image)
+                jpeg = await asyncio.to_thread(
+                    _encode_jpeg, image, 70, self.brightness, self.gamma
+                )
                 header = (
                     f"--{boundary}\r\n"
                     f"Content-Type: image/jpeg\r\n"
@@ -374,9 +422,6 @@ class WebViewerServer:
             ws_server.close()
             if http_runner:
                 await http_runner.cleanup()
-
-
-import threading
 
 
 # ---------------------------------------------------------------------------

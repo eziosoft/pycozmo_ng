@@ -44,6 +44,68 @@ html, body {
   background: #000;
 }
 
+/* ---- Camera tuning controls ---- */
+#controls {
+  padding: 8px 10px;
+  background: #222;
+  border-top: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #aaa;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#controls input[type="range"] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #555;
+  border-radius: 2px;
+  outline: none;
+}
+
+#controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4f4;
+  cursor: pointer;
+  border: 2px solid #222;
+}
+
+#controls input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4f4;
+  cursor: pointer;
+  border: 2px solid #222;
+}
+
+#controls input[type="range"]::-moz-range-track {
+  background: #555;
+  border-radius: 2px;
+}
+
+#controls span {
+  min-width: 32px;
+  text-align: right;
+  color: #4f4;
+  font-variant-numeric: tabular-nums;
+}
+
 #viewer-panel {
   flex: 1;
   position: relative;

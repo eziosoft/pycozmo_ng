@@ -12,6 +12,11 @@ Controls:
 - Press 'c' to toggle cube detection
 - Press 'f' to toggle FPS display
 
+Brightness/gamma tuning for the web viewer MJPEG stream:
+  python main.py --gamma 0.5          # compensate for Cozmo's over-bright feed
+  python main.py --brightness 0.7     # dim the image a bit
+  python main.py --gamma 0.4 --brightness 0.8  # combine both
+
 """
 
 import argparse
@@ -85,7 +90,7 @@ def connect_to_cozmo_wifi():
 class VisionDisplay:
     """Handles display of normal and annotated frames + web viewer streaming."""
 
-    def __init__(self):
+    def __init__(self, brightness: float = 1.0, gamma: float = 1.0):
         self.latest_raw_frame = None
         self.latest_annotated_frame = None
         self.latest_detections = []
@@ -110,7 +115,7 @@ class VisionDisplay:
             os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
         # Web viewer
-        self.web_viewer = WebViewerServer()
+        self.web_viewer = WebViewerServer(brightness=brightness, gamma=gamma)
         self.web_viewer.start()
 
         # Window names
@@ -538,9 +543,21 @@ def main():
         action="store_true",
         help="Disable image undistortion (disabled by default - undistortion may cause warping)",
     )
+    parser.add_argument(
+        "--brightness",
+        type=float,
+        default=1.0,
+        help="MJPEG camera brightness multiplier (1.0 = identity, <1 = darker, >1 = brighter)",
+    )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=1.0,
+        help="MJPEG camera gamma exponent (1.0 = identity, <1 = brighter, >1 = darker; try 0.4–0.7 for Cozmo)",
+    )
     args = parser.parse_args()
 
-    display = VisionDisplay()
+    display = VisionDisplay(brightness=args.brightness, gamma=args.gamma)
 
     try:
         connect_to_cozmo_wifi()
