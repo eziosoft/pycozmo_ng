@@ -112,13 +112,9 @@ class VisionDisplay:
         self.latest_raw_frame = image
         self.frame_count += 1
 
-        # Push JPEG to web viewer for MJPEG streaming
+        # Push frame for MJPEG streaming (encoding happens off this thread)
         if image is not None:
-            import io
-
-            buf = io.BytesIO()
-            image.save(buf, format="JPEG", quality=70)
-            self.web_viewer.push_frame(buf.getvalue())
+            self.web_viewer.push_frame(image)
 
         elapsed = time.time() - self.start_time
         if elapsed > 1.0:
@@ -149,9 +145,11 @@ class VisionDisplay:
 
         current_cube_ids = set(fused_cubes.keys())
 
-        if current_cube_ids != self._prev_cube_ids:
-            self.web_viewer.clear_cubes()
-            self._prev_cube_ids = current_cube_ids
+        # Remove only cubes that truly disappeared. Diffing instead of
+        # clear_cubes() keeps the browser's cube state stable (no pop or
+        # teleport on transient detection flicker).
+        for cube_id in self._prev_cube_ids - current_cube_ids:
+            self.web_viewer.remove_cube(f"cube_{cube_id + 1}")
 
         for cube_id, cube_state in fused_cubes.items():
             cube_name = f"cube_{cube_id + 1}"
@@ -162,6 +160,7 @@ class VisionDisplay:
                 cube_size=44,
             )
 
+        self._prev_cube_ids = current_cube_ids
         self.web_viewer.broadcast()
 
     def pil_to_cv2(self, pil_image):

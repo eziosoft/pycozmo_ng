@@ -43,6 +43,17 @@ except ImportError:
 _T = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32)
 
 
+def _encode_jpeg(image, quality: int = 70) -> bytes:
+    """Encode a PIL image to JPEG bytes (runs on a worker thread)."""
+    import io
+
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
 def _opencv_to_gl_position(position: np.ndarray) -> list:
     """Convert OpenCV camera coords (X right, Y down, Z forward) to
     OpenGL-style coords (X right, Y up, Z forward)."""
@@ -66,8 +77,8 @@ class WebViewerServer:
 
     Same ``update_cube`` / ``remove_cube`` / ``clear_cubes`` interface so
     ``main.py`` can swap in with minimal changes.  Broadcasts JSON state
-    over WebSocket every call to ``broadcast()``.  Streams camera frames
-    as MJPEG via ``push_frame()``.
+    over WebSocket (coalesced, never queued up) every call to ``broadcast()``.
+    Streams camera frames as MJPEG via ``push_frame()``.
     """
 
     def __init__(self, host: str = "0.0.0.0", port: int = 8765):
@@ -78,9 +89,14 @@ class WebViewerServer:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._start_time = time.time()
 
-        # Camera MJPEG streaming
-        self._latest_jpeg: bytes | None = None
-        self._frame_id: int = 0
+        # Camera MJPEG streaming (encode happens in the server loop thread)
+        self._latest_image = None
+        self._image_id: int = 0
+
+        # Broadcast coalescing: the loop thread keeps a queue and always
+        # sends the latest state — broadcasts never pile up.
+        self._broadcast_queue = None
+        self._run_forever = None
 
         # Validate that at least websockets is available
         if not HAS_WEBSOCKETS:
@@ -121,20 +137,33 @@ class WebViewerServer:
         self.cubes.clear()
 
     def broadcast(self):
-        """Serialize current state and send to all connected clients."""
-        if not self._clients:
+        """Notify the server that the world state changed.
+
+        The server coalesces notifications and sends the latest state once,
+        so rapid ``broadcast()`` calls from the client thread can never
+        queue up and starve the WebSocket/MJPEG handlers on the loop.
+        """
+        if not self._clients or self._broadcast_queue is None:
             return
-        msg = self._build_state_json()
-        asyncio.run_coroutine_threadsafe(self._broadcast_json(msg), self._loop)
+        if self._loop is None or not self._loop.is_running():
+            return
+        try:
+            self._loop.call_soon_threadsafe(self._broadcast_queue.put_nowait, True)
+        except RuntimeError:
+            pass
 
     def render(self) -> bool:
         """No-op for compatibility — web viewer renders in browser."""
         return True
 
-    def push_frame(self, jpeg_bytes: bytes):
-        """Push a JPEG frame for MJPEG streaming to browsers."""
-        self._latest_jpeg = jpeg_bytes
-        self._frame_id += 1
+    def push_frame(self, image):
+        """Publish the latest camera frame (PIL image) for MJPEG streaming.
+
+        JPEG encoding is deferred to the server's event loop, so this never
+        blocks the caller (the pycozmo packet-processing thread).
+        """
+        self._latest_image = image
+        self._image_id += 1
 
     def close(self):
         """Stop the background server."""
@@ -158,12 +187,35 @@ class WebViewerServer:
         }
         return json.dumps(state)
 
-    async def _broadcast_json(self, msg: str):
-        if self._clients:
-            await asyncio.gather(
-                *[c.send(msg) for c in list(self._clients)],
-                return_exceptions=True,
+    async def _broadcast_loop(self):
+        """Coalescing broadcaster: send the latest state, never a backlog.
+
+        Waits for a ``broadcast()`` notification, drains any burst that
+        arrived meanwhile, and sends a single, up-to-date state message.
+        """
+        while True:
+            await self._broadcast_queue.get()
+            await asyncio.sleep(0.005)  # coalesce bursts within one frame
+            while not self._broadcast_queue.empty():
+                self._broadcast_queue.get_nowait()
+            if not self._clients:
+                continue
+            msg = self._build_state_json()
+            await self._send_to_all(msg)
+
+    async def _send_to_all(self, msg: str):
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *[c.send(msg) for c in list(self._clients)],
+                    return_exceptions=True,
+                ),
+                timeout=2.0,
             )
+        except asyncio.TimeoutError:
+            # A client is too slow to keep up — drop this round rather than
+            # blocking the event loop (and with it, the MJPEG stream).
+            pass
 
     async def _handler(self, websocket):
         self._clients.add(websocket)
@@ -179,7 +231,8 @@ class WebViewerServer:
         for ws in list(self._clients):
             await ws.close()
         self._clients.clear()
-        self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._run_forever is not None and not self._run_forever.done():
+            self._run_forever.set_result(None)
 
     # -- static file serving (aiohttp) -------------------------------------
 
@@ -214,13 +267,14 @@ class WebViewerServer:
         last_frame_id = -1
         while True:
             try:
-                current_id = self._frame_id
-                if current_id == last_frame_id or self._latest_jpeg is None:
+                current_id = self._image_id
+                image = self._latest_image
+                if current_id == last_frame_id or image is None:
                     await asyncio.sleep(0.01)
                     continue
 
                 last_frame_id = current_id
-                jpeg = self._latest_jpeg
+                jpeg = await asyncio.to_thread(_encode_jpeg, image)
                 header = (
                     f"--{boundary}\r\n"
                     f"Content-Type: image/jpeg\r\n"
@@ -278,6 +332,10 @@ class WebViewerServer:
         self._loop.run_until_complete(self._serve())
 
     async def _serve(self):
+        # Broadcast queue (created and used only on the loop thread)
+        self._broadcast_queue = asyncio.Queue()
+        broadcast_task = asyncio.create_task(self._broadcast_loop())
+
         # WebSocket server
         ws_server = await websockets.serve(
             self._handler,
@@ -308,9 +366,11 @@ class WebViewerServer:
         bind_note = " (all interfaces)" if self.host == "0.0.0.0" else ""
         print(f"✅ Web viewer WS    at ws://{self.host}:{self.port}{bind_note}")
 
+        self._run_forever = asyncio.get_running_loop().create_future()
         try:
-            await asyncio.Future()  # run forever
+            await self._run_forever
         finally:
+            broadcast_task.cancel()
             ws_server.close()
             if http_runner:
                 await http_runner.cleanup()
