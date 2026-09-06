@@ -80,7 +80,7 @@ class WebViewerServer:
 
         # Camera MJPEG streaming
         self._latest_jpeg: bytes | None = None
-        self._frame_event: asyncio.Event | None = None
+        self._frame_id: int = 0
 
         # Validate that at least websockets is available
         if not HAS_WEBSOCKETS:
@@ -134,8 +134,7 @@ class WebViewerServer:
     def push_frame(self, jpeg_bytes: bytes):
         """Push a JPEG frame for MJPEG streaming to browsers."""
         self._latest_jpeg = jpeg_bytes
-        if self._frame_event:
-            self._frame_event.set()
+        self._frame_id += 1
 
     def close(self):
         """Stop the background server."""
@@ -199,7 +198,7 @@ class WebViewerServer:
         raise web.HTTPNotFound()
 
     async def _serve_video(self, request):
-        """MJPEG streaming endpoint — pushes camera frames to browser."""
+        """MJPEG streaming endpoint — pushes latest camera frame to browser."""
         response = web.StreamResponse(
             status=200,
             reason="OK",
@@ -212,20 +211,22 @@ class WebViewerServer:
         await response.prepare(request)
 
         boundary = "frame"
+        last_frame_id = -1
         while True:
-            # Wait for a new frame
-            if self._latest_jpeg is None:
-                await asyncio.sleep(0.1)
-                continue
-
             try:
+                current_id = self._frame_id
+                if current_id == last_frame_id or self._latest_jpeg is None:
+                    await asyncio.sleep(0.01)
+                    continue
+
+                last_frame_id = current_id
+                jpeg = self._latest_jpeg
                 header = (
                     f"--{boundary}\r\n"
                     f"Content-Type: image/jpeg\r\n"
-                    f"Content-Length: {len(self._latest_jpeg)}\r\n\r\n"
+                    f"Content-Length: {len(jpeg)}\r\n\r\n"
                 ).encode()
-                await response.write(header + self._latest_jpeg + b"\r\n")
-                await asyncio.sleep(0.033)  # ~30 FPS cap
+                await response.write(header + jpeg + b"\r\n")
             except (ConnectionResetError, ConnectionError, asyncio.CancelledError):
                 break
 
