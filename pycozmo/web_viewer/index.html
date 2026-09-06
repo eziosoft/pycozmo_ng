@@ -22,6 +22,15 @@
     <span id="cube-count">0 cubes</span>
   </div>
 
+  <!-- Split layout: camera | 3D -->
+  <div id="layout">
+    <div id="camera-panel">
+      <div id="camera-label">Cozmo Camera</div>
+      <img id="camera-feed" src="/video" alt="Camera feed" />
+    </div>
+    <div id="viewer-panel"></div>
+  </div>
+
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -39,9 +48,9 @@
     // -----------------------------------------------------------------------
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setClearColor(0x1a1a2e);
-    document.body.appendChild(renderer.domElement);
+    document.getElementById('viewer-panel').appendChild(renderer.domElement);
+    renderer.setSize(document.getElementById('viewer-panel').clientWidth, document.getElementById('viewer-panel').clientHeight);
 
     // -----------------------------------------------------------------------
     // Scene + camera
@@ -306,9 +315,12 @@
     // Resize
     // -----------------------------------------------------------------------
     window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      const panel = document.getElementById('viewer-panel');
+      const w = panel.clientWidth;
+      const h = panel.clientHeight;
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(w, h);
     });
 
     // -----------------------------------------------------------------------

@@ -112,6 +112,14 @@ class VisionDisplay:
         self.latest_raw_frame = image
         self.frame_count += 1
 
+        # Push JPEG to web viewer for MJPEG streaming
+        if image is not None:
+            import io
+
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG", quality=70)
+            self.web_viewer.push_frame(buf.getvalue())
+
         elapsed = time.time() - self.start_time
         if elapsed > 1.0:
             self.fps = self.frame_count / elapsed

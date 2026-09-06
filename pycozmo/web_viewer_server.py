@@ -66,7 +66,8 @@ class WebViewerServer:
 
     Same ``update_cube`` / ``remove_cube`` / ``clear_cubes`` interface so
     ``main.py`` can swap in with minimal changes.  Broadcasts JSON state
-    over WebSocket every call to ``broadcast()``.
+    over WebSocket every call to ``broadcast()``.  Streams camera frames
+    as MJPEG via ``push_frame()``.
     """
 
     def __init__(self, host: str = "0.0.0.0", port: int = 8765):
@@ -77,6 +78,10 @@ class WebViewerServer:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._start_time = time.time()
 
+        # Camera MJPEG streaming
+        self._latest_jpeg: bytes | None = None
+        self._frame_event: asyncio.Event | None = None
+
         # Validate that at least websockets is available
         if not HAS_WEBSOCKETS:
             raise ImportError(
@@ -85,8 +90,7 @@ class WebViewerServer:
             )
 
         # We run the server in a background thread
-        self._thread: asyncio.AbstractEventLoop | None = None
-        self._server_started = asyncio.Event()
+        self._thread: threading.Thread | None = None
 
     # -- public interface (mirrors World3DViewer) ---------------------------
 
@@ -126,6 +130,12 @@ class WebViewerServer:
     def render(self) -> bool:
         """No-op for compatibility — web viewer renders in browser."""
         return True
+
+    def push_frame(self, jpeg_bytes: bytes):
+        """Push a JPEG frame for MJPEG streaming to browsers."""
+        self._latest_jpeg = jpeg_bytes
+        if self._frame_event:
+            self._frame_event.set()
 
     def close(self):
         """Stop the background server."""
@@ -188,6 +198,39 @@ class WebViewerServer:
             return web.FileResponse(filepath)
         raise web.HTTPNotFound()
 
+    async def _serve_video(self, request):
+        """MJPEG streaming endpoint — pushes camera frames to browser."""
+        response = web.StreamResponse(
+            status=200,
+            reason="OK",
+            headers={
+                "Content-Type": "multipart/x-mixed-replace; boundary=frame",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+        await response.prepare(request)
+
+        boundary = "frame"
+        while True:
+            # Wait for a new frame
+            if self._latest_jpeg is None:
+                await asyncio.sleep(0.1)
+                continue
+
+            try:
+                header = (
+                    f"--{boundary}\r\n"
+                    f"Content-Type: image/jpeg\r\n"
+                    f"Content-Length: {len(self._latest_jpeg)}\r\n\r\n"
+                ).encode()
+                await response.write(header + self._latest_jpeg + b"\r\n")
+                await asyncio.sleep(0.033)  # ~30 FPS cap
+            except (ConnectionResetError, ConnectionError, asyncio.CancelledError):
+                break
+
+        return response
+
     # -- server lifecycle ---------------------------------------------------
 
     def start(self):
@@ -216,6 +259,7 @@ class WebViewerServer:
         if HAS_AIOHTTP:
             app = web.Application()
             app.router.add_get("/", self._serve_index)
+            app.router.add_get("/video", self._serve_video)
             app.router.add_get("/{filename}", self._serve_static)
             runner = web.AppRunner(app)
             await runner.setup()
