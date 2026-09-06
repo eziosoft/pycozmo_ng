@@ -124,7 +124,35 @@ Live robot code runs on a Raspberry Pi 5, NOT on the dev Mac.
   - `eth0` = wired LAN `192.168.10.0/24` — management path (SSH/rsync). Default route stays here (`ipv4.never-default` unset).
   - `wlan0` = Cozmo AP only. SSID **`Cozmo_7144B4`**, password **`973-37134-7253402`**. Set `ipv4.never-default yes` so robot AP never becomes gateway.
 - **Robot** = `172.31.1.1:5551` (hardcoded in `pycozmo/conn.py`). Pi wlan0 usually gets `172.31.1.57/24` via DHCP.
-- **File sync**: `rsync -avz --delete ./ e@192.168.10.100:~/pycozmo/` (key auth, no password). Run from repo root.
+
+### Syncing code to the Pi
+
+**Recommended: use git** — the cleanest way to keep Mac and Pi in sync without touching venvs/caches:
+
+```bash
+# On Mac: commit and push
+git add -A && git commit -m "..." && git push
+
+# On Pi: pull (and reinstall only if requirements changed)
+ssh e@192.168.10.100
+cd ~/pycozmo && git pull
+source venv/bin/activate && pip install -e . --quiet   # only when deps change
+```
+
+**Alternative: rsync** — fine for quick one-off pushes, but **must use `--exclude-from`** so caches, the local `.venv/`, `.env`, and build artifacts don't get copied or (with `--delete`) wiped on the Pi:
+
+```bash
+rsync -avz --delete \
+  --exclude-from='.gitignore' \
+  --exclude='.git/' --exclude='.env' --exclude='.venv/' --exclude='venv/' \
+  --exclude='__pycache__/' --exclude='*.pyc' \
+  --exclude='.ruff_cache/' --exclude='.mypy_cache/' --exclude='.pytest_cache/' \
+  --exclude='pycozmo.egg-info/' \
+  ./ e@192.168.10.100:~/pycozmo/
+```
+
+Never run a bare `rsync -avz --delete ./` — it will wipe the Pi's `venv/` and other state.
+
 - Raspberry Pi will serve the Three.js web viewer (project in progress).
 
 ### Reconnect Pi → Cozmo (if robot rebooted)
