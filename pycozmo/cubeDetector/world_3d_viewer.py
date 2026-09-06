@@ -179,6 +179,10 @@ class World3DViewer:
     """
     3D visualization of Cozmo's world using OpenGL
     """
+    # Camera height above the floor in millimetres (Cozmo hardware spec).
+    # Used when projecting detections from camera-frame to world-frame.
+    CAMERA_HEIGHT_MM = 40.0  # (COZMO-7)
+
     def __init__(self, window_size=(800, 600)):
         """
         Initialize 3D viewer
@@ -340,7 +344,10 @@ class World3DViewer:
         rotation_matrix = rotation_matrix.astype(np.float32)
 
         # Transform position: negate X and Y to correct mirror reflection, add camera height
-        position_gl = np.array([-position[0], -position[1] + 40, position[2]], dtype=np.float32)
+        position_gl = np.array(
+            [-position[0], -position[1] + self.CAMERA_HEIGHT_MM, position[2]],
+            dtype=np.float32,
+        )
 
         # Transform rotation using similarity transformation: R_gl = T @ R_cv @ T^T
         # where T mirrors over the YZ plane (flips X)

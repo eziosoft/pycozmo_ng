@@ -123,7 +123,7 @@ class VisionProcessor:
             target_markers,
             use_clahe=True,
             max_detections=3,  # Cozmo has 3 cubes
-            denoise_strength=0  # Enable noise reduction for poor quality camera
+            denoise_strength=0  # 0 disables noise reduction (denoise is off)
         )
 
         # self.cube_detector.set_debug(True)

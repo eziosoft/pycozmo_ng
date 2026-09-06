@@ -17,6 +17,7 @@ Controls:
 import argparse
 import os
 import subprocess
+import threading
 import time
 
 import cv2
@@ -46,7 +47,10 @@ def connect_to_cozmo_wifi():
     try:
         result = subprocess.run(
             ["nmcli", "-t", "-f", "NAME,DEVICE,STATE", "con", "show"],
-            capture_output=True, text=True, timeout=5, check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
         for line in result.stdout.strip().splitlines():
             parts = line.split(":")
@@ -61,7 +65,10 @@ def connect_to_cozmo_wifi():
     try:
         result = subprocess.run(
             ["sudo", "nmcli", "dev", "wifi", "connect", ssid, "password", password],
-            capture_output=True, text=True, timeout=30, check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
         )
         if result.returncode == 0:
             print(f"✅ Connected to {ssid}")
@@ -91,6 +98,12 @@ class VisionDisplay:
         self.fps = 0.0
         self.vision_processor = None
 
+        # `latest_detections` is mutated by the event-dispatcher thread
+        # (on_annotated_camera_image) and read by the main loop
+        # (update_cube_lights_on_detection, display_frames). Guard all
+        # access with this lock. (COZMO-3)
+        self._detections_lock = threading.Lock()
+
         # Detect headless (no display available)
         self.headless = not os.environ.get("DISPLAY")
         if self.headless:
@@ -106,6 +119,9 @@ class VisionDisplay:
         # Cube tracking variables
         self.cube_factory_id_map = {}
         self.currently_connected_cube_id = None
+        # Per-cube "last seen" frame index for disconnect-after-N-frames logic
+        # (COZMO-6).
+        self._cube_last_seen_frame: dict[int, int] = {}
 
     def on_raw_camera_image(self, cli, image):
         """Handler for raw camera images."""
@@ -125,7 +141,10 @@ class VisionDisplay:
     def on_annotated_camera_image(self, cli, annotated_image, detections):
         """Handler for annotated camera images."""
         self.latest_annotated_frame = annotated_image
-        self.latest_detections = detections
+        # Detections arrive on the event-dispatcher thread; the main loop reads
+        # them. Take the lock so readers see a consistent snapshot. (COZMO-3)
+        with self._detections_lock:
+            self.latest_detections = detections
         self.update_cube_lights_on_detection(cli)
         self.update_web_viewer()
 
@@ -247,14 +266,16 @@ class VisionDisplay:
         if self.show_fps:
             info_lines = [
                 f"FPS: {self.fps:.1f}",
-                f"Cubes: {len(self.latest_detections)}",
+                f"Cubes: {self._safe_detection_count()}",
                 f"Detection: {'ON' if self.detection_enabled else 'OFF'}",
             ]
             self.add_text_overlay(raw_labeled, info_lines, (10, height - 90))
 
-            if self.latest_detections:
-                det_lines = [f"Detected Cubes: {len(self.latest_detections)}"]
-                for i, det in enumerate(self.latest_detections[:3]):
+            with self._detections_lock:
+                detections_snapshot = list(self.latest_detections)
+            if detections_snapshot:
+                det_lines = [f"Detected Cubes: {len(detections_snapshot)}"]
+                for i, det in enumerate(detections_snapshot[:3]):
                     det_lines.append(f"  ID:{det.cube_id} Conf:{det.confidence:.2f}")
                 self.add_text_overlay(annotated_labeled, det_lines, (10, height - 90))
 
@@ -281,7 +302,14 @@ class VisionDisplay:
             self.latest_annotated_frame.save(annotated_filename)
             print(f"💾 Saved annotated frame: {annotated_filename}")
 
-        print(f"   Detections: {len(self.latest_detections)}")
+        with self._detections_lock:
+            n_det = len(self.latest_detections)
+        print(f"   Detections: {n_det}")
+
+    def _safe_detection_count(self) -> int:
+        """Read the detection count under the lock (COZMO-3)."""
+        with self._detections_lock:
+            return len(self.latest_detections)
 
     def setup_cube_mapping(self, cli):
         """Discover available cubes and create mapping from detected cube_id to factory_id."""
@@ -360,7 +388,9 @@ class VisionDisplay:
 
         self._last_light_update = current_time
 
-        detected_cube_ids = {det.cube_id for det in self.latest_detections}
+        # Snapshot detections under the lock so we don't race the dispatcher.
+        with self._detections_lock:
+            detected_cube_ids = {det.cube_id for det in self.latest_detections}
 
         if not hasattr(self, "_last_detected_ids"):
             self._last_detected_ids = set()
@@ -373,13 +403,19 @@ class VisionDisplay:
             if cube_id in self.cube_factory_id_map:
                 factory_id = self.cube_factory_id_map[cube_id]
 
+                # Mark the cube as "seen this round" so the disconnect loop
+                # below doesn't kick it out. (COZMO-6)
+                self._cube_last_seen_frame[cube_id] = self.frame_count
+
                 if self.currently_connected_cube_id != cube_id:
                     try:
                         pkt = pycozmo.protocol_encoder.ObjectConnect(
                             factory_id=factory_id, connect=True
                         )
                         cli.conn.send(pkt)
-                        time.sleep(0.1)
+                        # No sleep: the original 100 ms blocked the
+                        # event-dispatcher thread, dropping camera frames
+                        # and freezing the UI. (COZMO-2)
                         self.currently_connected_cube_id = cube_id
                     except Exception as e:
                         print(f"⚠️  Error connecting to cube {cube_id}: {e}")
@@ -406,10 +442,33 @@ class VisionDisplay:
                     except Exception as e:
                         print(f"⚠️  Error controlling cube {cube_id} lights: {e}")
 
-    def on_robot_state(self, cli):
-        """Handler for robot state updates."""
-        if not hasattr(self, "latest_robot_state"):
-            self.latest_robot_state = None
+        # --- Disconnect cubes that disappeared from view (COZMO-6) ---------
+        # If a cube hasn't been seen for `max_age_frames` frames, free the
+        # connection slot so the next detected cube can connect.
+        max_age_frames = 30  # ≈ 1 s at 30 fps
+        for cube_id, last_frame in list(self._cube_last_seen_frame.items()):
+            if cube_id in detected_cube_ids:
+                continue
+            if self.frame_count - last_frame < max_age_frames:
+                continue
+            if cube_id not in self.cube_factory_id_map:
+                self._cube_last_seen_frame.pop(cube_id, None)
+                continue
+            factory_id = self.cube_factory_id_map[cube_id]
+            try:
+                pkt = pycozmo.protocol_encoder.ObjectConnect(
+                    factory_id=factory_id, connect=False
+                )
+                cli.conn.send(pkt)
+                print(
+                    f"🔌 Disconnected cube {cube_id} (not seen for {max_age_frames}+ frames)"
+                )
+            except Exception as e:
+                print(f"⚠️  Error disconnecting cube {cube_id}: {e}")
+            finally:
+                self._cube_last_seen_frame.pop(cube_id, None)
+                if self.currently_connected_cube_id == cube_id:
+                    self.currently_connected_cube_id = None
 
     def run(self, cli):
         """Main display loop."""
@@ -425,7 +484,23 @@ class VisionDisplay:
 
             key = cv2.waitKey(1) & 0xFF
 
-            if key == ord("i") or key == ord("I"):
+            if key == ord("q") or key == ord("Q"):
+                # Quit cleanly (COZMO-1)
+                pkt = pycozmo.protocol_encoder.StopAllMotors()
+                cli.conn.send(pkt)
+                self.running = False
+                break
+            elif key == ord("s") or key == ord("S"):
+                self.save_frames()
+            elif key == ord("c") or key == ord("C"):
+                self.detection_enabled = not self.detection_enabled
+                print(
+                    f"🔍 Detection {'ENABLED' if self.detection_enabled else 'DISABLED'}"
+                )
+            elif key == ord("f") or key == ord("F"):
+                self.show_fps = not self.show_fps
+                print(f"📊 FPS overlay {'ON' if self.show_fps else 'OFF'}")
+            elif key == ord("i") or key == ord("I"):
                 pkt = pycozmo.protocol_encoder.DriveWheels(
                     lwheel_speed_mmps=50, rwheel_speed_mmps=50
                 )
@@ -544,7 +619,10 @@ def main():
             cli.conn.send(pkt)
             print("✅ Origin set to current position")
 
-            cli.add_handler(pycozmo.event.EvtRobotStateUpdated, display.on_robot_state)
+            # NOTE: Robot state is already maintained on the client
+            # (cli.head_angle, cli.battery_voltage, cli.pose, ...). No
+            # application-level handler is needed, so we don't subscribe to
+            # EvtRobotStateUpdated. (COZMO-5)
 
             print("\n✨ Starting display...\n")
             print("🌐 Open http://<this-machine-ip>:8766 in a browser\n")
