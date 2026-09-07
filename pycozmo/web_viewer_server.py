@@ -94,6 +94,8 @@ class WebViewerServer:
         self.host = host
         self.port = port
         self.cubes: dict[str, dict] = {}
+        self._robot_position: list[float] = [0.0, 0.0, 0.0]
+        self._robot_heading: float = 0.0
         self._clients: set = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._start_time = time.time()
@@ -153,6 +155,23 @@ class WebViewerServer:
     def clear_cubes(self):
         """Remove all cubes."""
         self.cubes.clear()
+
+    def set_robot_state(self, position, heading):
+        """Update the robot's world-frame pose for the web viewer.
+
+        ``position`` is the robot's position in world frame in mm
+        (Anki convention: X right, Y forward, Z up — same as ``cli.pose.position``).
+        ``heading`` is the rotation about world Z in radians
+        (``cli.pose.rotation.angle_z.radians``). The browser uses these to
+        frame the initial camera view along Cozmo's heading instead of
+        always facing the +Z default, so the user doesn't have to rotate
+        the view on every page load.
+        """
+        import numpy as _np
+
+        pos = _np.asarray(position, dtype=_np.float32).reshape(3)
+        self._robot_position = [float(pos[0]), float(pos[1]), float(pos[2])]
+        self._robot_heading = float(heading)
 
     def broadcast(self):
         """Notify the server that the world state changed.
@@ -215,8 +234,8 @@ class WebViewerServer:
         state = {
             "cubes": cube_list,
             "robot": {
-                "position": [0, 40, 0],
-                "head_angle": 0.0,
+                "position": list(self._robot_position),
+                "heading": self._robot_heading,
             },
             "timestamp": int((time.time() - self._start_time) * 1000),
         }

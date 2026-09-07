@@ -151,12 +151,20 @@
 
       return group;
     }
-    scene.add(createRobot());
+    const robot = createRobot();
+    robot.userData = { heading: 0, targetHeading: 0 };
+    scene.add(robot);
 
     // -----------------------------------------------------------------------
     // Cube management
     // -----------------------------------------------------------------------
     const cubeGroups = {};  // cube_id → THREE.Group
+
+    // Robot pose: cubes are camera-relative (anchored at scene
+    // (0, 40, 0)), so only the heading matters for the 3D view —
+    // world position is invisible here. (COZMO-31)
+    let hasRobotPose = false;
+    let didInitialFrame = false;  // one-shot: re-frame camera on first pose
 
     function createCube(id) {
       const group = new THREE.Group();
@@ -271,6 +279,18 @@
         if (!seen.has(id)) removeCube(id);
       }
       document.getElementById('cube-count').textContent = `${seen.size} cubes`;
+
+      // Robot pose. Cubes are camera-relative (anchored to the robot's
+      // camera origin at scene (0, 40, 0)), so we only need the heading
+      // — the world position is invisible in this viewer. (COZMO-31)
+      if (state.robot) {
+        robot.userData.targetHeading = state.robot.heading || 0;
+        if (!hasRobotPose) {
+          robot.userData.heading = robot.userData.targetHeading;
+          robot.rotation.y = robot.userData.heading;
+          hasRobotPose = true;
+        }
+      }
     }
 
     // -----------------------------------------------------------------------
@@ -291,6 +311,32 @@
     const _tmpPos = new THREE.Vector3();
     const _tmpQuat = new THREE.Quaternion();
 
+    // (COZMO-31) One-shot camera framing: place the camera behind the
+    // robot along its heading axis so the user sees the scene along
+    // Cozmo's actual viewing direction on page load. Subsequent user
+    // drags on OrbitControls override this — we don't fight them.
+    function frameAlongHeading() {
+      const h = robot.userData.heading || 0;
+      const sinH = Math.sin(h);
+      const cosH = Math.cos(h);
+      // Heading rotation around world Z (= scene +Y) takes scene +Z
+      // (the robot's drawn forward) to (sin h, 0, cos h).
+      const fwd = new THREE.Vector3(sinH, 0, cosH);
+      const back = fwd.clone().multiplyScalar(-1);
+
+      const target = robot.position.clone();
+      target.y += 30;  // eye line at body height
+
+      const dist = 300;
+      const height = 120;
+      camera.position.copy(robot.position).add(back.multiplyScalar(dist));
+      camera.position.y = target.y + height;
+      camera.lookAt(target);
+      controls.target.copy(target);
+      controls.update();
+      didInitialFrame = true;
+    }
+
     function animate() {
       requestAnimationFrame(animate);
 
@@ -301,6 +347,21 @@
         g.position.lerp(_tmpPos, lerp);
         _tmpQuat.copy(g.userData.targetQuat);
         g.quaternion.slerp(_tmpQuat, lerp);
+      }
+
+      // Lerp robot heading toward target (unwrap to avoid 359° → 1° flips).
+      if (hasRobotPose) {
+        const tgt = robot.userData.targetHeading;
+        let cur = robot.userData.heading;
+        let diff = tgt - cur;
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+        robot.userData.heading = cur + diff * 0.25;
+        robot.rotation.y = robot.userData.heading;
+      }
+
+      if (hasRobotPose && !didInitialFrame) {
+        frameAlongHeading();
       }
 
       controls.update();

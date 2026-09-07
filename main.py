@@ -109,6 +109,7 @@ class VisionDisplay:
         self.start_time = time.time()
         self.fps = 0.0
         self.vision_processor = None
+        self.cli = None  # set after pycozmo.connect() succeeds (used for robot pose)
 
         # Camera lifecycle (COZMO-22): the Cozmo camera is off by default
         # so we don't flood its lossy Wi-Fi AP. A listener on
@@ -160,17 +161,22 @@ class VisionDisplay:
             logger_cubes.warning(
                 "ObjectConnectionState for unknown factory_id 0x%08x "
                 "(connected=%s, object_id=%s)",
-                pkt.factory_id, pkt.connected, pkt.object_id,
+                pkt.factory_id,
+                pkt.connected,
+                pkt.object_id,
             )
             return
         if pkt.connected:
             logger_cubes.info(
-                "Cube %d connected: object_id=%s", cube_id, pkt.object_id,
+                "Cube %d connected: object_id=%s",
+                cube_id,
+                pkt.object_id,
             )
         else:
             logger_cubes.info(
                 "Cube %d disconnected (object_id=%s)",
-                cube_id, pkt.object_id,
+                cube_id,
+                pkt.object_id,
             )
 
     def _cube_id_for_factory(self, factory_id: int) -> Optional[int]:
@@ -250,9 +256,7 @@ class VisionDisplay:
                 if self._cube_light_stop.wait(timeout=CYCLE_PERIOD_S):
                     return
 
-        thread = threading.Thread(
-            target=_loop, name="CubeLightWorker", daemon=True
-        )
+        thread = threading.Thread(target=_loop, name="CubeLightWorker", daemon=True)
         thread.start()
         return thread
 
@@ -291,6 +295,19 @@ class VisionDisplay:
                 cube_state["rotation_matrix"],
                 cube_size=44,
             )
+
+        # Stream the robot's world pose so the browser can frame the
+        # initial camera view along Cozmo's actual heading instead of
+        # always facing the +Z default. (COZMO-31)
+        if self.cli is not None:
+            try:
+                pose = self.cli.pose
+                self.web_viewer.set_robot_state(
+                    pose.position.x_y_z,
+                    pose.rotation.angle_z.radians,
+                )
+            except Exception as e:  # noqa: BLE001 — pose may be transiently invalid
+                print(f"⚠️  web viewer: could not read robot pose: {e}")
 
         self._prev_cube_ids = current_cube_ids
         self.web_viewer.broadcast()
@@ -454,12 +471,11 @@ class VisionDisplay:
 
         def _on_clients_change(active_count: int) -> None:
             if active_count > 0 and not self._camera_active:
-                print(
-                    f"🎥 {active_count} viewer(s) connected — "
-                    "enabling Cozmo camera"
-                )
+                print(f"🎥 {active_count} viewer(s) connected — enabling Cozmo camera")
                 cli.enable_camera(
-                    enable=True, color=False, resolution=self._camera_resolution,
+                    enable=True,
+                    color=False,
+                    resolution=self._camera_resolution,
                 )
                 # Let Cozmo's auto-exposure pick the right gain and
                 # shutter speed for the scene, clamped to sane bounds so
@@ -480,10 +496,7 @@ class VisionDisplay:
                 # immediately. (COZMO-22)
                 self._last_frame_time = time.time()
             elif active_count == 0 and self._camera_active:
-                print(
-                    "🎥 No viewers — disabling Cozmo camera "
-                    "(keeps the Wi-Fi quiet)"
-                )
+                print("🎥 No viewers — disabling Cozmo camera (keeps the Wi-Fi quiet)")
                 cli.enable_camera(enable=False)
                 self._camera_active = False
                 self._camera_enabled_at = None
@@ -575,7 +588,8 @@ class VisionDisplay:
         # Bail out if the robot has dropped the Wi-Fi connection.
         if cli.conn.state != pycozmo.conn.Connection.CONNECTED:
             logger_cubes.debug(
-                "Skipping light tick: conn state=%s", cli.conn.state,
+                "Skipping light tick: conn state=%s",
+                cli.conn.state,
             )
             return
 
@@ -586,9 +600,7 @@ class VisionDisplay:
 
         # Snapshot detections under the lock (COZMO-3).
         with self._detections_lock:
-            detected_cube_ids = sorted(
-                {det.cube_id for det in self.latest_detections}
-            )
+            detected_cube_ids = sorted({det.cube_id for det in self.latest_detections})
 
         if not hasattr(self, "_last_detected_ids"):
             self._last_detected_ids = set()
@@ -601,7 +613,8 @@ class VisionDisplay:
             return
 
         logger_cubes.debug(
-            "Light tick: detected=%s", detected_cube_ids,
+            "Light tick: detected=%s",
+            detected_cube_ids,
         )
 
         # Cozmo's single connection slot always gets object_id=1.
@@ -627,9 +640,7 @@ class VisionDisplay:
                         factory_id=factory_id, connect=True
                     )
                 )
-                cli.conn.send(
-                    pycozmo.protocol_encoder.CubeId(object_id=OBJECT_ID)
-                )
+                cli.conn.send(pycozmo.protocol_encoder.CubeId(object_id=OBJECT_ID))
                 cli.conn.send(
                     pycozmo.protocol_encoder.CubeLights(
                         states=(
@@ -642,11 +653,14 @@ class VisionDisplay:
                 )
                 logger_cubes.debug(
                     "Cube %d: cycle sent (factory_id=0x%08x)",
-                    cube_id, factory_id,
+                    cube_id,
+                    factory_id,
                 )
             except Exception as e:
                 logger_cubes.warning(
-                    "Cube %d: cycle failed: %s", cube_id, e,
+                    "Cube %d: cycle failed: %s",
+                    cube_id,
+                    e,
                 )
 
             # Brief settle before moving on to the next cube, so the
@@ -681,13 +695,17 @@ class VisionDisplay:
             # Also given a 5-second grace period after enable, because
             # Cozmo firmware 2458 can take a long time to actually start
             # streaming after EnableCamera. (COZMO-22)
-            if self._camera_active and self._camera_enabled_at is not None \
-                    and time.time() - self._camera_enabled_at > 5.0:
+            if (
+                self._camera_active
+                and self._camera_enabled_at is not None
+                and time.time() - self._camera_enabled_at > 5.0
+            ):
                 stale_for = time.time() - self._last_frame_time
                 if stale_for > 5.0:
                     logger_cubes.warning(
                         "No camera frames for %.1fs — assuming Wi-Fi drop, "
-                        "exiting main loop", stale_for,
+                        "exiting main loop",
+                        stale_for,
                     )
                     self.running = False
                     break
@@ -884,6 +902,7 @@ def main():
             )
             print("   ℹ️  Using zero distortion coefficients for Cozmo reliability")
 
+            display.cli = cli
             cli.add_handler(
                 pycozmo.event.EvtNewRawCameraImage, display.on_raw_camera_image
             )
@@ -986,9 +1005,7 @@ def main():
                     pass
             else:
                 print("\n✨ Starting display...\n")
-                print(
-                    "🌐 Open http://<this-machine-ip>:8766 in a browser\n"
-                )
+                print("🌐 Open http://<this-machine-ip>:8766 in a browser\n")
 
                 display.run(cli)
                 display.stop_cube_light_worker()
