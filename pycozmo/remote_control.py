@@ -170,12 +170,12 @@ class RemoteControl:
             try:
                 self._cli.drive_wheels(lwheel_speed=lw, rwheel_speed=rw)
             except Exception as e:  # noqa: BLE001
-                logger.debug("drive_wheels failed: %s", e)
+                logger.warning("drive_wheels(%s, %s) failed: %s", lw, rw, e)
         else:
             try:
                 self._cli.drive_wheels(lwheel_speed=0, rwheel_speed=0)
             except Exception as e:  # noqa: BLE001
-                logger.debug("drive_wheels(0,0) failed: %s", e)
+                logger.warning("drive_wheels(0, 0) failed: %s", e)
 
         if head_up and not head_down:
             self._safe_head(self._head_speed)
@@ -195,10 +195,10 @@ class RemoteControl:
         try:
             self._cli.move_head(speed)
         except Exception as e:  # noqa: BLE001
-            logger.debug("move_head(%s) failed: %s", speed, e)
+            logger.warning("move_head(%s) failed: %s", speed, e)
 
     def _safe_lift(self, speed: float) -> None:
         try:
             self._cli.move_lift(speed)
         except Exception as e:  # noqa: BLE001
-            logger.debug("move_lift(%s) failed: %s", speed, e)
+            logger.warning("move_lift(%s) failed: %s", speed, e)
