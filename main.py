@@ -728,6 +728,16 @@ def main():
             "--log-level is WARNING but you still want cube trace."
         ),
     )
+    parser.add_argument(
+        "--no-cube-lights",
+        action="store_true",
+        help=(
+            "Disable the cube-light worker entirely (no ObjectConnect / "
+            "CubeLights cycling). Use this for debugging Wi-Fi stability — "
+            "if Cozmo stays connected with --no-cube-lights, the worker "
+            "is the cause of the disconnects."
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -807,7 +817,13 @@ def main():
                 pycozmo.protocol_encoder.ObjectConnectionState,
                 display.on_object_connection_state,
             )
-            display.start_cube_light_worker(cli)
+            if not args.no_cube_lights:
+                display.start_cube_light_worker(cli)
+            else:
+                print(
+                    "ℹ️  Cube-light worker disabled (--no-cube-lights)."
+                    "\n   No cubes will be lit; detection still runs."
+                )
 
             print("🎥 Enabling camera...")
             cli.enable_camera(enable=True, color=False)
