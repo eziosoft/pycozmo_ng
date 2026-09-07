@@ -762,6 +762,18 @@ def main():
             "detected at 160x120."
         ),
     )
+    parser.add_argument(
+        "--camera-fps",
+        type=float,
+        default=0.0,
+        help=(
+            "If >0, use SingleShot mode and request frames at this rate "
+            "(frames per second). 0 (default) means use the native 30 fps "
+            "Stream. Use this when --camera-resolution is not enough to "
+            "prevent Wi-Fi drops — e.g. --camera-fps 5 keeps the link "
+            "alive by reducing frame traffic ~6x. (COZMO-20)"
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -854,10 +866,19 @@ def main():
                 resolution = getattr(
                     pycozmo.protocol_encoder.ImageResolution, args.camera_resolution
                 )
+                single_shot = args.camera_fps > 0
                 cli.enable_camera(
-                    enable=True, color=False, resolution=resolution,
+                    enable=True, color=False,
+                    resolution=resolution,
+                    single_shot=single_shot,
+                    fps=args.camera_fps,
                 )
                 cli.set_camera_params(exposure_ms=100)
+                if single_shot:
+                    print(
+                        f"   SingleShot mode, target {args.camera_fps} fps"
+                        f" (1 frame every {1.0/args.camera_fps:.3f}s)"
+                    )
 
                 time.sleep(2.0)
 

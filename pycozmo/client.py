@@ -4,7 +4,7 @@ Cozmo protocol client and high-level API.
 
 """
 
-from threading import Event
+from threading import Event, Thread, Timer
 from typing import Optional, Tuple
 import json
 import time
@@ -206,6 +206,9 @@ class Client(event.Dispatcher):
         self._partial_image_encoding = None
         self._partial_image_resolution = None
         self._last_chunk_id = -1
+        self._single_shot_mode = False
+        self._single_shot_min_interval = None
+        self._last_single_shot_at = 0.0
 
     def _on_image_chunk(self, cli, pkt: protocol_encoder.ImageChunk):
         del cli
@@ -273,6 +276,12 @@ class Client(event.Dispatcher):
 
         self._latest_image = image
         self.last_image_timestamp = self._partial_image_timestamp
+
+        # SingleShot mode: after each image we re-arm the camera so Cozmo
+        # sends us the next one. Without this Cozmo only sends a single
+        # image then stops. (COZMO-20)
+        if self._single_shot_mode:
+            self._send_single_shot_request()
         self.dispatch(event.EvtNewRawCameraImage, self, image)
 
     def _on_robot_state(self, cli, pkt: protocol_encoder.RobotState):
@@ -446,7 +455,9 @@ class Client(event.Dispatcher):
         self.conn.send(pkt)
 
     def enable_camera(self, enable: bool = True, color: bool = False,
-                      resolution: "protocol_encoder.ImageResolution" = None) -> None:
+                      resolution: "protocol_encoder.ImageResolution" = None,
+                      single_shot: bool = False,
+                      fps: float = 0.0) -> None:
         """ Enable or disable camera image streaming in color or grayscale.
 
         Args:
@@ -458,8 +469,31 @@ class Client(event.Dispatcher):
                 matters because the Cozmo AP is lossy (97-99% delivery in
                 practice) and a saturated stream drops the connection
                 within ~1 minute. (COZMO-20)
+            single_shot: If True, use ImageSendMode.SingleShot. Cozmo sends
+                exactly one frame, then stops; we re-arm after each frame
+                to control the rate precisely. If False (default), use
+                ImageSendMode.Stream — Cozmo streams at its native rate
+                (~30 fps), which is what we want for low-latency video but
+                what causes Wi-Fi saturation on the Cozmo AP. (COZMO-20)
+            fps: If >0 and ``single_shot=True``, cap the inbound frame
+                rate at this value. The re-arm is scheduled via a
+                ``threading.Timer`` so the call returns immediately. 0
+                (default) means no cap (effectively the round-trip
+                latency of the re-arm protocol, ~30 fps). (COZMO-20)
         """
-        image_send_mode = protocol_encoder.ImageSendMode.Stream if enable else protocol_encoder.ImageSendMode.Off
+        if enable and single_shot:
+            image_send_mode = protocol_encoder.ImageSendMode.SingleShot
+            self._single_shot_mode = True
+            self._single_shot_min_interval = (1.0 / fps) if fps > 0 else None
+            self._last_single_shot_at = 0.0
+        elif enable:
+            image_send_mode = protocol_encoder.ImageSendMode.Stream
+            self._single_shot_mode = False
+            self._single_shot_min_interval = None
+        else:
+            image_send_mode = protocol_encoder.ImageSendMode.Off
+            self._single_shot_mode = False
+            self._single_shot_min_interval = None
         image_resolution = resolution if resolution is not None else protocol_encoder.ImageResolution.QVGA
         pkt = protocol_encoder.EnableCamera(
             image_send_mode=image_send_mode,
@@ -467,6 +501,43 @@ class Client(event.Dispatcher):
         )
         self.conn.send(pkt)
         pkt = protocol_encoder.EnableColorImages(enable=color)
+        self.conn.send(pkt)
+
+    def _send_single_shot_request(self) -> None:
+        """Re-arm the camera in SingleShot mode so Cozmo sends the next frame.
+
+        Called automatically by ``_process_completed_image`` when running
+        in SingleShot mode. Public for advanced use (e.g. hand-rolled frame
+        throttling) but the normal path doesn't need to call it. (COZMO-20)
+
+        Honors an optional fps target set via
+        ``self._single_shot_min_interval`` (set by enable_camera's
+        ``single_shot`` plus a follow-up ``set_camera_fps``). When set,
+        schedules the re-arm via a one-shot timer instead of sending it
+        immediately, so the inbound stream is capped at the requested
+        rate. Without this the rate would be ~30 fps regardless of the
+        request, because the per-frame round-trip is fast.
+        """
+        if self._single_shot_min_interval is not None:
+            now = time.perf_counter()
+            elapsed = now - self._last_single_shot_at
+            if elapsed < self._single_shot_min_interval:
+                # Schedule the re-arm on a timer so we don't request the
+                # next frame too soon.
+                threading.Timer(
+                    self._single_shot_min_interval - elapsed,
+                    self._send_single_shot_request_now,
+                ).start()
+                return
+            self._last_single_shot_at = now
+        self._send_single_shot_request_now()
+
+    def _send_single_shot_request_now(self) -> None:
+        """Actually send the EnableCamera(SingleShot) request."""
+        pkt = protocol_encoder.EnableCamera(
+            image_send_mode=protocol_encoder.ImageSendMode.SingleShot,
+            image_resolution=self._partial_image_resolution,
+        )
         self.conn.send(pkt)
 
     def set_camera_params(self, gain: float = 0.0, exposure_ms: int = 0, auto_exposure_enabled: bool = False) -> None:
