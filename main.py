@@ -223,20 +223,18 @@ class VisionDisplay:
         self._cube_light_stop = threading.Event()
 
         def _loop():
-            # Each cube takes up to ~0.5 s for its connect ack to land, so
-            # one full cycle through N cubes can take ~0.5 × N seconds.
-            # With 3 cubes that's 1.5 s — comfortably faster than the
-            # ~5–10 s Cozmo takes to time out a connection and drop its
-            # lights on its own.
-            tick_period = 0.0
+            # Run one cycle, then pause for CYCLE_PERIOD_S before the next.
+            # The detection pipeline updates every ~33 ms but lighting
+            # cubes more often than ~every 1 s only burns bandwidth and
+            # fills Cozmo's 62-packet send window — observed in the field
+            # as a 6.61 % delivery rate after 40 s of activity.
+            CYCLE_PERIOD_S = 2.0
             while not self._cube_light_stop.is_set():
                 try:
                     self._cube_light_tick(cli)
                 except Exception as e:
                     print(f"⚠️  Cube light tick failed: {e}")
-                if tick_period > 0 and self._cube_light_stop.wait(
-                    timeout=tick_period
-                ):
+                if self._cube_light_stop.wait(timeout=CYCLE_PERIOD_S):
                     return
 
         thread = threading.Thread(
@@ -493,6 +491,13 @@ class VisionDisplay:
         they do, for a few seconds at least, so cycling through N cubes
         every cycle keeps them all illuminated. (COZMO-20)
         """
+        # Bail out if the robot has dropped the Wi-Fi connection.
+        if cli.conn.state != pycozmo.conn.Connection.CONNECTED:
+            logger_cubes.debug(
+                "Skipping light tick: conn state=%s", cli.conn.state,
+            )
+            return
+
         if not self.detection_enabled:
             return
         if not self.cube_factory_id_map:
@@ -573,7 +578,20 @@ class VisionDisplay:
         if not self.headless:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
+        # Cache the integer value of Connection.CONNECTED once.
+        _CONNECTED = pycozmo.conn.Connection.CONNECTED
+
         while self.running:
+            # Detect Cozmo disconnect (Wi-Fi loss, robot reboot, etc.)
+            # and break out cleanly so the worker thread stops too.
+            if cli.conn.state != _CONNECTED:
+                logger_cubes.warning(
+                    "Connection state is %s — exiting main loop",
+                    cli.conn.state,
+                )
+                self.running = False
+                break
+
             self.display_frames()
 
             if self.headless:
