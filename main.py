@@ -29,6 +29,8 @@ import subprocess
 import threading
 import time
 
+from typing import Optional
+
 import cv2
 import numpy as np
 
@@ -127,10 +129,43 @@ class VisionDisplay:
 
         # Cube tracking variables
         self.cube_factory_id_map = {}
-        self.currently_connected_cube_id = None
-        # Per-cube "last seen" frame index for disconnect-after-N-frames logic
-        # (COZMO-6).
-        self._cube_last_seen_frame: dict[int, int] = {}
+        # Map: detected cube_id (1..3) -> object_id reported by the robot in
+        # ObjectConnectionState. Populated from on_object_connection_state()
+        # on the event-dispatcher thread, read by the cube-light worker
+        # thread. Guarded by ``_object_id_lock``. (COZMO-20)
+        self._factory_id_to_object_id = {}
+        self._object_id_lock = threading.Lock()
+        # Per-cube "last seen" frame index, for diagnostics only. The cube-
+        # light worker no longer uses it to drive disconnects — Cozmo drops
+        # out-of-range cubes on its own, and our old proactive disconnect
+        # caused spurious drops when paired with multi-cube connects. (COZMO-20)
+        self._cube_last_seen_frame = {}
+
+    def on_object_connection_state(self, cli, pkt):
+        """Track per-cube object_ids so CubeLights can target them later.
+
+        Cozmo's firmware only allows ONE cube connected at a time, so
+        ``cli.connected_objects`` never holds more than one entry. To light
+        multiple cubes we must cycle ``ObjectConnect``/``CubeId``/``CubeLights``
+        for each cube in turn. Remembering the ``object_id`` per cube lets us
+        send ``CubeId`` confidently on the next connect cycle even if the
+        robot has already auto-disconnected the cube. (COZMO-20)
+        """
+        cube_id = self._cube_id_for_factory(pkt.factory_id)
+        if cube_id is None:
+            return
+        with self._object_id_lock:
+            if pkt.connected:
+                self._factory_id_to_object_id[cube_id] = pkt.object_id
+            else:
+                self._factory_id_to_object_id.pop(cube_id, None)
+
+    def _cube_id_for_factory(self, factory_id: int) -> Optional[int]:
+        """Reverse lookup: factory_id -> detected cube_id (1..3)."""
+        for cube_id, fid in self.cube_factory_id_map.items():
+            if fid == factory_id:
+                return cube_id
+        return None
 
     def on_raw_camera_image(self, cli, image):
         """Handler for raw camera images."""
@@ -154,8 +189,55 @@ class VisionDisplay:
         # them. Take the lock so readers see a consistent snapshot. (COZMO-3)
         with self._detections_lock:
             self.latest_detections = detections
-        self.update_cube_lights_on_detection(cli)
+        # Cube-light cycling now runs on its own worker thread; the
+        # dispatcher just stamps the latest frame seen per cube for the
+        # HUD. (COZMO-20)
+        self._stamp_detections_seen()
         self.update_web_viewer()
+
+    def _stamp_detections_seen(self):
+        """Record the current frame index for every detected cube.
+
+        Diagnostic only — the cube-light worker reads from
+        ``latest_detections`` directly under the lock, so this is just a
+        convenience for the HUD/debug prints. (COZMO-20)
+        """
+        with self._detections_lock:
+            detected_cube_ids = {det.cube_id for det in self.latest_detections}
+        for cube_id in detected_cube_ids:
+            self._cube_last_seen_frame[cube_id] = self.frame_count
+
+    def start_cube_light_worker(self, cli):
+        """Spawn a background thread that cycles cube lights every second.
+
+        Runs on its own thread so the small sleeps inside the cycle
+        don't block the pycozmo event dispatcher (which would drop camera
+        frames — see COZMO-2). The worker exits when ``self.running`` goes
+        False. (COZMO-20)
+        """
+        self._cube_light_stop = threading.Event()
+
+        def _loop():
+            tick_period = 1.0
+            while not self._cube_light_stop.is_set():
+                try:
+                    self._cube_light_tick(cli)
+                except Exception as e:
+                    print(f"⚠️  Cube light tick failed: {e}")
+                # Interruptible sleep: bail out immediately on shutdown.
+                if self._cube_light_stop.wait(timeout=tick_period):
+                    return
+
+        thread = threading.Thread(
+            target=_loop, name="CubeLightWorker", daemon=True
+        )
+        thread.start()
+        return thread
+
+    def stop_cube_light_worker(self):
+        """Signal the cube-light worker to exit."""
+        if hasattr(self, "_cube_light_stop"):
+            self._cube_light_stop.set()
 
     def on_debug_images(self, cli, debug_images, detections):
         """Handler for debug images from cube detection pipeline."""
@@ -376,108 +458,101 @@ class VisionDisplay:
 
         print(f"\n✅ Discovered {len(self.cube_factory_id_map)} cube(s)")
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
-        print("⚠️  Note: Cozmo can only connect to ONE cube at a time")
-        print("   Cubes will be connected on-demand when detected")
+        print(
+            "ℹ️  Cozmo connects one cube at a time; the light worker cycles"
+            "\n   them so all detected cubes light up."
+        )
         print("=" * 70 + "\n")
 
-    def update_cube_lights_on_detection(self, cli):
-        """Update cube lights based on current detections."""
+    def _cube_light_tick(self, cli):
+        """Run one cube-light update cycle.
+
+        Cozmo only allows one cube connected at a time, so to light N cubes
+        we cycle ``ObjectConnect`` -> ``CubeId`` -> ``CubeLights`` for each
+        one. This runs on a background thread so the small sleeps between
+        cycles don't block the pycozmo event dispatcher (COZMO-2). The
+        detection pipeline (``on_annotated_camera_image``) only enqueues a
+        request; the worker does the actual work. (COZMO-20)
+        """
         if not self.detection_enabled:
             return
-
         if not self.cube_factory_id_map:
             return
 
-        current_time = time.time()
-        if not hasattr(self, "_last_light_update"):
-            self._last_light_update = 0
-
-        if current_time - self._last_light_update < 1.0:
-            return
-
-        self._last_light_update = current_time
-
-        # Snapshot detections under the lock so we don't race the dispatcher.
+        # Snapshot detections under the lock (COZMO-3).
         with self._detections_lock:
-            detected_cube_ids = {det.cube_id for det in self.latest_detections}
+            detected_cube_ids = sorted(
+                {det.cube_id for det in self.latest_detections}
+            )
 
         if not hasattr(self, "_last_detected_ids"):
             self._last_detected_ids = set()
 
-        if detected_cube_ids != self._last_detected_ids:
-            print(f"🔍 Detected cube IDs: {sorted(detected_cube_ids)}")
-            self._last_detected_ids = detected_cube_ids
+        if set(detected_cube_ids) != self._last_detected_ids:
+            print(f"🔍 Detected cube IDs: {detected_cube_ids}")
+            self._last_detected_ids = set(detected_cube_ids)
+
+        if not detected_cube_ids:
+            return
+
+        # Snapshot object_ids under the lock so the worker doesn't race
+        # the ObjectConnectionState handler.
+        with self._object_id_lock:
+            object_id_map = dict(self._factory_id_to_object_id)
+
+        # Brief settle between cycles so the robot has time to register each
+        # ObjectConnect and ack it before we move on to the next cube.
+        # 60 ms × N cubes ≈ 0.18 s for 3 cubes — well under the 1 s tick.
+        settle_s = 0.06
 
         for cube_id in detected_cube_ids:
-            if cube_id in self.cube_factory_id_map:
-                factory_id = self.cube_factory_id_map[cube_id]
-
-                # Mark the cube as "seen this round" so the disconnect loop
-                # below doesn't kick it out. (COZMO-6)
-                self._cube_last_seen_frame[cube_id] = self.frame_count
-
-                if self.currently_connected_cube_id != cube_id:
-                    try:
-                        pkt = pycozmo.protocol_encoder.ObjectConnect(
-                            factory_id=factory_id, connect=True
-                        )
-                        cli.conn.send(pkt)
-                        # No sleep: the original 100 ms blocked the
-                        # event-dispatcher thread, dropping camera frames
-                        # and freezing the UI. (COZMO-2)
-                        self.currently_connected_cube_id = cube_id
-                    except Exception as e:
-                        print(f"⚠️  Error connecting to cube {cube_id}: {e}")
-                        continue
-
-                connected_objects = dict(cli.connected_objects)
-                if connected_objects:
-                    object_id = next(iter(connected_objects.keys()))
-
-                    try:
-                        pkt = pycozmo.protocol_encoder.CubeId(object_id=object_id)
-                        cli.conn.send(pkt)
-
-                        pkt = pycozmo.protocol_encoder.CubeLights(
-                            states=(
-                                pycozmo.lights.blue_light,
-                                pycozmo.lights.blue_light,
-                                pycozmo.lights.blue_light,
-                                pycozmo.lights.blue_light,
-                            )
-                        )
-                        cli.conn.send(pkt)
-
-                    except Exception as e:
-                        print(f"⚠️  Error controlling cube {cube_id} lights: {e}")
-
-        # --- Disconnect cubes that disappeared from view (COZMO-6) ---------
-        # If a cube hasn't been seen for `max_age_frames` frames, free the
-        # connection slot so the next detected cube can connect.
-        max_age_frames = 30  # ≈ 1 s at 30 fps
-        for cube_id, last_frame in list(self._cube_last_seen_frame.items()):
-            if cube_id in detected_cube_ids:
-                continue
-            if self.frame_count - last_frame < max_age_frames:
-                continue
             if cube_id not in self.cube_factory_id_map:
-                self._cube_last_seen_frame.pop(cube_id, None)
                 continue
             factory_id = self.cube_factory_id_map[cube_id]
+            object_id = object_id_map.get(cube_id)
+
             try:
-                pkt = pycozmo.protocol_encoder.ObjectConnect(
-                    factory_id=factory_id, connect=False
-                )
-                cli.conn.send(pkt)
-                print(
-                    f"🔌 Disconnected cube {cube_id} (not seen for {max_age_frames}+ frames)"
+                cli.conn.send(
+                    pycozmo.protocol_encoder.ObjectConnect(
+                        factory_id=factory_id, connect=True
+                    )
                 )
             except Exception as e:
-                print(f"⚠️  Error disconnecting cube {cube_id}: {e}")
-            finally:
-                self._cube_last_seen_frame.pop(cube_id, None)
-                if self.currently_connected_cube_id == cube_id:
-                    self.currently_connected_cube_id = None
+                print(f"⚠️  Error connecting to cube {cube_id}: {e}")
+                continue
+
+            # Wait for the connect to land before issuing CubeId. Without
+            # this delay we'd race the ObjectConnectionState ack and send
+            # CubeId with the previous cube's object_id, lighting nothing.
+            time.sleep(settle_s)
+
+            # Re-read the object_id after the settle — the connection
+            # ack may have just arrived.
+            if object_id is None:
+                with self._object_id_lock:
+                    object_id = self._factory_id_to_object_id.get(cube_id)
+
+            if object_id is None:
+                # Still no ack — skip lights this tick; next tick will try
+                # again with the freshly learned object_id.
+                continue
+
+            try:
+                cli.conn.send(
+                    pycozmo.protocol_encoder.CubeId(object_id=object_id)
+                )
+                cli.conn.send(
+                    pycozmo.protocol_encoder.CubeLights(
+                        states=(
+                            pycozmo.lights.blue_light,
+                            pycozmo.lights.blue_light,
+                            pycozmo.lights.blue_light,
+                            pycozmo.lights.blue_light,
+                        )
+                    )
+                )
+            except Exception as e:
+                print(f"⚠️  Error controlling cube {cube_id} lights: {e}")
 
     def run(self, cli):
         """Main display loop."""
@@ -648,6 +723,12 @@ def main():
                 pycozmo.event.EvtCubeDetectorDebugImages, display.on_debug_images
             )
 
+            cli.add_handler(
+                pycozmo.protocol_encoder.ObjectConnectionState,
+                display.on_object_connection_state,
+            )
+            display.start_cube_light_worker(cli)
+
             print("🎥 Enabling camera...")
             cli.enable_camera(enable=True, color=False)
             cli.set_camera_params(exposure_ms=100)
@@ -670,6 +751,7 @@ def main():
             print("🌐 Open http://<this-machine-ip>:8766 in a browser\n")
 
             display.run(cli)
+            display.stop_cube_light_worker()
 
             print("\n✅ Display closed")
 
