@@ -231,11 +231,12 @@ class VisionDisplay:
 
         def _loop():
             # Run one cycle, then pause for CYCLE_PERIOD_S before the next.
-            # Lights persist for ~1.5 s after the robot auto-disconnects
-            # the cube, so each cube must be re-lit within that window.
-            # Three cubes × 200 ms settle + ~400 ms buffer ≈ 0.8 s cycle
-            # period keeps every cube illuminated at all times.
-            CYCLE_PERIOD_S = 0.8
+            # Empirically the 0.8 s cycle triggered a Wi-Fi drop on the
+            # Pi after a few seconds — Cozmo's connection stack seems to
+            # give up if we hammer ObjectConnect too often. The 2 s cycle
+            # sustained 100 % packet delivery in earlier runs, so use that
+            # and trust the LEDs to persist across the gap. (COZMO-20)
+            CYCLE_PERIOD_S = 2.0
             while not self._cube_light_stop.is_set():
                 try:
                     self._cube_light_tick(cli)
