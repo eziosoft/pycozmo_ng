@@ -148,22 +148,24 @@ class RemoteControl:
                 stale = (now - last_update) > self._idle_stop_sec
                 active_keys = set() if stale else keys
 
+                # Drive wheels: re-send every tick while held. Cozmo's
+                # firmware treats ``drive_wheels`` as a one-shot command
+                # that times out after a few hundred ms; if we don't keep
+                # poking it, the robot coasts to a stop after a short
+                # step even while the user is still holding the key.
+                # Head and lift use ``move_*`` (continuous velocity) and
+                # only need to be sent on key-set changes.
+                self._apply_drive(active_keys)
                 if active_keys != self._last_applied:
-                    self._apply(active_keys)
+                    self._apply_head_lift(active_keys)
                     self._last_applied = active_keys
             except Exception as e:  # noqa: BLE001 — don't kill the loop
                 logger.exception("RemoteControl tick failed: %s", e)
             self._stop_event.wait(period)
 
-    def _apply(self, keys: set[str]) -> None:
-        """Translate a key set into one batch of Cozmo commands."""
+    def _apply_drive(self, keys: set[str]) -> None:
         forward = ("w" in keys) - ("s" in keys)
         rotate = ("a" in keys) - ("d" in keys)
-        head_up = "r" in keys
-        head_down = "f" in keys
-        lift_up = "t" in keys
-        lift_down = "g" in keys
-
         if forward or rotate:
             lw = forward * self._wheel_speed + rotate * self._wheel_speed
             rw = forward * self._wheel_speed - rotate * self._wheel_speed
@@ -176,6 +178,12 @@ class RemoteControl:
                 self._cli.drive_wheels(lwheel_speed=0, rwheel_speed=0)
             except Exception as e:  # noqa: BLE001
                 logger.warning("drive_wheels(0, 0) failed: %s", e)
+
+    def _apply_head_lift(self, keys: set[str]) -> None:
+        head_up = "r" in keys
+        head_down = "f" in keys
+        lift_up = "t" in keys
+        lift_down = "g" in keys
 
         if head_up and not head_down:
             self._safe_head(self._head_speed)
