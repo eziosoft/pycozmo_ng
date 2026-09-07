@@ -14,6 +14,7 @@ __all__ = [
     "logger_reaction",
     "logger_behavior",
     "logger_animation",
+    "logger_cubes",
 ]
 
 
@@ -29,5 +30,7 @@ logger_reaction = logging.getLogger("pycozmo.reaction")
 logger_behavior = logging.getLogger("pycozmo.behavior")
 # Animation logger.
 logger_animation = logging.getLogger("pycozmo.animation")
+# Cube logger - cube-light worker diagnostics (connections, object_id cache).
+logger_cubes = logging.getLogger("pycozmo.cubes")
 
 # TODO: See cozmo_resources/config/engine/console_filter_config.json

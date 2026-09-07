@@ -24,6 +24,7 @@ Detection throttle (only every Nth frame goes through cube detection):
 """
 
 import argparse
+import logging
 import os
 import subprocess
 import threading
@@ -42,6 +43,7 @@ except ImportError:
     pass
 
 import pycozmo
+from pycozmo.logger import logger_cubes
 from pycozmo import vision
 from pycozmo.camera_calibration import CameraCalibrationRetriever
 from pycozmo.web_viewer_server import WebViewerServer
@@ -149,16 +151,39 @@ class VisionDisplay:
         multiple cubes we must cycle ``ObjectConnect``/``CubeId``/``CubeLights``
         for each cube in turn. Remembering the ``object_id`` per cube lets us
         send ``CubeId`` confidently on the next connect cycle even if the
-        robot has already auto-disconnected the cube. (COZMO-20)
+        robot has already auto-disconnected the cube.
+
+        Important: ``object_id`` is stable per physical cube (factory_id) for
+        the lifetime of the Cozmo session. We therefore **keep the cached
+        object_id** even when the robot sends ``connected=False`` — the
+        disconnect is just informational (we explicitly cycled to another
+        cube) and the same object_id will be re-issued on reconnect. (COZMO-20)
         """
         cube_id = self._cube_id_for_factory(pkt.factory_id)
         if cube_id is None:
+            # Unknown factory_id — robot reports a cube we haven't mapped.
+            # This can happen if a new cube is discovered mid-session.
+            logger_cubes.warning(
+                "ObjectConnectionState for unknown factory_id 0x%08x "
+                "(connected=%s, object_id=%s)",
+                pkt.factory_id, pkt.connected, pkt.object_id,
+            )
             return
         with self._object_id_lock:
             if pkt.connected:
+                prev = self._factory_id_to_object_id.get(cube_id)
                 self._factory_id_to_object_id[cube_id] = pkt.object_id
+                if prev != pkt.object_id:
+                    logger_cubes.info(
+                        "Cube %d connected: object_id=%s (was %s)",
+                        cube_id, pkt.object_id, prev,
+                    )
             else:
-                self._factory_id_to_object_id.pop(cube_id, None)
+                # Don't drop the cached object_id — see docstring above.
+                logger_cubes.info(
+                    "Cube %d disconnected (object_id=%s kept in cache)",
+                    cube_id, pkt.object_id,
+                )
 
     def _cube_id_for_factory(self, factory_id: int) -> Optional[int]:
         """Reverse lookup: factory_id -> detected cube_id (1..3)."""
@@ -218,12 +243,28 @@ class VisionDisplay:
         self._cube_light_stop = threading.Event()
 
         def _loop():
-            tick_period = 1.0
+            # Cycle fast enough that, even if Cozmo turns a cube's LEDs off
+            # the moment it disconnects, every cube gets re-lit before a
+            # human eye notices the gap. With 3 cubes detected and
+            # ~200 ms ObjectConnect settle per cube, one full cycle is
+            # ~0.6 s — fast enough to look continuous.
+            tick_period = 0.6
+            tick_count = 0
             while not self._cube_light_stop.is_set():
                 try:
                     self._cube_light_tick(cli)
                 except Exception as e:
                     print(f"⚠️  Cube light tick failed: {e}")
+                tick_count += 1
+                # Every 5 ticks (≈3 s) log a one-line status summary so
+                # the operator can see which cubes have a cached object_id
+                # vs which are still waiting for the first ack.
+                if tick_count % 5 == 0:
+                    with self._object_id_lock:
+                        known = dict(self._factory_id_to_object_id)
+                    logger_cubes.info(
+                        "cube map: known_object_ids=%s", known,
+                    )
                 # Interruptible sleep: bail out immediately on shutdown.
                 if self._cube_light_stop.wait(timeout=tick_period):
                     return
@@ -458,6 +499,7 @@ class VisionDisplay:
 
         print(f"\n✅ Discovered {len(self.cube_factory_id_map)} cube(s)")
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
+        logger_cubes.info("Cube factory_id map: %s", self.cube_factory_id_map)
         print(
             "ℹ️  Cozmo connects one cube at a time; the light worker cycles"
             "\n   them so all detected cubes light up."
@@ -500,10 +542,16 @@ class VisionDisplay:
         with self._object_id_lock:
             object_id_map = dict(self._factory_id_to_object_id)
 
-        # Brief settle between cycles so the robot has time to register each
-        # ObjectConnect and ack it before we move on to the next cube.
-        # 60 ms × N cubes ≈ 0.18 s for 3 cubes — well under the 1 s tick.
-        settle_s = 0.06
+        logger_cubes.debug(
+            "Light tick: detected=%s known_object_ids=%s",
+            detected_cube_ids, object_id_map,
+        )
+
+        # For each detected cube: connect, wait for ack, light it.
+        # Between cubes we wait long enough for the connect ack to land
+        # so CubeId always targets the right cube.
+        connect_timeout_s = 0.1
+        poll_interval_s = 0.02
 
         for cube_id in detected_cube_ids:
             if cube_id not in self.cube_factory_id_map:
@@ -518,23 +566,30 @@ class VisionDisplay:
                     )
                 )
             except Exception as e:
-                print(f"⚠️  Error connecting to cube {cube_id}: {e}")
+                logger_cubes.warning(
+                    "Cube %d: ObjectConnect send failed: %s", cube_id, e,
+                )
                 continue
 
-            # Wait for the connect to land before issuing CubeId. Without
-            # this delay we'd race the ObjectConnectionState ack and send
-            # CubeId with the previous cube's object_id, lighting nothing.
-            time.sleep(settle_s)
-
-            # Re-read the object_id after the settle — the connection
-            # ack may have just arrived.
+            # If we already have a cached object_id from a previous tick,
+            # trust it. Otherwise poll for the ack by watching the
+            # ObjectConnectionState handler (which writes to our map under
+            # _object_id_lock) until it records this factory_id, or the
+            # timeout elapses.
             if object_id is None:
-                with self._object_id_lock:
-                    object_id = self._factory_id_to_object_id.get(cube_id)
+                deadline = time.time() + connect_timeout_s
+                while time.time() < deadline:
+                    time.sleep(poll_interval_s)
+                    with self._object_id_lock:
+                        object_id = self._factory_id_to_object_id.get(cube_id)
+                    if object_id is not None:
+                        break
 
             if object_id is None:
-                # Still no ack — skip lights this tick; next tick will try
-                # again with the freshly learned object_id.
+                logger_cubes.warning(
+                    "Cube %d: no object_id after %.2fs — skipping lights",
+                    cube_id, connect_timeout_s,
+                )
                 continue
 
             try:
@@ -551,8 +606,14 @@ class VisionDisplay:
                         )
                     )
                 )
+                logger_cubes.debug(
+                    "Cube %d: sent CubeId(object_id=%s) + CubeLights",
+                    cube_id, object_id,
+                )
             except Exception as e:
-                print(f"⚠️  Error controlling cube {cube_id} lights: {e}")
+                logger_cubes.warning(
+                    "Cube %d: CubeId/CubeLights failed: %s", cube_id, e,
+                )
 
     def run(self, cli):
         """Main display loop."""
@@ -655,7 +716,34 @@ def main():
             "Raw camera preview is unaffected."
         ),
     )
+    parser.add_argument(
+        "--log-level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        default="WARNING",
+        help=(
+            "Log level for the pycozmo.* loggers. INFO enables the cube-light "
+            "worker diagnostics (cube connect/disconnect, per-tick action), "
+            "DEBUG adds per-packet detail."
+        ),
+    )
+    parser.add_argument(
+        "--cubes-log-level",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        default="INFO",
+        help=(
+            "Override the log level specifically for the pycozmo.cubes "
+            "logger (cube-light worker diagnostics). Useful when "
+            "--log-level is WARNING but you still want cube trace."
+        ),
+    )
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s.%(msecs)03d %(name)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logger_cubes.setLevel(getattr(logging, args.cubes_log_level))
 
     display = VisionDisplay(brightness=args.brightness, gamma=args.gamma)
 
