@@ -790,6 +790,9 @@ class VisionDisplay:
             elif key == ord(" "):
                 pkt = pycozmo.protocol_encoder.StopAllMotors()
                 cli.conn.send(pkt)
+            elif key == ord("p") or key == ord("P"):
+                self.web_viewer.clear_path()
+                print("🗑️  Path trail cleared")
 
         if not self.headless:
             cv2.destroyAllWindows()
@@ -1012,10 +1015,36 @@ def main():
             cli.conn.send(pkt)
             print("✅ Origin set to current position")
 
-            # NOTE: Robot state is already maintained on the client
-            # (cli.head_angle, cli.battery_voltage, cli.pose, ...). No
-            # application-level handler is needed, so we don't subscribe to
-            # EvtRobotStateUpdated. (COZMO-5)
+            # Pose trail — push every RobotState into the web viewer
+            # so the path is tracked even with --no-camera.  The trail
+            # is cleared on origin reset (pick-up / put-down) and on
+            # the 'p' key. (COZMO-27)
+            _last_trail_origin = [cli.pose.origin_id]
+
+            def _on_robot_state_for_trail(c):
+                try:
+                    pose = c.pose
+                    if pose.origin_id != _last_trail_origin[0]:
+                        display.web_viewer.clear_path()
+                        _last_trail_origin[0] = pose.origin_id
+                    display.web_viewer.add_path_point(pose.position.x_y_z)
+                except Exception:  # noqa: BLE001 — pose may be transiently invalid
+                    pass
+                display.web_viewer.broadcast()
+
+            cli.add_handler(
+                pycozmo.event.EvtRobotStateUpdated, _on_robot_state_for_trail
+            )
+
+            # Clear the trail immediately on pick-up so we don't record
+            # stale drifting poses while Cozmo is in the air.  The put-down
+            # path is already handled by origin_id change (SetOrigin fires
+            # in client._on_robot_picked_up). (COZMO-27)
+            def _on_picked_up(c, state):
+                if state:
+                    display.web_viewer.clear_path()
+
+            cli.add_handler(pycozmo.event.EvtRobotPickedUpChange, _on_picked_up)
 
             if args.no_camera:
                 print(

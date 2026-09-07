@@ -1,5 +1,14 @@
 # AGENTS.md
 
+## Knowledge Base (LIFIC)
+
+Maintain a running knowledge base on the LIFIC issue tracker (project `COZMO`).
+
+- **Always keep it up to date.** Whenever the user learns or decides something worth remembering (architecture findings, design decisions, gotchas, conventions, debugging tips, deployment notes, Pi/Mac/robot quirks, useful commands), capture it as a LIFIC page or issue comment immediately — do not batch it for later.
+- **Fill new info as it surfaces.** After exploring code, solving a problem, or finishing a task, write the takeaways to LIFIC (issue comments, pages, or a dedicated `architecture` / `notes` page) before moving on.
+- Treat `AGENTS.md` + the LIFIC pages as a pair: short, project-stable rules live in `AGENTS.md`; deeper, evolving notes (with citations, links, and structure) live on LIFIC.
+- Quick reference: `list_resources(type='project')` to find `COZMO`; `lific_search` to find existing notes before adding duplicates.
+
 ## Project Overview
 
 PyCozmo is a pure-Python library for direct Cozmo robot control over Wi-Fi, replacing the Cozmo app. This is the `cube_detection` branch implementing computer vision features.

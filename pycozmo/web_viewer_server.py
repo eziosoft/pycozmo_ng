@@ -15,10 +15,11 @@ Usage:
 """
 
 import asyncio
+import collections
 import json
 import os
-import time
 import threading
+import time
 
 import numpy as np
 
@@ -103,6 +104,17 @@ class WebViewerServer:
         # Camera MJPEG streaming (encode happens in the server loop thread)
         self._latest_image = None
         self._image_id: int = 0
+
+        # Pose trail — rolling buffer of world-frame positions (mm).
+        # Written by the RobotState handler (connection thread), read by
+        # _build_state_json (asyncio loop thread).  A lock guards the list;
+        # the lock is only held for the duration of a list append or copy,
+        # so contention is negligible. (COZMO-27)
+        self._path_lock = threading.Lock()
+        self._path_points: collections.deque[list[float]] = collections.deque(
+            maxlen=5000
+        )
+        self._last_path_origin_id: int | None = None
 
         # Broadcast coalescing: the loop thread keeps a queue and always
         # sends the latest state — broadcasts never pile up.
@@ -234,6 +246,29 @@ class WebViewerServer:
         """
         self._active_clients_listeners.append(callback)
 
+    def add_path_point(self, position) -> None:
+        """Append a world-frame position to the trail.
+
+        ``position`` is the robot's position in world frame in mm
+        (Anki convention: X right, Y forward, Z up — same as
+        ``cli.pose.position``).  Called from the RobotState handler
+        (~30 Hz).  The point is stored in world coordinates; the
+        browser converts to scene coordinates when drawing. (COZMO-27)
+        """
+        pos = np.asarray(position, dtype=np.float32).reshape(3)
+        with self._path_lock:
+            self._path_points.append([float(pos[0]), float(pos[1]), float(pos[2])])
+
+    def clear_path(self) -> None:
+        """Remove all stored trail points. (COZMO-27)"""
+        with self._path_lock:
+            self._path_points.clear()
+
+    def _get_path_snapshot(self) -> list[list[float]]:
+        """Return a copy of the current trail points (thread-safe)."""
+        with self._path_lock:
+            return list(self._path_points)
+
     def set_control_listener(self, callback) -> None:
         """Subscribe to browser key updates for remote control.
 
@@ -256,6 +291,7 @@ class WebViewerServer:
                 "position": list(self._robot_position),
                 "heading": self._robot_heading,
             },
+            "path_points": self._get_path_snapshot(),
             "timestamp": int((time.time() - self._start_time) * 1000),
         }
         return json.dumps(state)
