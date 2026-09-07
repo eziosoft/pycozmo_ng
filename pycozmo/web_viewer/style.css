@@ -140,3 +140,73 @@ html, body {
 #hud .disconnected {
   color: #f44;
 }
+
+/* ---- Remote-control HUD ---- */
+#controls-hud {
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+  z-index: 100;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 6px;
+  color: #ddd;
+  font-size: 12px;
+  outline: none;
+  user-select: none;
+}
+
+#controls-hud:focus {
+  background: rgba(0, 40, 80, 0.7);
+  box-shadow: 0 0 0 2px rgba(80, 160, 255, 0.6);
+}
+
+#controls-title {
+  font-size: 11px;
+  color: #aaa;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+#controls-grid {
+  border-collapse: collapse;
+}
+
+#controls-grid td {
+  padding: 2px 6px 2px 0;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.ctl-label {
+  color: #888;
+  text-transform: lowercase;
+  font-size: 11px;
+  padding-right: 12px !important;
+}
+
+.ctl-key {
+  display: inline-block;
+  min-width: 22px;
+  padding: 4px 6px;
+  margin-right: 2px;
+  text-align: center;
+  background: #222;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  color: #ccc;
+  transition: background 0.05s ease, color 0.05s ease;
+}
+
+.ctl-key.ctl-key-wide {
+  min-width: 60px;
+  font-size: 11px;
+}
+
+.ctl-key.active {
+  background: #4f4;
+  color: #111;
+  border-color: #8f8;
+}

@@ -505,6 +505,30 @@ class VisionDisplay:
 
         self.web_viewer.add_active_clients_listener(_on_clients_change)
 
+    def install_remote_control(self, cli) -> None:
+        """Wire browser keyboard input to Cozmo's motors. (COZMO-25)
+
+        Creates a :class:`pycozmo.remote_control.RemoteControl`, starts its
+        polling thread, and registers it as the WebViewer's control
+        listener. The browser sends a ``{"type": "control", "keys": [...]}``
+        message on every keydown/keyup; the RemoteControl instance reads
+        the latest set at ~20 Hz and applies ``drive_wheels`` /
+        ``move_head`` / ``move_lift`` commands to ``cli``. Stops motors
+        cleanly when the last browser tab disconnects or when the
+        controller thread is stopped.
+        """
+        from pycozmo.remote_control import RemoteControl
+
+        self._remote_control = RemoteControl(cli)
+        self._remote_control.start()
+        self.web_viewer.set_control_listener(self._remote_control.update_keys)
+        print("🎮 Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
+
+    def stop_remote_control(self) -> None:
+        if hasattr(self, "_remote_control") and self._remote_control is not None:
+            self._remote_control.stop()
+            self._remote_control = None
+
     def setup_cube_mapping(self, cli):
         """Discover available cubes and create mapping from detected cube_id to factory_id."""
         print("\n" + "=" * 70)
@@ -769,6 +793,7 @@ class VisionDisplay:
 
         if not self.headless:
             cv2.destroyAllWindows()
+        self.stop_remote_control()
         self.web_viewer.close()
 
 
@@ -974,6 +999,9 @@ def main():
                 time.sleep(2.0)
 
                 display.setup_cube_mapping(cli)
+
+                # Browser-side WASD/RF/TG remote control. (COZMO-25)
+                display.install_remote_control(cli)
             else:
                 print("ℹ️  Camera disabled (--no-camera).")
                 print("   No image streaming, no detection, no display.")

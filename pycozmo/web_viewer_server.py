@@ -118,6 +118,13 @@ class WebViewerServer:
         self._active_clients_listeners: list = []
         self._last_active_count: int = 0
 
+        # Remote-control key updates. The browser sends a
+        # ``{"type": "control", "keys": [...]}`` message on every keydown/
+        # keyup; the most recent set is forwarded to the listener (e.g. a
+        # :class:`pycozmo.remote_control.RemoteControl` instance) which
+        # translates it into Cozmo commands. (COZMO-25)
+        self._control_listener = None
+
         # Validate that at least websockets is available
         if not HAS_WEBSOCKETS:
             raise ImportError(
@@ -227,6 +234,18 @@ class WebViewerServer:
         """
         self._active_clients_listeners.append(callback)
 
+    def set_control_listener(self, callback) -> None:
+        """Subscribe to browser key updates for remote control.
+
+        ``callback(keys: set[str])`` is invoked (on the asyncio loop
+        thread) whenever a ``{"type": "control", "keys": [...]}`` message
+        arrives from any connected browser. The set is already normalized
+        to lowercase single-character keys. Pass ``None`` to unsubscribe.
+        Only the most recent listener is stored — remote control is a
+        single-user feature. (COZMO-25)
+        """
+        self._control_listener = callback
+
     # -- internal -----------------------------------------------------------
 
     def _build_state_json(self) -> str:
@@ -282,16 +301,40 @@ class WebViewerServer:
                     msg = json.loads(raw)
                 except (json.JSONDecodeError, TypeError):
                     continue
-                if msg.get("type") == "config":
+                mtype = msg.get("type")
+                if mtype == "config":
                     # Config messages from the browser were historically
                     # used to set brightness/gamma. Those are gone now
                     # (see COZMO-24) — the image is the raw Cozmo feed.
                     # Anything still arriving on this channel is from an
                     # old version of the viewer and is ignored.
                     pass
+                elif mtype == "control":
+                    # Remote-control key update from the browser. The
+                    # listener (e.g. a RemoteControl instance) decides
+                    # what to do with the keys. We hand off the raw set;
+                    # the listener is responsible for any thread/async
+                    # marshalling. (COZMO-25)
+                    keys = msg.get("keys") or []
+                    listener = self._control_listener
+                    if listener is not None:
+                        try:
+                            listener(set(keys))
+                        except Exception as e:  # noqa: BLE001
+                            print(f"⚠️  control listener failed: {e}")
         finally:
             self._clients.discard(websocket)
             self._fire_active_clients_change()
+            # Last browser tab gone. Make sure the controller stops
+            # driving Cozmo (its idle-stop window will also catch this,
+            # but stopping immediately avoids a brief coast). (COZMO-25)
+            if not self._clients:
+                listener = self._control_listener
+                if listener is not None:
+                    try:
+                        listener(set())
+                    except Exception as e:  # noqa: BLE001
+                        print(f"⚠️  control listener (final stop) failed: {e}")
 
     def _fire_active_clients_change(self) -> None:
         """Notify listeners when the active-client count changes.
