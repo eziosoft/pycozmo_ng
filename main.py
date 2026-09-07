@@ -482,19 +482,16 @@ class VisionDisplay:
         Cozmo only allows one cube connected at a time and always assigns
         ``object_id=1`` to the single connected cube. The protocol docs
         call object_id "temporary", but in practice it is a fixed slot
-        index — there is only one slot, hence always 1. So we don't need
-        to cache object_ids at all; we just need to make sure each
-        ``CubeLights`` is sent while the right cube is in the slot. (COZMO-20)
+        index — there is only one slot, hence always 1.
 
-        The cycle for each detected cube:
-        1. Send ``ObjectConnect(factory_id=X, connect=True)`` — robot
-           disconnects whoever was there and connects X.
-        2. Wait until ``cli.connected_objects`` reports a connected cube
-           (or until a timeout) and confirm it matches X.
-        3. Send ``CubeId(1)`` + ``CubeLights(blue)`` — sets X's lights.
-
-        The dispatcher thread never sees this work; it all runs on the
-        ``CubeLightWorker`` background thread. (COZMO-2)
+        For each detected cube we fire ``ObjectConnect`` + ``CubeId`` +
+        ``CubeLights`` back-to-back with no waiting. The robot processes
+        the packets in order: it implicitly disconnects whatever was in
+        the slot, connects our cube, then receives the CubeId and
+        CubeLights as soon as the slot has been re-allocated. The lights
+        then need to persist across the next disconnect — empirically
+        they do, for a few seconds at least, so cycling through N cubes
+        every cycle keeps them all illuminated. (COZMO-20)
         """
         if not self.detection_enabled:
             return
@@ -523,10 +520,11 @@ class VisionDisplay:
 
         # Cozmo's single connection slot always gets object_id=1.
         OBJECT_ID = 1
-        # Wait up to 0.5 s for the connect ack to land. Empirically the
-        # round-trip is ~100–300 ms over the Cozmo AP.
-        CONNECT_TIMEOUT_S = 0.5
-        POLL_INTERVAL_S = 0.02
+        # Pause between cubes so the robot has time to register each
+        # connect before the next one arrives. Empirically <50 ms is
+        # not enough; 200 ms works reliably without making the cycle
+        # feel sluggish.
+        BETWEEN_CUBE_S = 0.2
 
         for cube_id in detected_cube_ids:
             if cube_id not in self.cube_factory_id_map:
@@ -534,41 +532,15 @@ class VisionDisplay:
             factory_id = self.cube_factory_id_map[cube_id]
 
             try:
+                # All three packets back-to-back. The robot will accept
+                # CubeId+CubeLights addressed to the slot even if the
+                # connect ack hasn't reached us yet — the robot processes
+                # commands in the order we send them.
                 cli.conn.send(
                     pycozmo.protocol_encoder.ObjectConnect(
                         factory_id=factory_id, connect=True
                     )
                 )
-            except Exception as e:
-                logger_cubes.warning(
-                    "Cube %d: ObjectConnect send failed: %s", cube_id, e,
-                )
-                continue
-
-            # Poll cli.connected_objects until it reports a cube matching
-            # this factory_id (i.e. our connect succeeded). The client's
-            # own handler updates this dict synchronously from the
-            # dispatcher thread, so we just wait for the next reading.
-            deadline = time.time() + CONNECT_TIMEOUT_S
-            confirmed = False
-            while time.time() < deadline:
-                time.sleep(POLL_INTERVAL_S)
-                connected = dict(cli.connected_objects)
-                for object_id, info in connected.items():
-                    if info.get("factory_id") == factory_id:
-                        confirmed = True
-                        break
-                if confirmed:
-                    break
-
-            if not confirmed:
-                logger_cubes.warning(
-                    "Cube %d: connect ack not confirmed after %.2fs — "
-                    "skipping lights", cube_id, CONNECT_TIMEOUT_S,
-                )
-                continue
-
-            try:
                 cli.conn.send(
                     pycozmo.protocol_encoder.CubeId(object_id=OBJECT_ID)
                 )
@@ -583,12 +555,18 @@ class VisionDisplay:
                     )
                 )
                 logger_cubes.debug(
-                    "Cube %d: lit (factory_id=0x%08x)", cube_id, factory_id,
+                    "Cube %d: cycle sent (factory_id=0x%08x)",
+                    cube_id, factory_id,
                 )
             except Exception as e:
                 logger_cubes.warning(
-                    "Cube %d: CubeId/CubeLights failed: %s", cube_id, e,
+                    "Cube %d: cycle failed: %s", cube_id, e,
                 )
+
+            # Brief settle before moving on to the next cube, so the
+            # robot can process this cube's connect before we ask it to
+            # disconnect the same cube and connect a different one.
+            time.sleep(BETWEEN_CUBE_S)
 
     def run(self, cli):
         """Main display loop."""
