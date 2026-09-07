@@ -350,16 +350,23 @@
     const heldKeys = new Set();
     const controlKeyEls = document.querySelectorAll('.ctl-key');
 
+    // Send current key state to the server. Called on every key event
+    // AND by a periodic heartbeat so the server always has the latest
+    // state even if a keyup event is swallowed by the browser.
     function sendControl() {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       try {
-        const keys = Array.from(heldKeys);
-        console.log('SEND:', keys, 'time:', performance.now().toFixed(0));
-        ws.send(JSON.stringify({ type: 'control', keys: keys }));
+        ws.send(JSON.stringify({ type: 'control', keys: Array.from(heldKeys) }));
       } catch (e) {
         console.warn('control send failed', e);
       }
     }
+
+    // Heartbeat: re-send held keys every 50 ms. This is the primary
+    // mechanism for keeping Cozmo driving — individual keyup events
+    // may be unreliable (e.g. browser focus quirks), but the heartbeat
+    // guarantees the server always sees the correct key state.
+    setInterval(sendControl, 50);
 
     function describeKeys(keys) {
       const names = [];
@@ -388,7 +395,6 @@
 
     function clearHeld() {
       if (heldKeys.size === 0) return;
-      console.log('CLEAR HELD:', [...heldKeys], 'time:', performance.now().toFixed(0));
       heldKeys.clear();
       sendControl();
       updateControlHud();
@@ -401,15 +407,12 @@
     }
 
     function onKeyDown(e) {
-      // Allow modifier-laden browser shortcuts (Cmd-R, Ctrl-L etc.) to pass.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const norm = normalizeKey(e);
       if (!(norm in CONTROL_KEYS)) return;
       if (e.repeat) return;
       e.preventDefault();
-      if (heldKeys.has(norm)) return;
       heldKeys.add(norm);
-      console.log('KEYDOWN:', norm, 'heldKeys:', [...heldKeys], 'time:', performance.now().toFixed(0));
       sendControl();
       updateControlHud();
     }
@@ -418,23 +421,16 @@
       const norm = normalizeKey(e);
       if (!(norm in CONTROL_KEYS)) return;
       heldKeys.delete(norm);
-      console.log('KEYUP:', norm, 'heldKeys:', [...heldKeys], 'time:', performance.now().toFixed(0));
       sendControl();
       updateControlHud();
     }
 
-    // Capture at window so the HUD doesn't need to be focused — the
-    // page being focused is enough. Capture phase so we beat any
-    // potential default-scroll on Space.
     window.addEventListener('keydown', onKeyDown, { capture: true });
     window.addEventListener('keyup', onKeyUp, { capture: true });
-    // Tab/click-out: drop any held keys so Cozmo doesn't keep driving
-    // when the user alt-tabs or focuses another app.
-    window.addEventListener('blur', () => { console.log('BLUR event', 'time:', performance.now().toFixed(0)); clearHeld(); });
+    window.addEventListener('blur', clearHeld);
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) { console.log('VISIBILITY HIDDEN', 'time:', performance.now().toFixed(0)); clearHeld(); }
+      if (document.hidden) clearHeld();
     });
-    // Closing the tab: tell the server so it can stop motors immediately.
     window.addEventListener('beforeunload', () => {
       heldKeys.clear();
       sendControl();

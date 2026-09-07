@@ -151,12 +151,7 @@ class RemoteControl:
                 self._apply_drive(active_keys)
                 if active_keys != self._last_applied:
                     self._apply_head_lift(active_keys)
-                    was = self._last_applied
                     self._last_applied = active_keys
-                    if active_keys:
-                        print(f"🎮 keys pressed: {active_keys}")
-                    elif was:
-                        print("🎮 keys released")
             except Exception as e:  # noqa: BLE001 — don't kill the loop
                 logger.exception("RemoteControl tick failed: %s", e)
             self._stop_event.wait(period)
