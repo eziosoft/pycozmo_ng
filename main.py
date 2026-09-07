@@ -462,10 +462,15 @@ class VisionDisplay:
                     enable=True, color=False, resolution=self._camera_resolution,
                 )
                 # Let Cozmo's auto-exposure pick the right gain and
-                # shutter speed for the scene. Sending auto_exposure_enabled
-                # = True overrides any prior manual exposure (e.g. from
-                # a previous app run). (COZMO-24)
-                cli.set_camera_params(auto_exposure_enabled=True)
+                # shutter speed for the scene, clamped to sane bounds so
+                # bright scenes don't wash out. Sending
+                # auto_exposure_enabled=True also overrides any prior
+                # manual exposure (e.g. from a previous app run). (COZMO-24)
+                cli.set_camera_params(
+                    gain=0.0,
+                    exposure_ms=100,
+                    auto_exposure_enabled=True,
+                )
                 self._camera_active = True
                 self._camera_enabled_at = time.time()
                 # Reset the staleness clock — it takes a moment for the
