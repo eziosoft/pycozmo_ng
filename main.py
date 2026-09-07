@@ -17,6 +17,10 @@ Brightness/gamma tuning for the web viewer MJPEG stream:
   python main.py --brightness 0.7     # dim the image a bit
   python main.py --gamma 0.4 --brightness 0.8  # combine both
 
+Detection throttle (only every Nth frame goes through cube detection):
+  python main.py --process-every-n-frames 2   # 15 fps detection, 30 fps preview
+  python main.py --process-every-n-frames 3   # 10 fps detection
+
 """
 
 import argparse
@@ -564,6 +568,18 @@ def main():
         default=1.0,
         help="MJPEG camera gamma exponent (1.0 = identity, <1 = brighter, >1 = darker; try 0.4–0.7 for Cozmo)",
     )
+    parser.add_argument(
+        "--process-every-n-frames",
+        type=int,
+        default=1,
+        help=(
+            "Run cube detection every Nth camera frame. 1 = process every "
+            "frame (default, ~30 fps on Pi 5). 2 = every other frame "
+            "(~15 fps, lighter CPU). Higher values further throttle the "
+            "pipeline; useful if the detection/preview starts to lag. "
+            "Raw camera preview is unaffected."
+        ),
+    )
     args = parser.parse_args()
 
     display = VisionDisplay(brightness=args.brightness, gamma=args.gamma)
@@ -612,7 +628,7 @@ def main():
             vision_processor = vision.AnnotatedVisionProcessor(
                 client=cli,
                 camera_calibration=camera_calibration,
-                process_every_n_frames=1,
+                process_every_n_frames=max(1, args.process_every_n_frames),
                 undistort=undistort_enabled,
             )
 

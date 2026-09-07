@@ -453,10 +453,17 @@ class AnnotatedVisionProcessor(VisionProcessor):
             # Also handle cube detection events
             self._dispatch_cube_events(cli, detections)
 
-            # Periodic cleanup every 30 frames to prevent memory buildup
-            if self._frame_counter % 30 == 0:
-                import gc
-                gc.collect()
+            # NOTE: do NOT call ``gc.collect()`` here. Periodic forced GC
+            # runs synchronously on the pycozmo event-dispatcher thread,
+            # which is the same thread that processes incoming camera
+            # chunks. A full collection walks every tracked object in the
+            # process; pause time grows with heap size and, after ~20 s
+            # of cube detection (hundreds of PIL/numpy allocations per
+            # second), became long enough that the dispatcher stalled
+            # and both the web preview and detection fell to ~1 fps.
+            # CPython's generational collector already handles short-lived
+            # numpy/PIL objects; reference counting frees everything
+            # promptly without it. (COZMO-21)
 
         except Exception as e:
             logger.error(f"Error processing camera image: {e}", exc_info=True)
