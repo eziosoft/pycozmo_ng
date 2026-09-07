@@ -499,6 +499,15 @@ class VisionDisplay:
                 self.save_frames()
             elif key == ord("c") or key == ord("C"):
                 self.detection_enabled = not self.detection_enabled
+                # Pause/resume the actual pipeline so the HUD matches reality.
+                # Previously only the cube-light update was gated, leaving
+                # detection, bbox annotation and web-viewer broadcasts running
+                # while the user thought detection was off. (COZMO-14)
+                if self.vision_processor is not None:
+                    if self.detection_enabled:
+                        self.vision_processor.resume()
+                    else:
+                        self.vision_processor.pause()
                 print(
                     f"🔍 Detection {'ENABLED' if self.detection_enabled else 'DISABLED'}"
                 )

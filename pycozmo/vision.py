@@ -290,13 +290,16 @@ class VisionProcessor:
             x1, y1 = det.x, det.y
             x2, y2 = det.x + det.width, det.y + det.height
 
-            # Draw rectangle with specified thickness
-            for offset in range(self.box_thickness):
-                draw.rectangle(
-                    [(x1 - offset, y1 - offset), (x2 + offset, y2 + offset)],
-                    outline=color,
-                    width=1
-                )
+            # Draw rectangle with specified thickness. Pillow's ``width``
+            # parameter already supports arbitrary thickness, so a single
+            # call is enough — the previous loop redrew 1-px rectangles that
+            # all overlapped, leaving only a 1-px line regardless of
+            # ``box_thickness``. (COZMO-12)
+            draw.rectangle(
+                [(x1, y1), (x2, y2)],
+                outline=color,
+                width=max(1, self.box_thickness),
+            )
 
             # Build label text
             label_parts = []
@@ -405,6 +408,16 @@ class AnnotatedVisionProcessor(VisionProcessor):
         This processes the image, detects cubes, generates annotations,
         and dispatches events.
         """
+        # Terminal stop / temporary pause — both short-circuit the pipeline so
+        # the HUD's "Detection DISABLED" toggle matches what the user sees.
+        # Without these checks, detection, bbox annotation, and web-viewer
+        # broadcasts keep running even when the user thinks they disabled
+        # detection. (COZMO-14)
+        if getattr(self, "_stopped", False):
+            return
+        if getattr(self, "_paused", False):
+            return
+
         # Frame skipping for performance
         self._frame_counter += 1
         if self._frame_counter % self.process_every_n_frames != 0:
@@ -481,14 +494,23 @@ class AnnotatedVisionProcessor(VisionProcessor):
             # Update state
             self._last_cube_ids = current_ids
 
-        # Only dispatch observation if there are cubes (reduce event spam)
-        if detections and len(detections) > 0:
-            # Throttle observation events - only dispatch every 5th frame
-            if not hasattr(self, '_obs_frame_counter'):
-                self._obs_frame_counter = 0
-            self._obs_frame_counter += 1
-            if self._obs_frame_counter % 5 == 0:
-                cli.dispatch(event.EvtCubeObserved, cli, detections)
+        # Throttle observation events - only dispatch every 5th frame. The
+        # counter resets to zero whenever no cubes are detected so the
+        # throttle measures "frames since the last observation dispatch
+        # *with detections*". Without the reset, a long gap between
+        # detections could either delay or skip the first re-detection
+        # observation, depending on where the counter happened to stop.
+        # (COZMO-15)
+        if not hasattr(self, "_obs_frame_counter"):
+            self._obs_frame_counter = 0
+
+        if not detections:
+            self._obs_frame_counter = 0
+            return
+
+        self._obs_frame_counter += 1
+        if self._obs_frame_counter % 5 == 0:
+            cli.dispatch(event.EvtCubeObserved, cli, detections)
 
     def stop(self):
         """
@@ -500,3 +522,20 @@ class AnnotatedVisionProcessor(VisionProcessor):
         # implementation, but we can stop processing by setting a flag
         self._stopped = True
         logger.info("Annotated vision processor stopped")
+
+    def pause(self):
+        """
+        Pause the detection pipeline.
+
+        While paused, ``_on_camera_image`` short-circuits before any detection,
+        annotation, event-dispatch, or web-viewer broadcast runs. Use this to
+        truly stop the pipeline (in contrast to ``stop()``, which is terminal
+        and also removes handlers). Pair with :meth:`resume` to re-enable.
+
+        (COZMO-14)
+        """
+        self._paused = True
+
+    def resume(self):
+        """Resume the detection pipeline after :meth:`pause`."""
+        self._paused = False

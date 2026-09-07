@@ -57,9 +57,20 @@ class CubeFusionTracker:
         for cube_id, cube_detections in detections_by_cube.items():
             fused_state = self._fuse_detections(cube_detections)
 
-            # Apply head tilt transformation to position
-            # Head tilt rotates camera around X-axis (pitch), affecting Y and Z coordinates
-            fused_state['position'] = self._apply_head_tilt(fused_state['position'], head_angle_rad)
+            # Apply head tilt transformation to position and orientation
+            # so both live in the robot body frame. The position is rotated
+            # by R_head; the rotation matrix (which maps cube-frame basis
+            # vectors to camera-frame vectors) is pre-multiplied by R_head
+            # so its basis vectors are also expressed in body frame.
+            # Without the rotation transform, the cube's yaw in the 3D
+            # viewer depends on the head angle even though its position
+            # does not. (COZMO-13)
+            fused_state["position"] = self._apply_head_tilt(
+                fused_state["position"], head_angle_rad
+            )
+            fused_state["rotation_matrix"] = self._apply_head_tilt_to_rotation(
+                fused_state["rotation_matrix"], head_angle_rad
+            )
 
             if cube_id in self.cubes:
                 # Smooth with previous state
@@ -152,7 +163,10 @@ class CubeFusionTracker:
             # Store which face was used for rotation (useful for debugging)
             best_face_info = f"{best_detection['face_type']}_{best_detection['rotation']}deg"
 
-            avg_confidence = sum(d['score'] for d in detections) / len(detections)
+            # Weighted confidence: each face's score is weighted by its own score,
+            # which gives the dominant face a quadratic influence and matches
+            # the weighting used for the position average. (COZMO-18)
+            avg_confidence = sum(d["score"] ** 2 for d in detections) / total_weight
 
             return {
                 'position': fused_center,
@@ -310,6 +324,25 @@ class CubeFusionTracker:
 
         return transformed_position
 
+    def _apply_head_tilt_to_rotation(self, rotation_matrix, head_angle_rad):
+        """
+        Transform a rotation matrix from camera frame to robot body frame.
+
+        :param rotation_matrix: 3x3 rotation matrix in camera coordinates
+        :param head_angle_rad: Head tilt angle in radians (positive = looking up)
+        :return: 3x3 rotation matrix in robot body coordinates
+        """
+        cos_a = np.cos(head_angle_rad)
+        sin_a = np.sin(head_angle_rad)
+
+        R_head = np.array([
+            [1, 0, 0],
+            [0, cos_a, -sin_a],
+            [0, sin_a, cos_a]
+        ], dtype=np.float32)
+
+        return R_head @ rotation_matrix
+
 
 class CozmoCubeDetector:
     def __init__(self, camera_matrix, dist_coeffs, target_markers,
@@ -322,12 +355,17 @@ class CozmoCubeDetector:
                  denoise_strength=7):
         """
         :param target_markers: List of 32x32 gray bitmaps (numpy arrays).
-        :param square_size_mm: Real life square side length (default 25mm).
-        :param score_threshold: Minimum score for marker matching (default 0.8).
+        :param square_size_mm: Real life square side length in mm (default 20.0).
+            WARNING: this default is an unverified guess based on the printed
+            marker size relative to the JPG templates; it controls the absolute
+            scale of every distance/position reported by the pipeline. Override
+            after measuring a real cube if your distance readings look off.
+            (COZMO-16)
+        :param score_threshold: Minimum score for marker matching (default 0.6).
         :param use_clahe: Use CLAHE enhancement (slower but better in varied lighting)
         :param max_detections: Stop processing after finding N markers (None = find all)
         :param min_area: Minimum contour area in pixels (default 100)
-        :param max_area_ratio: Maximum contour area as fraction of image area (default 0.4)
+        :param max_area_ratio: Maximum contour area as fraction of image area (default 0.8)
         :param denoise_strength: Strength of noise reduction (0=disabled, 3-10 recommended, higher=more smoothing)
         """
         self.camera_matrix = camera_matrix
@@ -361,9 +399,6 @@ class CozmoCubeDetector:
         # Perspective transform points
         self.dst_pts = np.array([[0, 0], [31, 0], [31, 31], [0, 31]], dtype=np.float32)
 
-        # Scale camera matrix if downscaling
-        self.scaled_camera_matrix = self.camera_matrix
-
         # Face type and rotation lookup tables
         self.face_type_lookup = ['wall', 'wall', 'wall', 'wall', 'bottom', 'top']
         self.rotation_lookup = [0, 90, 180, 270, 0, 0]
@@ -376,8 +411,8 @@ class CozmoCubeDetector:
         """Enable or disable debug mode for saving intermediate images."""
         self.debug = enabled
 
-    def detect(self, frame, try_negative=False):
-        """Processes a frame to find cubes, including optional negative image pass."""
+    def detect(self, frame):
+        """Processes a frame to find cubes."""
         if self.debug:
             self.debug_images = {}
             self.debug_images['processed'] = frame.copy()
@@ -398,17 +433,7 @@ class CozmoCubeDetector:
         if self.debug:
             self.debug_images['enhanced'] = enhanced.copy()
 
-        # Pass 1: Normal image
-        detections = self._run_detection_pass(enhanced)
-
-        # Pass 2: Negative image (if no detections found)
-        if try_negative and not detections:
-            neg_enhanced = cv2.bitwise_not(enhanced)
-            if self.debug:
-                self.debug_images['negative_enhanced'] = neg_enhanced.copy()
-            detections = self._run_detection_pass(neg_enhanced)
-
-        return detections
+        return self._run_detection_pass(enhanced)
 
     def _denoise_image(self, gray_image):
         """
@@ -497,7 +522,7 @@ class CozmoCubeDetector:
 
                     # Solve PnP for pose estimation
                     success, rvec, tvec = cv2.solvePnP(
-                        self.obj_points, ordered_pts, self.scaled_camera_matrix, None
+                        self.obj_points, ordered_pts, self.camera_matrix, None
                     )
                     if success:
                         # Get cube orientation info
