@@ -154,7 +154,8 @@
     function createRobot() {
       const group = new THREE.Group();
 
-      const geo = new THREE.BoxGeometry(55, 60, 90);
+      // Cozmo dimensions: 130 x 75 x 72 mm (L x H x W)
+      const geo = new THREE.BoxGeometry(72, 75, 130);
       // Wireframe
       const wire = new THREE.LineSegments(
         new THREE.EdgesGeometry(geo),
@@ -173,9 +174,9 @@
       group.add(fill);
 
       // Body offset: camera origin is at the group origin (0, 0, 0).
-      // The body extends behind and below the camera.
-      fill.position.set(0, -10, -45);
-      wire.position.set(0, -10, -45);
+      // Camera sits at the front-top of Cozmo; body extends behind and below.
+      fill.position.set(0, -37.5, -65);
+      wire.position.set(0, -37.5, -65);
 
       // Camera origin marker (yellow dot) — at group origin
       const camGeo = new THREE.SphereGeometry(3, 12, 8);
