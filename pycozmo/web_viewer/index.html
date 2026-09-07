@@ -172,16 +172,15 @@
       );
       group.add(fill);
 
-      // Robot body: front face at Z=0, bottom at Y=0, body extends to -Z
-      // (matches World3DViewer._draw_camera convention: camera at (0,40,0),
-      //  boxes in front of the robot are at positive Z).
-      group.position.set(0, 30, -45);
+      // Body offset: camera origin is at the group origin (0, 0, 0).
+      // The body extends behind and below the camera.
+      fill.position.set(0, -10, -45);
+      wire.position.set(0, -10, -45);
 
-      // Camera origin marker (sphere at world Y=40, Z=0)
+      // Camera origin marker (yellow dot) — at group origin
       const camGeo = new THREE.SphereGeometry(3, 12, 8);
       const camMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
       const camMarker = new THREE.Mesh(camGeo, camMat);
-      camMarker.position.set(0, 10, 45);
       group.add(camMarker);
 
       return group;
@@ -189,8 +188,8 @@
     const robot = createRobot();
     robot.userData = {
       heading: 0, targetHeading: 0,
-      pos: new THREE.Vector3(0, 30, -45),
-      targetPos: new THREE.Vector3(0, 30, -45),
+      pos: new THREE.Vector3(0, 40, 0),
+      targetPos: new THREE.Vector3(0, 40, 0),
     };
     scene.add(robot);
 
@@ -361,9 +360,7 @@
         robot.userData.targetHeading = state.robot.heading || 0;
         const rp = state.robot.position || [0, 0, 0];
         const [rx, ry, rz] = worldToScene(rp[0], rp[1], rp[2]);
-        // Offset by the robot body geometry: group is at (0, 30, -45)
-        // relative to the camera origin at scene (0, 40, 0).
-        robot.userData.targetPos.set(rx, ry + 10, rz - 45);
+        robot.userData.targetPos.set(rx, ry, rz);
         if (!hasRobotPose) {
           robot.userData.heading = robot.userData.targetHeading;
           robot.rotation.y = robot.userData.heading;
@@ -515,7 +512,7 @@
       const back = fwd.clone().multiplyScalar(-1);
 
       const target = robot.position.clone();
-      target.y += 30;  // eye line at body height
+      target.y += 0;  // eye line at camera origin
 
       const dist = 300;
       const height = 120;
