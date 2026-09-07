@@ -187,7 +187,11 @@
       return group;
     }
     const robot = createRobot();
-    robot.userData = { heading: 0, targetHeading: 0 };
+    robot.userData = {
+      heading: 0, targetHeading: 0,
+      pos: new THREE.Vector3(0, 30, -45),
+      targetPos: new THREE.Vector3(0, 30, -45),
+    };
     scene.add(robot);
 
     // -----------------------------------------------------------------------
@@ -352,14 +356,19 @@
         if (pathEl) pathEl.textContent = `${pathPointCount} pts`;
       }
 
-      // Robot pose. Cubes are camera-relative (anchored to the robot's
-      // camera origin at scene (0, 40, 0)), so we only need the heading
-      // — the world position is invisible in this viewer. (COZMO-31)
+      // Robot pose — move the box to match Cozmo's world position. (COZMO-27)
       if (state.robot) {
         robot.userData.targetHeading = state.robot.heading || 0;
+        const rp = state.robot.position || [0, 0, 0];
+        const [rx, ry, rz] = worldToScene(rp[0], rp[1], rp[2]);
+        // Offset by the robot body geometry: group is at (0, 30, -45)
+        // relative to the camera origin at scene (0, 40, 0).
+        robot.userData.targetPos.set(rx, ry + 10, rz - 45);
         if (!hasRobotPose) {
           robot.userData.heading = robot.userData.targetHeading;
           robot.rotation.y = robot.userData.heading;
+          robot.position.copy(robot.userData.targetPos);
+          robot.userData.pos.copy(robot.userData.targetPos);
           hasRobotPose = true;
         }
       }
@@ -539,6 +548,11 @@
         while (diff < -Math.PI) diff += 2 * Math.PI;
         robot.userData.heading = cur + diff * 0.25;
         robot.rotation.y = robot.userData.heading;
+
+        // Lerp robot position toward target
+        _tmpPos.copy(robot.userData.targetPos);
+        robot.position.lerp(_tmpPos, 0.25);
+        robot.userData.pos.copy(robot.position);
       }
 
       if (hasRobotPose && !didInitialFrame) {
