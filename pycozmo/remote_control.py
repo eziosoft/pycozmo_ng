@@ -158,7 +158,7 @@ class RemoteControl:
 
     def _apply_drive(self, keys: set[str]) -> None:
         forward = ("w" in keys) - ("s" in keys)
-        rotate = ("a" in keys) - ("d" in keys)
+        rotate = ("d" in keys) - ("a" in keys)
         if forward or rotate:
             lw = forward * self._wheel_speed + rotate * self._wheel_speed
             rw = forward * self._wheel_speed - rotate * self._wheel_speed
