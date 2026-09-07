@@ -136,6 +136,9 @@ class VisionDisplay:
         # out-of-range cubes on its own, and our old proactive disconnect
         # caused spurious drops when paired with multi-cube connects. (COZMO-20)
         self._cube_last_seen_frame = {}
+        # Wall-clock timestamp of the most recently received camera frame.
+        # Used by the main run loop to detect a silent Wi-Fi drop (see run).
+        self._last_frame_time = time.time()
 
     def on_object_connection_state(self, cli, pkt):
         """Log cube connection state transitions for diagnostics.
@@ -176,6 +179,10 @@ class VisionDisplay:
         """Handler for raw camera images."""
         self.latest_raw_frame = image
         self.frame_count += 1
+        # Stamp the time of the last received frame so the main loop
+        # can detect a silent Wi-Fi drop (no Disconnect packet arrives
+        # in that case, and cli.conn.state stays CONNECTED forever).
+        self._last_frame_time = time.time()
 
         # Push frame for MJPEG streaming (encoding happens off this thread)
         if image is not None:
@@ -224,11 +231,11 @@ class VisionDisplay:
 
         def _loop():
             # Run one cycle, then pause for CYCLE_PERIOD_S before the next.
-            # The detection pipeline updates every ~33 ms but lighting
-            # cubes more often than ~every 1 s only burns bandwidth and
-            # fills Cozmo's 62-packet send window — observed in the field
-            # as a 6.61 % delivery rate after 40 s of activity.
-            CYCLE_PERIOD_S = 2.0
+            # Lights persist for ~1.5 s after the robot auto-disconnects
+            # the cube, so each cube must be re-lit within that window.
+            # Three cubes × 200 ms settle + ~400 ms buffer ≈ 0.8 s cycle
+            # period keeps every cube illuminated at all times.
+            CYCLE_PERIOD_S = 0.8
             while not self._cube_light_stop.is_set():
                 try:
                     self._cube_light_tick(cli)
@@ -588,6 +595,19 @@ class VisionDisplay:
                 logger_cubes.warning(
                     "Connection state is %s — exiting main loop",
                     cli.conn.state,
+                )
+                self.running = False
+                break
+
+            # No camera frames for >2 s means the Wi-Fi AP dropped us.
+            # cli.conn.state stays CONNECTED in that case because no
+            # Disconnect packet arrives; the staleness check is the only
+            # reliable signal.
+            stale_for = time.time() - self._last_frame_time
+            if stale_for > 2.0:
+                logger_cubes.warning(
+                    "No camera frames for %.1fs — assuming Wi-Fi drop, "
+                    "exiting main loop", stale_for,
                 )
                 self.running = False
                 break
