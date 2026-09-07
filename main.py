@@ -111,6 +111,12 @@ class VisionDisplay:
         self.fps = 0.0
         self.vision_processor = None
 
+        # Camera lifecycle (COZMO-22): the Cozmo camera is off by default
+        # so we don't flood its lossy Wi-Fi AP. A listener on
+        # ``self.web_viewer`` turns the camera on when the first browser
+        # tab connects and off again when the last one closes.
+        self._camera_active = False
+
         # `latest_detections` is mutated by the event-dispatcher thread
         # (on_annotated_camera_image) and read by the main loop
         # (update_cube_lights_on_detection, display_frames). Guard all
@@ -419,6 +425,49 @@ class VisionDisplay:
         with self._detections_lock:
             return len(self.latest_detections)
 
+    def install_camera_lifecycle(self, cli, resolution):
+        """Bind the Cozmo camera on/off to WebSocket viewer activity.
+
+        Adds a listener on ``self.web_viewer`` that turns the camera on
+        when the first browser tab connects and off when the last one
+        closes. This is the structural fix for COZMO-22: the 30 fps
+        QVGA stream floods Cozmo's lossy AP and drops the Wi-Fi within
+        ~60s, but it's only needed while someone is actually watching.
+
+        Idempotent — calling twice or during a session with no
+        transitions is a no-op. The camera starts in the OFF state;
+        it will not enable until at least one client connects.
+
+        Args:
+            cli: pycozmo client.
+            resolution: ``pycozmo.protocol_encoder.ImageResolution`` value
+                (e.g. ``QVGA``).
+        """
+        self._camera_resolution = resolution
+
+        def _on_clients_change(active_count: int) -> None:
+            if active_count > 0 and not self._camera_active:
+                print(
+                    f"🎥 {active_count} viewer(s) connected — "
+                    "enabling Cozmo camera"
+                )
+                cli.enable_camera(
+                    enable=True, color=False, resolution=self._camera_resolution,
+                )
+                cli.set_camera_params(exposure_ms=100)
+                self._camera_active = True
+            elif active_count == 0 and self._camera_active:
+                print(
+                    "🎥 No viewers — disabling Cozmo camera "
+                    "(keeps the Wi-Fi quiet)"
+                )
+                cli.enable_camera(enable=False)
+                self._camera_active = False
+            # active_count > 0 and _camera_active=True: nothing to do
+            # active_count == 0 and _camera_active=False: nothing to do
+
+        self.web_viewer.add_active_clients_listener(_on_clients_change)
+
     def setup_cube_mapping(self, cli):
         """Discover available cubes and create mapping from detected cube_id to factory_id."""
         print("\n" + "=" * 70)
@@ -603,15 +652,17 @@ class VisionDisplay:
             # No camera frames for >2 s means the Wi-Fi AP dropped us.
             # cli.conn.state stays CONNECTED in that case because no
             # Disconnect packet arrives; the staleness check is the only
-            # reliable signal.
-            stale_for = time.time() - self._last_frame_time
-            if stale_for > 2.0:
-                logger_cubes.warning(
-                    "No camera frames for %.1fs — assuming Wi-Fi drop, "
-                    "exiting main loop", stale_for,
-                )
-                self.running = False
-                break
+            # reliable signal. Skipped when the camera is off (lazy mode,
+            # COZMO-22) because no frames is the normal state then.
+            if self._camera_active:
+                stale_for = time.time() - self._last_frame_time
+                if stale_for > 2.0:
+                    logger_cubes.warning(
+                        "No camera frames for %.1fs — assuming Wi-Fi drop, "
+                        "exiting main loop", stale_for,
+                    )
+                    self.running = False
+                    break
 
             self.display_frames()
 
@@ -862,7 +913,6 @@ def main():
                 )
 
             if not args.no_camera:
-                print("🎥 Enabling camera...")
                 resolution = getattr(
                     pycozmo.protocol_encoder.ImageResolution, args.camera_resolution
                 )
@@ -872,19 +922,19 @@ def main():
                         "and currently makes the Wi-Fi drop FASTER. Use --no-camera "
                         "instead. (COZMO-20)"
                     )
-                single_shot = args.camera_fps > 0
-                cli.enable_camera(
-                    enable=True, color=False,
-                    resolution=resolution,
-                    single_shot=single_shot,
-                    fps=args.camera_fps,
+
+                # Lazy camera: the camera starts OFF and only turns on
+                # when a browser tab opens the web viewer. This is the
+                # COZMO-22 fix — 30 fps QVGA floods Cozmo's lossy AP
+                # and drops the Wi-Fi within ~60s, but the camera is
+                # only needed while someone is actually watching.
+                print("🎥 Camera is OFF by default.")
+                print(
+                    "   It will turn on automatically when a browser opens the "
+                    "web viewer, and off again when the last tab closes."
                 )
-                cli.set_camera_params(exposure_ms=100)
-                if single_shot:
-                    print(
-                        f"   SingleShot mode, target {args.camera_fps} fps"
-                        f" (1 frame every {1.0/args.camera_fps:.3f}s)"
-                    )
+                print(f"   Resolution when enabled: {args.camera_resolution}")
+                display.install_camera_lifecycle(cli, resolution)
 
                 time.sleep(2.0)
 

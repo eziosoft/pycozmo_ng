@@ -136,6 +136,15 @@ class WebViewerServer:
         self._broadcast_queue = None
         self._run_forever = None
 
+        # Active-client transition callbacks. Use ``add_active_clients_listener``
+        # to subscribe; the callback fires with the new count (int) whenever
+        # the count changes (including going to 0 when the last client
+        # disconnects). Typical use: enable Cozmo's camera on the 0→1
+        # transition and disable it on the 1→0 transition, so the camera
+        # only runs while someone is actually watching. (COZMO-22)
+        self._active_clients_listeners: list = []
+        self._last_active_count: int = 0
+
         # Validate that at least websockets is available
         if not HAS_WEBSOCKETS:
             raise ImportError(
@@ -211,6 +220,23 @@ class WebViewerServer:
             except RuntimeError:
                 pass  # Loop already closed
 
+    def add_active_clients_listener(self, callback) -> None:
+        """Subscribe to active-client-count transitions.
+
+        ``callback(active_count: int)`` is called whenever the number of
+        connected WebSocket clients changes (0→1, 1→0, 1→2, etc.). Multiple
+        listeners may be registered. Typical use: turn Cozmo's camera on
+        when the first browser tab opens and off when the last one closes,
+        so the camera stream only runs while someone is watching —
+        eliminates the sustained 30 fps load that drops the Wi-Fi.
+        (COZMO-22)
+
+        The callback is invoked on the server's asyncio event-loop thread;
+        keep it short and non-blocking, or use ``call_soon_threadsafe`` to
+        hand off work to another thread.
+        """
+        self._active_clients_listeners.append(callback)
+
     # -- internal -----------------------------------------------------------
 
     def _build_state_json(self) -> str:
@@ -257,6 +283,7 @@ class WebViewerServer:
 
     async def _handler(self, websocket):
         self._clients.add(websocket)
+        self._fire_active_clients_change()
         try:
             # Send current state immediately on connect
             await websocket.send(self._build_state_json())
@@ -272,6 +299,25 @@ class WebViewerServer:
                         self.gamma = float(msg["gamma"])
         finally:
             self._clients.discard(websocket)
+            self._fire_active_clients_change()
+
+    def _fire_active_clients_change(self) -> None:
+        """Notify listeners when the active-client count changes.
+
+        Runs on the asyncio event-loop thread (it's called from
+        ``_handler``). Listeners are run inline — they should be
+        non-blocking or hand off to another thread. Errors are swallowed
+        so a buggy listener doesn't break the WebSocket. (COZMO-22)
+        """
+        count = len(self._clients)
+        if count == self._last_active_count:
+            return
+        self._last_active_count = count
+        for listener in list(self._active_clients_listeners):
+            try:
+                listener(count)
+            except Exception as e:
+                print(f"⚠️  active-clients listener failed: {e}")
 
     async def _shutdown(self):
         for ws in list(self._clients):

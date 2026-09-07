@@ -524,7 +524,7 @@ class Client(event.Dispatcher):
             if elapsed < self._single_shot_min_interval:
                 # Schedule the re-arm on a timer so we don't request the
                 # next frame too soon.
-                threading.Timer(
+                Timer(
                     self._single_shot_min_interval - elapsed,
                     self._send_single_shot_request_now,
                 ).start()
