@@ -767,11 +767,11 @@ def main():
         type=float,
         default=0.0,
         help=(
-            "If >0, use SingleShot mode and request frames at this rate "
-            "(frames per second). 0 (default) means use the native 30 fps "
-            "Stream. Use this when --camera-resolution is not enough to "
-            "prevent Wi-Fi drops — e.g. --camera-fps 5 keeps the link "
-            "alive by reducing frame traffic ~6x. (COZMO-20)"
+            "**Experimental, currently broken.** If >0, attempts to use "
+            "ImageSendMode.SingleShot with a Timer-based re-arm to cap the "
+            "inbound rate. In practice this DROPS the Wi-Fi FASTER than "
+            "the default Stream mode (~8.5s vs ~60s) on firmware 2458, "
+            "so leave at 0 (default) until COZMO-22 is fixed. (COZMO-20)"
         ),
     )
     args = parser.parse_args()
@@ -866,6 +866,12 @@ def main():
                 resolution = getattr(
                     pycozmo.protocol_encoder.ImageResolution, args.camera_resolution
                 )
+                if args.camera_fps > 0:
+                    print(
+                        f"   ⚠️  --camera-fps {args.camera_fps} is experimental "
+                        "and currently makes the Wi-Fi drop FASTER. Use --no-camera "
+                        "instead. (COZMO-20)"
+                    )
                 single_shot = args.camera_fps > 0
                 cli.enable_camera(
                     enable=True, color=False,
