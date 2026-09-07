@@ -749,6 +749,19 @@ def main():
             "as the app runs."
         ),
     )
+    parser.add_argument(
+        "--camera-resolution",
+        choices=("QQQVGA", "QQVGA", "QVGA", "VGA"),
+        default="QVGA",
+        help=(
+            "Camera resolution (default: QVGA = 320x240). Smaller "
+            "resolutions are ~4x less Wi-Fi bandwidth per frame, which "
+            "reduces the chance of Cozmo's AP dropping the connection. "
+            "Try QQVGA (160x120) if the Wi-Fi keeps dropping. The cube "
+            "detector runs at any of these sizes — markers are still "
+            "detected at 160x120."
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -838,7 +851,12 @@ def main():
 
             if not args.no_camera:
                 print("🎥 Enabling camera...")
-                cli.enable_camera(enable=True, color=False)
+                resolution = getattr(
+                    pycozmo.protocol_encoder.ImageResolution, args.camera_resolution
+                )
+                cli.enable_camera(
+                    enable=True, color=False, resolution=resolution,
+                )
                 cli.set_camera_params(exposure_ms=100)
 
                 time.sleep(2.0)

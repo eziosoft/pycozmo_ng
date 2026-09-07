@@ -445,10 +445,26 @@ class Client(event.Dispatcher):
         pkt = protocol_encoder.SetHeadLight(enable=enable)
         self.conn.send(pkt)
 
-    def enable_camera(self, enable: bool = True, color: bool = False) -> None:
-        """ Enable or disable camera image streaming in color or grayscale. """
+    def enable_camera(self, enable: bool = True, color: bool = False,
+                      resolution: "protocol_encoder.ImageResolution" = None) -> None:
+        """ Enable or disable camera image streaming in color or grayscale.
+
+        Args:
+            enable: If True, request streaming; if False, turn the camera off.
+            color: If True, ask for color images; if False, grayscale.
+            resolution: ImageResolution enum (e.g. ImageResolution.QVGA = 320x240
+                — the default, ImageResolution.QQVGA = 160x120, …). Smaller
+                resolutions are ~4x less Wi-Fi bandwidth per frame, which
+                matters because the Cozmo AP is lossy (97-99% delivery in
+                practice) and a saturated stream drops the connection
+                within ~1 minute. (COZMO-20)
+        """
         image_send_mode = protocol_encoder.ImageSendMode.Stream if enable else protocol_encoder.ImageSendMode.Off
-        pkt = protocol_encoder.EnableCamera(image_send_mode=image_send_mode)
+        image_resolution = resolution if resolution is not None else protocol_encoder.ImageResolution.QVGA
+        pkt = protocol_encoder.EnableCamera(
+            image_send_mode=image_send_mode,
+            image_resolution=image_resolution,
+        )
         self.conn.send(pkt)
         pkt = protocol_encoder.EnableColorImages(enable=color)
         self.conn.send(pkt)
