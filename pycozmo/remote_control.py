@@ -148,17 +148,15 @@ class RemoteControl:
                 stale = (now - last_update) > self._idle_stop_sec
                 active_keys = set() if stale else keys
 
-                # Drive wheels: re-send every tick while held. Cozmo's
-                # firmware treats ``drive_wheels`` as a one-shot command
-                # that times out after a few hundred ms; if we don't keep
-                # poking it, the robot coasts to a stop after a short
-                # step even while the user is still holding the key.
-                # Head and lift use ``move_*`` (continuous velocity) and
-                # only need to be sent on key-set changes.
                 self._apply_drive(active_keys)
                 if active_keys != self._last_applied:
                     self._apply_head_lift(active_keys)
+                    was = self._last_applied
                     self._last_applied = active_keys
+                    if active_keys:
+                        print(f"🎮 keys pressed: {active_keys}")
+                    elif was:
+                        print("🎮 keys released")
             except Exception as e:  # noqa: BLE001 — don't kill the loop
                 logger.exception("RemoteControl tick failed: %s", e)
             self._stop_event.wait(period)

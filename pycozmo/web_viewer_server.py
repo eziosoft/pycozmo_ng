@@ -316,12 +316,15 @@ class WebViewerServer:
                     # the listener is responsible for any thread/async
                     # marshalling. (COZMO-25)
                     keys = msg.get("keys") or []
+                    print(f"🎮 control: keys={keys}")
                     listener = self._control_listener
                     if listener is not None:
                         try:
                             listener(set(keys))
                         except Exception as e:  # noqa: BLE001
                             print(f"⚠️  control listener failed: {e}")
+                    else:
+                        print("⚠️  control: no listener registered")
         finally:
             self._clients.discard(websocket)
             self._fire_active_clients_change()
