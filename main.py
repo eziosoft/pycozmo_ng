@@ -445,6 +445,14 @@ class VisionDisplay:
         """
         self._camera_resolution = resolution
 
+        # Timestamp of the last camera on/off transition. Used by the
+        # main loop to give Cozmo time to start streaming after we ask
+        # for frames — empirically it can take 5-15 s between
+        # EnableCamera(enable=True) and the first frame arriving on
+        # firmware 2458, so a short staleness window would falsely
+        # flag a healthy connection as a Wi-Fi drop. (COZMO-22)
+        self._camera_enabled_at: Optional[float] = None
+
         def _on_clients_change(active_count: int) -> None:
             if active_count > 0 and not self._camera_active:
                 print(
@@ -456,6 +464,7 @@ class VisionDisplay:
                 )
                 cli.set_camera_params(exposure_ms=100)
                 self._camera_active = True
+                self._camera_enabled_at = time.time()
                 # Reset the staleness clock — it takes a moment for the
                 # first frame to arrive after EnableCamera, and the
                 # main loop's "no frames for >2 s ⇒ Wi-Fi drop" check
@@ -469,6 +478,7 @@ class VisionDisplay:
                 )
                 cli.enable_camera(enable=False)
                 self._camera_active = False
+                self._camera_enabled_at = None
             # active_count > 0 and _camera_active=True: nothing to do
             # active_count == 0 and _camera_active=False: nothing to do
 
@@ -660,7 +670,11 @@ class VisionDisplay:
             # Disconnect packet arrives; the staleness check is the only
             # reliable signal. Skipped when the camera is off (lazy mode,
             # COZMO-22) because no frames is the normal state then.
-            if self._camera_active:
+            # Also given a 5-second grace period after enable, because
+            # Cozmo firmware 2458 can take a long time to actually start
+            # streaming after EnableCamera. (COZMO-22)
+            if self._camera_active and self._camera_enabled_at is not None \
+                    and time.time() - self._camera_enabled_at > 5.0:
                 stale_for = time.time() - self._last_frame_time
                 if stale_for > 2.0:
                     logger_cubes.warning(
