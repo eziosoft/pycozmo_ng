@@ -665,7 +665,7 @@ class VisionDisplay:
                 self.running = False
                 break
 
-            # No camera frames for >2 s means the Wi-Fi AP dropped us.
+            # No camera frames for >5 s means the Wi-Fi AP dropped us.
             # cli.conn.state stays CONNECTED in that case because no
             # Disconnect packet arrives; the staleness check is the only
             # reliable signal. Skipped when the camera is off (lazy mode,
@@ -676,7 +676,7 @@ class VisionDisplay:
             if self._camera_active and self._camera_enabled_at is not None \
                     and time.time() - self._camera_enabled_at > 5.0:
                 stale_for = time.time() - self._last_frame_time
-                if stale_for > 2.0:
+                if stale_for > 5.0:
                     logger_cubes.warning(
                         "No camera frames for %.1fs — assuming Wi-Fi drop, "
                         "exiting main loop", stale_for,
