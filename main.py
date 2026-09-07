@@ -456,6 +456,12 @@ class VisionDisplay:
                 )
                 cli.set_camera_params(exposure_ms=100)
                 self._camera_active = True
+                # Reset the staleness clock — it takes a moment for the
+                # first frame to arrive after EnableCamera, and the
+                # main loop's "no frames for >2 s ⇒ Wi-Fi drop" check
+                # would otherwise fire and tear the session down
+                # immediately. (COZMO-22)
+                self._last_frame_time = time.time()
             elif active_count == 0 and self._camera_active:
                 print(
                     "🎥 No viewers — disabling Cozmo camera "
