@@ -129,10 +129,13 @@ class VisionProcessor:
         # self.cube_detector.set_debug(True)
 
         # Create fusion tracker
+        # max_age_frames is set very high so cubes persist at their last
+        # known position indefinitely after detection, rather than
+        # vanishing when temporarily out of view. (COZMO-27)
         self.cube_tracker = CubeFusionTracker(
             cube_size_mm=44.0,
             smoothing_alpha=0.3,
-            max_age_frames=10
+            max_age_frames=999999
         )
 
         logger.info("Cube detector initialized successfully")

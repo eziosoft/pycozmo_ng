@@ -270,22 +270,16 @@ class VisionDisplay:
         self.latest_debug_images = debug_images
 
     def update_web_viewer(self):
-        """Update web viewer with current cube states."""
+        """Update web viewer with current cube states.
+
+        Cubes persist at their last known position once detected —
+        they are never removed from the viewer, even when temporarily
+        out of sight.  Only new/updated positions are pushed. (COZMO-27)
+        """
         if not self.vision_processor:
             return
 
         fused_cubes = self.vision_processor.get_fused_cube_states()
-
-        if not hasattr(self, "_prev_cube_ids"):
-            self._prev_cube_ids = set()
-
-        current_cube_ids = set(fused_cubes.keys())
-
-        # Remove only cubes that truly disappeared. Diffing instead of
-        # clear_cubes() keeps the browser's cube state stable (no pop or
-        # teleport on transient detection flicker).
-        for cube_id in self._prev_cube_ids - current_cube_ids:
-            self.web_viewer.remove_cube(f"cube_{cube_id + 1}")
 
         for cube_id, cube_state in fused_cubes.items():
             cube_name = f"cube_{cube_id + 1}"
@@ -309,7 +303,6 @@ class VisionDisplay:
             except Exception as e:  # noqa: BLE001 — pose may be transiently invalid
                 print(f"⚠️  web viewer: could not read robot pose: {e}")
 
-        self._prev_cube_ids = current_cube_ids
         self.web_viewer.broadcast()
 
     def pil_to_cv2(self, pil_image):
