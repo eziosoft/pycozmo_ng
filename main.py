@@ -150,6 +150,13 @@ class VisionDisplay:
         # Used by the main run loop to detect a silent Wi-Fi drop (see run).
         self._last_frame_time = time.time()
 
+        # Position-derived heading state.  IMU heading updates instantly
+        # but wheel-based position lags, causing the virtual robot to
+        # slide sideways during turns.  We derive heading from consecutive
+        # positions so they always agree. (COZMO-27)
+        self._prev_pos: Optional[tuple] = None
+        self._derived_heading: float = 0.0
+
     def on_object_connection_state(self, cli, pkt):
         """Log cube connection state transitions for diagnostics.
 
@@ -303,9 +310,25 @@ class VisionDisplay:
         if self.cli is not None:
             try:
                 pose = self.cli.pose
+                pos = pose.position.x_y_z
+
+                # Derive heading from consecutive positions (X/Y plane).
+                # IMU heading updates instantly but wheel-based position
+                # lags — this keeps heading and position perfectly in sync
+                # so the virtual robot never slides sideways. (COZMO-27)
+                if self._prev_pos is not None:
+                    dx = pos[0] - self._prev_pos[0]
+                    dy = pos[1] - self._prev_pos[1]
+                    dist = (dx * dx + dy * dy) ** 0.5
+                    if dist > 0.5:  # >0.5 mm movement — ignore noise
+                        import math
+
+                        self._derived_heading = math.atan2(dx, dy)
+                self._prev_pos = pos
+
                 self.web_viewer.set_robot_state(
-                    pose.position.x_y_z,
-                    pose.rotation.angle_z.radians,
+                    pos,
+                    self._derived_heading,
                 )
             except Exception as e:  # noqa: BLE001 — pose may be transiently invalid
                 print(f"⚠️  web viewer: could not read robot pose: {e}")
@@ -494,7 +517,6 @@ class VisionDisplay:
                 # main loop's "no frames for >2 s ⇒ Wi-Fi drop" check
                 # would otherwise fire and tear the session down
                 # immediately. (COZMO-22)
-                self._last_frame_time = time.time()
             elif active_count == 0 and self._camera_active:
                 print("🎥 No viewers — disabling Cozmo camera (keeps the Wi-Fi quiet)")
                 cli.enable_camera(enable=False)
@@ -993,9 +1015,7 @@ def main():
                             display.vision_processor.forget_cube(cube_id)
                             display.web_viewer.broadcast()
 
-            cli.add_handler(
-                pycozmo.protocol_encoder.ObjectAccel, _on_object_accel
-            )
+            cli.add_handler(pycozmo.protocol_encoder.ObjectAccel, _on_object_accel)
             if not args.no_cube_lights:
                 display.start_cube_light_worker(cli)
             else:
