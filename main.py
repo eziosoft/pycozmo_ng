@@ -738,6 +738,17 @@ def main():
             "is the cause of the disconnects."
         ),
     )
+    parser.add_argument(
+        "--no-camera",
+        action="store_true",
+        help=(
+            "Skip enabling the Cozmo camera (no image streaming, no "
+            "detection, no display). Use this to isolate whether the "
+            "30-fps grayscale camera stream is overloading Cozmo's Wi-Fi "
+            "AP. With this flag you should see no Wi-Fi drop for as long "
+            "as the app runs."
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -825,13 +836,18 @@ def main():
                     "\n   No cubes will be lit; detection still runs."
                 )
 
-            print("🎥 Enabling camera...")
-            cli.enable_camera(enable=True, color=False)
-            cli.set_camera_params(exposure_ms=100)
+            if not args.no_camera:
+                print("🎥 Enabling camera...")
+                cli.enable_camera(enable=True, color=False)
+                cli.set_camera_params(exposure_ms=100)
 
-            time.sleep(2.0)
+                time.sleep(2.0)
 
-            display.setup_cube_mapping(cli)
+                display.setup_cube_mapping(cli)
+            else:
+                print("ℹ️  Camera disabled (--no-camera).")
+                print("   No image streaming, no detection, no display.")
+                print("   Keeping the connection alive for diagnostics only.")
 
             print("📍 Setting localization origin...")
             pkt = pycozmo.protocol_encoder.SetOrigin()
@@ -843,13 +859,30 @@ def main():
             # application-level handler is needed, so we don't subscribe to
             # EvtRobotStateUpdated. (COZMO-5)
 
-            print("\n✨ Starting display...\n")
-            print("🌐 Open http://<this-machine-ip>:8766 in a browser\n")
+            if args.no_camera:
+                print(
+                    "ℹ️  --no-camera: skipping display loop. "
+                    "Connection will stay idle. Press Ctrl-C to quit."
+                )
+                try:
+                    # Idle loop — just keep the connection alive so we can
+                    # see whether Cozmo drops Wi-Fi on its own, without any
+                    # of our app's traffic (camera, detection, cube lights,
+                    # display).
+                    while True:
+                        time.sleep(1.0)
+                except KeyboardInterrupt:
+                    pass
+            else:
+                print("\n✨ Starting display...\n")
+                print(
+                    "🌐 Open http://<this-machine-ip>:8766 in a browser\n"
+                )
 
-            display.run(cli)
-            display.stop_cube_light_worker()
+                display.run(cli)
+                display.stop_cube_light_worker()
 
-            print("\n✅ Display closed")
+                print("\n✅ Display closed")
 
     except KeyboardInterrupt:
         print("\n\n🛑 Interrupted by user")
