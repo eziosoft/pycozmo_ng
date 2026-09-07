@@ -22,9 +22,9 @@
     <span id="cube-count">0 cubes</span>
   </div>
 
-  <!-- Remote-control HUD. Active keys light up; keys only register
-       while the viewer panel has focus. (COZMO-25) -->
-  <div id="controls-hud" tabindex="0">
+  <!-- Remote-control HUD. Keys light up while held; keys register
+       whenever the browser tab itself is focused. (COZMO-25) -->
+  <div id="controls-hud">
     <div id="controls-title">Remote control (click here to focus)</div>
     <table id="controls-grid">
       <tr>
@@ -329,12 +329,25 @@
 
     // -----------------------------------------------------------------------
     // Remote control — keyboard → Cozmo motors via WebSocket. (COZMO-25)
+    //
+    // Keys register whenever the page has focus (the natural
+    // expectation: tab focus follows the click). The on-screen HUD
+    // shows what's held; pressing the keys without ever clicking the
+    // HUD will also work as long as the tab itself is the focused
+    // browser tab.
     // -----------------------------------------------------------------------
-    const CONTROL_KEYS = new Set([
-      'w', 'a', 's', 'd', 'r', 'f', 't', 'g', ' ',
-    ]);
+    const CONTROL_KEYS = {
+      w: 'drive fwd',
+      s: 'drive rev',
+      a: 'spin left',
+      d: 'spin right',
+      r: 'head up',
+      f: 'head down',
+      t: 'lift up',
+      g: 'lift down',
+      ' ': 'stop all',
+    };
     const heldKeys = new Set();
-    const controlHud = document.getElementById('controls-hud');
     const controlKeyEls = document.querySelectorAll('.ctl-key');
 
     function sendControl() {
@@ -346,12 +359,19 @@
       }
     }
 
+    function describeKeys(keys) {
+      const names = [];
+      for (const k of keys) {
+        if (k === ' ') names.push('SPACE');
+        else names.push(k.toUpperCase());
+      }
+      return names;
+    }
+
     function updateControlHud() {
       for (const el of controlKeyEls) {
         const k = el.dataset.key;
-        // Only the single-character "real" key cells light up; the
-        // descriptive "tag" cells next to them stay neutral.
-        if (CONTROL_KEYS.has(k) && k.length === 1) {
+        if (k in CONTROL_KEYS) {
           el.classList.toggle('active', heldKeys.has(k));
         }
       }
@@ -359,13 +379,9 @@
       if (titleEl) {
         titleEl.textContent =
           heldKeys.size > 0
-            ? `Driving: ${Array.from(heldKeys).sort().join(' + ')}`
-            : 'Remote control (click here to focus)';
+            ? `Driving: ${describeKeys(heldKeys).join(' + ')}`
+            : 'Remote control — keys register while this tab is focused';
       }
-    }
-
-    function isFocused() {
-      return controlHud.contains(document.activeElement) || document.activeElement === controlHud;
     }
 
     function clearHeld() {
@@ -375,40 +391,46 @@
       updateControlHud();
     }
 
+    function normalizeKey(e) {
+      if (e.key === ' ') return ' ';
+      if (e.key.length === 1) return e.key.toLowerCase();
+      return e.key;
+    }
+
     function onKeyDown(e) {
       // Allow modifier-laden browser shortcuts (Cmd-R, Ctrl-L etc.) to pass.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      // ' ' (space) is single char, lowercased to itself. Special-case it.
-      const norm = e.key === ' ' ? ' ' : k;
-      if (!CONTROL_KEYS.has(norm)) return;
-      if (!isFocused()) return;
+      const norm = normalizeKey(e);
+      if (!(norm in CONTROL_KEYS)) return;
+      // Ignore OS key-repeat events — sending the same key over and over
+      // just wastes bandwidth, and the server already knows it's held.
+      if (e.repeat) return;
       e.preventDefault();
-      if (heldKeys.has(norm)) return;  // ignore key repeat
+      if (heldKeys.has(norm)) return;
       heldKeys.add(norm);
       sendControl();
       updateControlHud();
     }
 
     function onKeyUp(e) {
-      const norm = e.key === ' ' ? ' ' : (e.key.length === 1 ? e.key.toLowerCase() : e.key);
-      if (!CONTROL_KEYS.has(norm)) return;
+      const norm = normalizeKey(e);
+      if (!(norm in CONTROL_KEYS)) return;
       heldKeys.delete(norm);
       sendControl();
       updateControlHud();
     }
 
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
+    // Capture at window so the HUD doesn't need to be focused — the
+    // page being focused is enough. Capture phase so we beat any
+    // potential default-scroll on Space.
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    window.addEventListener('keyup', onKeyUp, { capture: true });
     // Tab/click-out: drop any held keys so Cozmo doesn't keep driving
-    // when the user alt-tabs to check something else.
+    // when the user alt-tabs or focuses another app.
     window.addEventListener('blur', clearHeld);
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) clearHeld();
     });
-    // Make the HUD focusable; clicking anywhere on it gives it focus.
-    controlHud.addEventListener('click', () => controlHud.focus());
-    controlHud.addEventListener('focus', updateControlHud);
     // Closing the tab: tell the server so it can stop motors immediately.
     window.addEventListener('beforeunload', () => {
       heldKeys.clear();

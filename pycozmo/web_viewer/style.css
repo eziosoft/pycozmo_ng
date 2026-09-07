@@ -152,13 +152,7 @@ html, body {
   border-radius: 6px;
   color: #ddd;
   font-size: 12px;
-  outline: none;
   user-select: none;
-}
-
-#controls-hud:focus {
-  background: rgba(0, 40, 80, 0.7);
-  box-shadow: 0 0 0 2px rgba(80, 160, 255, 0.6);
 }
 
 #controls-title {
