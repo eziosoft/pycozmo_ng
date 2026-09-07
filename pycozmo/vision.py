@@ -149,6 +149,15 @@ class VisionProcessor:
         """
         return self.fused_cubes.copy()
 
+    def forget_cube(self, cube_id):
+        """Remove a cube from the fusion tracker.
+
+        Called when the cube's IMU detects movement — the old position is
+        stale and the cube will be placed fresh on the next camera frame.
+        (COZMO-27)
+        """
+        self.cube_tracker.forget_cube(cube_id)
+
     def detect_cubes(self, image: Image.Image, head_angle_rad: float = 0.0) -> List[CubeDetection]:
         """
         Detect cubes in the given camera image.

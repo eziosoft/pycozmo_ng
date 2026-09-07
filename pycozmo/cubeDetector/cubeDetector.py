@@ -108,6 +108,15 @@ class CubeFusionTracker:
 
         return self.cubes.copy()
 
+    def forget_cube(self, cube_id):
+        """Remove a cube from tracking so it gets re-placed on next detection.
+
+        Called when the cube's IMU detects movement — the old position is
+        stale and the cube will be placed fresh on the next camera frame.
+        (COZMO-27)
+        """
+        self.cubes.pop(cube_id, None)
+
     def _fuse_detections(self, detections):
         """
         Fuse multiple face detections of the same cube into a single cube pose

@@ -137,6 +137,10 @@ class VisionDisplay:
 
         # Cube tracking variables
         self.cube_factory_id_map = {}
+        # Factory ID of the cube currently in Cozmo's single connection
+        # slot.  Updated by on_object_connection_state; used by the IMU
+        # handler to map ObjectAccel (object_id=1) back to a cube_id. (COZMO-27)
+        self._current_factory_id: int | None = None
         # Per-cube "last seen" frame index, for diagnostics only. The cube-
         # light worker no longer uses it to drive disconnects — Cozmo drops
         # out-of-range cubes on its own, and our old proactive disconnect
@@ -167,12 +171,15 @@ class VisionDisplay:
             )
             return
         if pkt.connected:
+            self._current_factory_id = pkt.factory_id
             logger_cubes.info(
                 "Cube %d connected: object_id=%s",
                 cube_id,
                 pkt.object_id,
             )
         else:
+            if self._current_factory_id == pkt.factory_id:
+                self._current_factory_id = None
             logger_cubes.info(
                 "Cube %d disconnected (object_id=%s)",
                 cube_id,
@@ -658,6 +665,13 @@ class VisionDisplay:
                     )
                 )
                 cli.conn.send(pycozmo.protocol_encoder.CubeId(object_id=OBJECT_ID))
+                # Enable accelerometer streaming so we can detect when
+                # the cube is physically moved. (COZMO-27)
+                cli.conn.send(
+                    pycozmo.protocol_encoder.StreamObjectAccel(
+                        object_id=OBJECT_ID, enable=True
+                    )
+                )
                 cli.conn.send(
                     pycozmo.protocol_encoder.CubeLights(
                         states=(
@@ -959,6 +973,28 @@ def main():
             cli.add_handler(
                 pycozmo.protocol_encoder.ObjectConnectionState,
                 display.on_object_connection_state,
+            )
+
+            # Cube IMU — when the cube's accelerometer detects movement,
+            # remove it from the tracker so the next camera frame re-detects
+            # it at its new world position. (COZMO-27)
+            _ACCEL_THRESHOLD = 15.0  # m/s² — above gravity + noise
+
+            def _on_object_accel(c, pkt):
+                import math
+
+                mag = math.sqrt(pkt.accel_x**2 + pkt.accel_y**2 + pkt.accel_z**2)
+                if mag > _ACCEL_THRESHOLD and display.vision_processor is not None:
+                    # Map the currently-connected factory_id → cube_id.
+                    fid = display._current_factory_id
+                    if fid is not None:
+                        cube_id = display._cube_id_for_factory(fid)
+                        if cube_id is not None:
+                            display.vision_processor.forget_cube(cube_id)
+                            display.web_viewer.broadcast()
+
+            cli.add_handler(
+                pycozmo.protocol_encoder.ObjectAccel, _on_object_accel
             )
             if not args.no_cube_lights:
                 display.start_cube_light_worker(cli)
