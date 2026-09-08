@@ -149,13 +149,15 @@
     scene.add(floor);
 
     // -----------------------------------------------------------------------
-    // Robot box  (55 x 60 x 90 mm)
+    // Robot box  (Cozmo: 108 L x 64 W x 64 H mm — BoxGeometry(x=W, y=H, z=L))
     // -----------------------------------------------------------------------
     function createRobot() {
       const group = new THREE.Group();
 
-      // Cozmo dimensions: 130 x 75 x 72 mm (L x H x W)
-      const geo = new THREE.BoxGeometry(72, 75, 130);
+      // Cozmo dimensions: 108 mm long and 64 mm wide, 64 mm high.
+      // Width along scene X, height along scene Y, length along scene Z
+      // (forward), so BoxGeometry(width=64, height=64, depth=108).
+      const geo = new THREE.BoxGeometry(64, 64, 108);
       // Wireframe
       const wire = new THREE.LineSegments(
         new THREE.EdgesGeometry(geo),
@@ -176,9 +178,9 @@
       // The group origin is the robot's world position P (= the front-centre
       // ground point under the camera, per our camera-to-body model). So the
       // box body sits with its front face at the origin, extending backward
-      // (on the floor) and upward: center at (0, +37.5, -65).
-      fill.position.set(0, 37.5, -65);
-      wire.position.set(0, 37.5, -65);
+      // (on the floor) and upward: center at (0, +32, -54).
+      fill.position.set(0, 32, -54);
+      wire.position.set(0, 32, -54);
 
       // Camera origin marker (yellow dot) — at group origin
       const camGeo = new THREE.SphereGeometry(3, 12, 8);

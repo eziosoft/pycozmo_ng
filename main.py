@@ -45,7 +45,6 @@ import pycozmo
 from pycozmo.logger import logger_cubes
 from pycozmo import vision
 from pycozmo.camera_calibration import CameraCalibrationRetriever
-from pycozmo.cube_imu import CubeMoveDetector
 from pycozmo.web_viewer_server import WebViewerServer
 
 
@@ -138,23 +137,12 @@ class VisionDisplay:
 
         # Cube tracking variables
         self.cube_factory_id_map = {}
-        # Factory ID of the cube currently in Cozmo's single connection
-        # slot.  Updated by on_object_connection_state; used by the IMU
-        # handler to map ObjectAccel (object_id=1) back to a cube_id. (COZMO-27)
-        self._current_factory_id: int | None = None
         # Per-cube "last seen" frame index, for diagnostics only. The cube-
         # light worker no longer uses it to drive disconnects — Cozmo drops
-        # out-of-range cubes on its own, and our old proactive disconnect
-        # caused spurious drops when paired with multi-cube connects. (COZMO-20)
+        # out-of-range cubes on its own, and old proactive disconnect
+        # logic caused spurious drops once multi-cube connects were enabled.
+        # (COZMO-20)
         self._cube_last_seen_frame = {}
-        # Cube-movement detectors (cube_id 1..3 -> CubeMoveDetector). Fed by
-        # ObjectAccel (enabled by the cube-light worker) so a moved cube is
-        # dropped from the world map and re-detected at its new position.
-        # Robust to the accel garbage the cube emits right after connecting —
-        # the old absolute-threshold check made cubes vanish from the web
-        # viewer while they sat perfectly still once the lights were on.
-        # (COZMO-27 / COZMO-32)
-        self._cube_move_detectors: dict[int, CubeMoveDetector] = {}
         # Wall-clock timestamp of the most recently received camera frame.
         # Used by the main run loop to detect a silent Wi-Fi drop (see run).
         self._last_frame_time = time.time()
@@ -162,12 +150,11 @@ class VisionDisplay:
     def on_object_connection_state(self, cli, pkt):
         """Log cube connection state transitions for diagnostics.
 
-        Cozmo's firmware only allows ONE cube connected at a time and
-        always assigns ``object_id=1`` to that single slot. ``cli.connected_objects``
-        never holds more than one entry. We don't need to cache object_ids
-        — the cube-light worker hardcodes ``object_id=1`` and just relies
-        on each ``CubeId + CubeLights`` arriving while the right cube is
-        in the slot. (COZMO-20)
+        Cozmo keeps several cubes connected simultaneously; each connection
+        has its own temporary ``object_id`` (``cli.connected_objects`` is
+        keyed by it — see ``_cube_id_for_object_id``). The robot assigns
+        ``object_id=1`` to the first connection, 2 to the next, and so on.
+        (COZMO-20)
         """
         cube_id = self._cube_id_for_factory(pkt.factory_id)
         if cube_id is None:
@@ -180,21 +167,12 @@ class VisionDisplay:
             )
             return
         if pkt.connected:
-            self._current_factory_id = pkt.factory_id
-            # Start the accel grace period + discard the old resting baseline:
-            # the cube is freshly connected and its next accel samples are
-            # not trustworthy (connect storm from the cube-light worker).
-            self._cube_move_detectors.setdefault(
-                cube_id, CubeMoveDetector()
-            ).on_connection(time.time())
             logger_cubes.info(
                 "Cube %d connected: object_id=%s",
                 cube_id,
                 pkt.object_id,
             )
         else:
-            if self._current_factory_id == pkt.factory_id:
-                self._current_factory_id = None
             logger_cubes.info(
                 "Cube %d disconnected (object_id=%s)",
                 cube_id,
@@ -207,6 +185,19 @@ class VisionDisplay:
             if fid == factory_id:
                 return cube_id
         return None
+
+    def _cube_id_for_object_id(self, cli, object_id: int) -> Optional[int]:
+        """Reverse lookup: temporary object_id -> detected cube_id (1..3).
+
+        ``cli.connected_objects`` is keyed by the temporary object_id Cozmo
+        assigns per connection; each entry holds the permanent ``factory_id``.
+        Several cubes can be connected at once, so this is the only reliable
+        way to map an ObjectMoved/ObjectAccel packet back to a cube.
+        """
+        info = cli.connected_objects.get(object_id)
+        if info is None:
+            return None
+        return self._cube_id_for_factory(info.get("factory_id"))
 
     def on_raw_camera_image(self, cli, image):
         """Handler for raw camera images."""
@@ -596,21 +587,22 @@ class VisionDisplay:
         print("=" * 70 + "\n")
 
     def _cube_light_tick(self, cli):
-        """Run one cube-light update cycle.
+        """Keep every detected cube connected and lit.
 
-        Cozmo only allows one cube connected at a time and always assigns
-        ``object_id=1`` to the single connected cube. The protocol docs
-        call object_id "temporary", but in practice it is a fixed slot
-        index — there is only one slot, hence always 1.
+        Cozmo connects to several light cubes at once; each connection gets
+        its own temporary ``object_id`` (``cli.connected_objects`` is keyed
+        by it). The old cycling approach assumed a single connection slot and
+        therefore disconnected/reconnected cubes every cycle (COZMO-20/23) —
+        which is also why accelerometer-based relocation never worked: the
+        accel stream for a cube only flowed in the brief window it was
+        connected. Keeping cubes connected continuously means the robot's
+        ObjectMoved events (and lights) work for all cubes at once.
 
-        For each detected cube we fire ``ObjectConnect`` + ``CubeId`` +
-        ``CubeLights`` back-to-back with no waiting. The robot processes
-        the packets in order: it implicitly disconnects whatever was in
-        the slot, connects our cube, then receives the CubeId and
-        CubeLights as soon as the slot has been re-allocated. The lights
-        then need to persist across the next disconnect — empirically
-        they do, for a few seconds at least, so cycling through N cubes
-        every cycle keeps them all illuminated. (COZMO-20)
+        Each tick:
+          1. Connect any detected cube that is not connected yet.
+          2. For each connected cube, re-send CubeId + StreamObjectAccel +
+             CubeLights so its LEDs stay on and the accel/event stream stays
+             enabled.
         """
         # Bail out if the robot has dropped the Wi-Fi connection.
         if cli.conn.state != pycozmo.conn.Connection.CONNECTED:
@@ -639,40 +631,41 @@ class VisionDisplay:
         if not detected_cube_ids:
             return
 
-        logger_cubes.debug(
-            "Light tick: detected=%s",
-            detected_cube_ids,
-        )
+        # Currently-connected cubes: object_id -> {factory_id, object_type}.
+        connected = dict(cli.connected_objects)
+        connected_factory_ids = {info.get("factory_id") for info in connected.values()}
 
-        # Cozmo's single connection slot always gets object_id=1.
-        OBJECT_ID = 1
-        # Pause between cubes so the robot has time to register each
-        # connect before the next one arrives. Empirically <50 ms is
-        # not enough; 200 ms works reliably without making the cycle
-        # feel sluggish.
-        BETWEEN_CUBE_S = 0.2
-
+        # 1. Connect any detected cube that isn't connected yet.
         for cube_id in detected_cube_ids:
-            if cube_id not in self.cube_factory_id_map:
+            factory_id = self.cube_factory_id_map.get(cube_id)
+            if factory_id is None or factory_id in connected_factory_ids:
                 continue
-            factory_id = self.cube_factory_id_map[cube_id]
-
-            try:
-                # All three packets back-to-back. The robot will accept
-                # CubeId+CubeLights addressed to the slot even if the
-                # connect ack hasn't reached us yet — the robot processes
-                # commands in the order we send them.
-                cli.conn.send(
-                    pycozmo.protocol_encoder.ObjectConnect(
-                        factory_id=factory_id, connect=True
-                    )
+            cli.conn.send(
+                pycozmo.protocol_encoder.ObjectConnect(
+                    factory_id=factory_id, connect=True
                 )
-                cli.conn.send(pycozmo.protocol_encoder.CubeId(object_id=OBJECT_ID))
-                # Enable accelerometer streaming so we can detect when
-                # the cube is physically moved. (COZMO-27)
+            )
+            logger_cubes.debug(
+                "Cube %d: connecting (factory_id=0x%08x)",
+                cube_id,
+                factory_id,
+            )
+            # Brief settle so the connect registers before CubeId/CubeLights.
+            time.sleep(0.2)
+
+        # 2. Refresh lights + accel stream on each connected cube.
+        for object_id, info in connected.items():
+            cube_id = self._cube_id_for_factory(info.get("factory_id"))
+            if cube_id is None:
+                continue
+            try:
+                cli.conn.send(pycozmo.protocol_encoder.CubeId(object_id=object_id))
+                # Enable accelerometer/event streaming for THIS cube, on its
+                # own object_id, so the robot reports ObjectMoved for it.
+                # (COZMO-27)
                 cli.conn.send(
                     pycozmo.protocol_encoder.StreamObjectAccel(
-                        object_id=OBJECT_ID, enable=True
+                        object_id=object_id, enable=True
                     )
                 )
                 cli.conn.send(
@@ -686,21 +679,16 @@ class VisionDisplay:
                     )
                 )
                 logger_cubes.debug(
-                    "Cube %d: cycle sent (factory_id=0x%08x)",
+                    "Cube %d: lit (object_id=%d)",
                     cube_id,
-                    factory_id,
+                    object_id,
                 )
             except Exception as e:
                 logger_cubes.warning(
-                    "Cube %d: cycle failed: %s",
+                    "Cube %d: light refresh failed: %s",
                     cube_id,
                     e,
                 )
-
-            # Brief settle before moving on to the next cube, so the
-            # robot can process this cube's connect before we ask it to
-            # disconnect the same cube and connect a different one.
-            time.sleep(BETWEEN_CUBE_S)
 
     def run(self, cli):
         """Main display loop."""
@@ -978,42 +966,31 @@ def main():
                 display.on_object_connection_state,
             )
 
-            # Cube IMU — when the cube's accelerometer detects movement,
-            # remove it from the tracker so the next camera frame re-detects
-            # it at its new world position. (COZMO-27)
+            # Cube relocation — the ROBOT watches each connected cube's
+            # accelerometer and emits ObjectMoved (0xb4) when the cube is
+            # picked up / moved / set down; ObjectStoppedMoving fires when it
+            # settles. We don't have to threshold raw ObjectAccel samples
+            # ourselves (the firmware does that part) — on ObjectMoved we
+            # simply drop the cube's world pose so the next camera frame
+            # re-detects it at its new position. (COZMO-27, COZMO-33)
             #
-            # The detection must be robust: the accel stream is only enabled
-            # by the cube-light worker (every cycle it reconnects the cube,
-            # and the first samples after connect are garbage), so the old
-            # single-sample "mag > 15 m/s²" check made a perfectly still cube
-            # vanish/flicker on the web viewer the moment the lights turned on
-            # — even with the light facing away from the camera. CubeMoveDetector
-            # applies a post-connect grace period, a resting baseline and a
-            # debounce before declaring a move. (COZMO-32)
-            def _on_object_accel(c, pkt):
-                import math
-
+            # Keyed by the packet's object_id (NOT a single global "current
+            # cube") so several cubes connected at once stay correct.
+            def _on_object_moved(c, pkt):
                 if display.vision_processor is None:
                     return
-                # Map the currently-connected factory_id → cube_id.
-                fid = display._current_factory_id
-                if fid is None:
-                    return
-                cube_id = display._cube_id_for_factory(fid)
+                cube_id = display._cube_id_for_object_id(cli, pkt.object_id)
                 if cube_id is None:
                     return
-
-                detector = display._cube_move_detectors.setdefault(
-                    cube_id, CubeMoveDetector()
+                logger_cubes.info(
+                    "Cube %d moved (object_id=%d) — reacquiring world pose",
+                    cube_id,
+                    pkt.object_id,
                 )
-                mag = math.hypot(pkt.accel_x, pkt.accel_y, pkt.accel_z)
-                if detector.update(time.time(), mag):
-                    # Drop the cube's world pose so it is re-placed at its
-                    # new position on the next camera frame.
-                    display.web_viewer.forget_cube(cube_id - 1)
-                    display.web_viewer.broadcast()
+                display.web_viewer.forget_cube(cube_id - 1)
+                display.web_viewer.broadcast()
 
-            cli.add_handler(pycozmo.protocol_encoder.ObjectAccel, _on_object_accel)
+            cli.add_handler(pycozmo.protocol_encoder.ObjectMoved, _on_object_moved)
             if not args.no_cube_lights:
                 display.start_cube_light_worker(cli)
             else:
