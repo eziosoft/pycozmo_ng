@@ -45,6 +45,7 @@ import pycozmo
 from pycozmo.logger import logger_cubes
 from pycozmo import vision
 from pycozmo.camera_calibration import CameraCalibrationRetriever
+from pycozmo.cube_imu import CubeMoveDetector
 from pycozmo.web_viewer_server import WebViewerServer
 
 
@@ -143,6 +144,24 @@ class VisionDisplay:
         # logic caused spurious drops once multi-cube connects were enabled.
         # (COZMO-20)
         self._cube_last_seen_frame = {}
+        # Cube-movement detectors (cube_id 1..3 -> CubeMoveDetector). Fed by
+        # ObjectAccel (enabled by the cube-light worker). Two invalidation
+        # sources:
+        #   1. ObjectAccel + CubeMoveDetector (baseline/debounce) — the
+        #      reliable path; ObjectAccel is proven to arrive at ~30 ms on the
+        #      raw link once StreamObjectAccel is enabled.
+        #   2. ObjectMoved (0xb4) — the robot's own accel-processing event,
+        #      used as a fast-path when the raw link provides it.
+        # (COZMO-27, COZMO-32, COZMO-33, COZMO-34)
+        self._cube_move_detectors: dict[int, CubeMoveDetector] = {}
+        # Cube-measurement suppression while a cube is being relocated (COZMO-34).
+        # Mapping: ids=set of cube_id being suppressed; fresh_frames=consecutive
+        # re-detection frame count per cube; fresh_frames_needed=threshold.
+        self._cube_suppress: dict = {
+            "ids": set(),
+            "fresh_frames": {},
+            "fresh_frames_needed": 5,
+        }
         # Wall-clock timestamp of the most recently received camera frame.
         # Used by the main run loop to detect a silent Wi-Fi drop (see run).
         self._last_frame_time = time.time()
@@ -167,6 +186,11 @@ class VisionDisplay:
             )
             return
         if pkt.connected:
+            # Start the accel grace period + discard the old resting baseline:
+            # freshly-connected cubes emit unreliable accel for a moment.
+            self._cube_move_detectors.setdefault(
+                cube_id, CubeMoveDetector()
+            ).on_connection(time.time())
             logger_cubes.info(
                 "Cube %d connected: object_id=%s",
                 cube_id,
@@ -290,20 +314,50 @@ class VisionDisplay:
         broadcast to any connected browser. The robot's world pose is pushed
         separately by the RobotState handler (``_on_robot_state_for_trail``),
         which is independent of the camera stream. (World-map refactor)
+
+        Cubes that have been invalidated (moved, ``forget_cube``) are
+        suppressed here until they are re-detected stably — otherwise the
+        per-frame vision tracker keeps re-feeding the cube's *old* camera pose
+        the instant it is forgotten, and the visible position never actually
+        resets. (COZMO-34)
         """
         if not self.vision_processor:
             return
 
         head_angle = self.cli.head_angle.radians if self.cli is not None else 0.0
 
+        suppressed = self._cube_suppress.get("ids", set())
+        fresh_frames = self._cube_suppress.get("fresh_frames", {})
+        new_fresh_frames = {}
+
         for m in self.vision_processor.get_cube_measurements():
+            cube_id = m["cube_id"]
+            if cube_id in suppressed:
+                # Count consecutive frames the cube has been (re-)detected.
+                # Only once it has been tracked for FRESH_FRAMES_NEEDED
+                # consecutive frames do we trust it has settled somewhere new.
+                n = fresh_frames.get(cube_id, 0) + 1
+                new_fresh_frames[cube_id] = n
+                if n < self._cube_suppress["fresh_frames_needed"]:
+                    continue
+                # Settlement confirmed — stop suppressing.
+                suppressed.discard(cube_id)
+                logger_cubes.info(
+                    "Cube %d re-settled — re-enabling measurements", cube_id + 1
+                )
+
             self.web_viewer.update_cube_measurement(
-                m["cube_id"],
+                cube_id,
                 m["position"],
                 m["rotation_matrix"],
                 m["confidence"],
                 head_angle,
             )
+
+        # A cube that was suppressed but is NO LONGER detected at all resets
+        # its freshness counter (it may have been out of frame while moving —
+        # the counter only counts continuous re-detection).
+        self._cube_suppress["fresh_frames"] = new_fresh_frames
 
         self.web_viewer.broadcast()
 
@@ -653,6 +707,11 @@ class VisionDisplay:
             # Brief settle so the connect registers before CubeId/CubeLights.
             time.sleep(0.2)
 
+        # Re-read connected objects AFTER any connects this tick, so a cube
+        # freshly connected above still gets its accel/lights this cycle —
+        # otherwise it would wait until the next tick (~2 s). (COZMO-34)
+        connected = dict(cli.connected_objects)
+
         # 2. Refresh lights + accel stream on each connected cube.
         for object_id, info in connected.items():
             cube_id = self._cube_id_for_factory(info.get("factory_id"))
@@ -966,30 +1025,69 @@ def main():
                 display.on_object_connection_state,
             )
 
-            # Cube relocation — the ROBOT watches each connected cube's
-            # accelerometer and emits ObjectMoved (0xb4) when the cube is
-            # picked up / moved / set down; ObjectStoppedMoving fires when it
-            # settles. We don't have to threshold raw ObjectAccel samples
-            # ourselves (the firmware does that part) — on ObjectMoved we
-            # simply drop the cube's world pose so the next camera frame
-            # re-detects it at its new position. (COZMO-27, COZMO-33)
+            # ------------------------------------------------------------------
+            # Cube relocation — two complementary invalidation paths.
             #
-            # Keyed by the packet's object_id (NOT a single global "current
-            # cube") so several cubes connected at once stay correct.
+            # Path A (RELIABLE): threshold raw ObjectAccel ourselves. The raw
+            #   SoC link streams ObjectAccel at ~30 ms once StreamObjectAccel
+            #   is enabled — this is proven to arrive (it's what made cubes
+            #   vanish in COZMO-32). CubeMoveDetector gates on post-connect
+            #   grace + resting baseline + debounce so a still cube never
+            #   trips, but a real pickup does. (COZMO-27, COZMO-32)
+            #
+            # Path B (FAST-PATH): the robot's own ObjectMoved (0xb4). Only
+            #   available when the robot has cubes in accel-processing mode,
+            #   which on the raw link appears to require the app's persistent
+            #   "block pool" we can't request — so it may never fire. Kept as
+            #   a fast-path; both paths converge on forget_cube + broadcast.
+            #   (COZMO-33, COZMO-34)
+            # ------------------------------------------------------------------
+            def _invalidate_cube_pose(cube_id, source):
+                display.web_viewer.forget_cube(cube_id - 1)
+                display.web_viewer.broadcast()
+                # Suppress camera measurements for this cube until it is
+                # re-detected stably at its new position, so the stale vision
+                # pose does not immediately re-seed the world map. (COZMO-34)
+                display._cube_suppress["ids"].add(cube_id - 1)
+                display._cube_suppress["fresh_frames"].pop(cube_id - 1, None)
+                logger_cubes.info(
+                    "Cube %d moved (%s) — reacquiring world pose",
+                    cube_id,
+                    source,
+                )
+
+            def _on_object_accel(c, pkt):
+                import math
+
+                if display.vision_processor is None:
+                    return
+                cube_id = display._cube_id_for_object_id(cli, pkt.object_id)
+                if cube_id is None:
+                    # Debug aid: if this fires but cubes never relocate, the
+                    # object_id mapping is wrong (COZMO-34).
+                    logger_cubes.warning(
+                        "ObjectAccel for unknown object_id=%s (connected=%s) — "
+                        "cube relocation may be broken",
+                        pkt.object_id,
+                        list(cli.connected_objects.keys()),
+                    )
+                    return
+                detector = display._cube_move_detectors.setdefault(
+                    cube_id, CubeMoveDetector()
+                )
+                mag = math.hypot(pkt.accel_x, pkt.accel_y, pkt.accel_z)
+                if detector.update(time.time(), mag):
+                    _invalidate_cube_pose(cube_id, "ObjectAccel")
+
             def _on_object_moved(c, pkt):
                 if display.vision_processor is None:
                     return
                 cube_id = display._cube_id_for_object_id(cli, pkt.object_id)
                 if cube_id is None:
                     return
-                logger_cubes.info(
-                    "Cube %d moved (object_id=%d) — reacquiring world pose",
-                    cube_id,
-                    pkt.object_id,
-                )
-                display.web_viewer.forget_cube(cube_id - 1)
-                display.web_viewer.broadcast()
+                _invalidate_cube_pose(cube_id, "ObjectMoved")
 
+            cli.add_handler(pycozmo.protocol_encoder.ObjectAccel, _on_object_accel)
             cli.add_handler(pycozmo.protocol_encoder.ObjectMoved, _on_object_moved)
             if not args.no_cube_lights:
                 display.start_cube_light_worker(cli)
