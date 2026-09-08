@@ -173,10 +173,12 @@
       );
       group.add(fill);
 
-      // Body offset: camera origin is at the group origin (0, 0, 0).
-      // Camera sits at the front-top of Cozmo; body extends behind and below.
-      fill.position.set(0, -37.5, -65);
-      wire.position.set(0, -37.5, -65);
+      // The group origin is the robot's world position P (= the front-centre
+      // ground point under the camera, per our camera-to-body model). So the
+      // box body sits with its front face at the origin, extending backward
+      // (on the floor) and upward: center at (0, +37.5, -65).
+      fill.position.set(0, 37.5, -65);
+      wire.position.set(0, 37.5, -65);
 
       // Camera origin marker (yellow dot) — at group origin
       const camGeo = new THREE.SphereGeometry(3, 12, 8);

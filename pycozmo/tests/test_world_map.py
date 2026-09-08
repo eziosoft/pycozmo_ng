@@ -34,9 +34,12 @@ class TestCoords:
         scene = coords.world_to_scene_point([10.0, 20.0, 0.0])
         np.testing.assert_allclose(scene, [-10.0, 0.0, 20.0], atol=1e-9)
 
-    def test_world_yaw_mirrors_to_scene(self):
+    def test_world_yaw_to_scene_is_not_mirrored(self):
+        # A yaw about world Z maps to the same rotation.y in scene: the world→
+        # scene basis (X→-X, Y→Z, Z→Y) cancels the body-forward mirror.
         assert coords.world_yaw_to_scene(0.0) == pytest.approx(0.0)
-        assert coords.world_yaw_to_scene(np.pi / 2) == pytest.approx(-np.pi / 2)
+        assert coords.world_yaw_to_scene(np.pi / 2) == pytest.approx(np.pi / 2)
+        assert coords.world_yaw_to_scene(-np.pi / 2) == pytest.approx(-np.pi / 2)
 
 
 class TestWorldMapFusion:
@@ -70,6 +73,22 @@ class TestWorldMapFusion:
         assert wm.get_cubes() == {}
         assert len(wm.get_path_points()) == 1
         np.testing.assert_allclose(wm.get_path_points()[0], [5.0, 6.0, 0.0])
+
+    def test_cube_relative_to_robot_stays_in_front_after_turn(self):
+        # A cube observed straight ahead must render directly in front of the
+        # robot box for ANY heading (camera sees only the front, COZMO complaint).
+        for yaw in (0.0, np.pi / 4, np.pi / 2, -2.0):
+            wm = WorldMap()
+            wm.update_robot_pose([0.0, 0.0, 0.0], yaw, origin_id=1, record_path=False)
+            wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
+            cube_world = np.array(wm.get_cubes()[0].position)
+            # Unit vector from robot to cube, in world frame.
+            rel = cube_world[:2] / np.linalg.norm(cube_world[:2])
+            # Robot forward in world = (-sin yaw, cos yaw).
+            fwd = np.array([-np.sin(yaw), np.cos(yaw)])
+            # The cube must be substantially "ahead" (dot positive, near 1).
+            dot = float(np.dot(rel, fwd))
+            assert dot > 0.9, f"yaw={yaw}: cube not in front (dot={dot:.2f})"
 
     def test_path_recording_and_reset(self):
         wm = WorldMap()

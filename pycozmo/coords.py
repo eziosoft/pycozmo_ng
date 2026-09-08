@@ -151,9 +151,10 @@ def world_to_scene_rotation(rotation_world: np.ndarray) -> np.ndarray:
 def world_yaw_to_scene(yaw_rad: float) -> float:
     """Map a world-frame yaw (about world Z) to a scene rotation.y.
 
-    The scene's X axis is negated relative to world, which mirrors yaw. A world
-    forward vector at yaw ``ψ`` (body +Y = world (sin ψ, cos ψ, 0)) maps to the
-    scene vector (-sin ψ, 0, cos ψ); a Three.js ``rotation.y = θ`` rotates +Z to
-    (sin θ, 0, cos θ), so ``θ = -ψ``.
+    The robot's world forward is ``(-sin ψ, cos ψ, 0)`` (body +Y at yaw ``ψ``).
+    Under the world→scene change of basis (X→-X, Y→Z, Z→Y) it becomes the
+    scene vector ``(sin ψ, 0, cos ψ)``. A Three.js ``rotation.y = θ`` rotates the
+    +Z forward to ``(sin θ, 0, cos θ)``, so ``θ = ψ`` (the X negation cancels
+    against body +Y pointing at +X in that basis — no mirroring).
     """
-    return -float(yaw_rad)
+    return float(yaw_rad)

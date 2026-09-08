@@ -39,6 +39,12 @@ world frame. Owned by the `WorldMap` library class; the web server and viewer ar
 thin adapters over it.
 _Avoid_: scene state, viewer state
 
+**Scene yaw**:
+The world-frame yaw maps to scene `rotation.y` **without** mirroring
+(`scene_yaw = world_yaw`). The world→scene basis change (X→-X, Y→Z, Z→Y) cancels the
+body-forward mirror, so a right-handed yaw stays right-handed — do not negate it.
+_Avoid_: negating the yaw "to account for X reflection" (a common but wrong fix)
+
 **Fusion**:
 The process of combining noisy, repeated cube measurements into one stable
 world-frame estimate using confidence-gated, confidence-weighted exponential
