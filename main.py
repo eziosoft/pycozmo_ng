@@ -45,6 +45,7 @@ import pycozmo
 from pycozmo.logger import logger_cubes
 from pycozmo import vision
 from pycozmo.camera_calibration import CameraCalibrationRetriever
+from pycozmo.cube_imu import CubeMoveDetector
 from pycozmo.web_viewer_server import WebViewerServer
 
 
@@ -146,6 +147,14 @@ class VisionDisplay:
         # out-of-range cubes on its own, and our old proactive disconnect
         # caused spurious drops when paired with multi-cube connects. (COZMO-20)
         self._cube_last_seen_frame = {}
+        # Cube-movement detectors (cube_id 1..3 -> CubeMoveDetector). Fed by
+        # ObjectAccel (enabled by the cube-light worker) so a moved cube is
+        # dropped from the world map and re-detected at its new position.
+        # Robust to the accel garbage the cube emits right after connecting —
+        # the old absolute-threshold check made cubes vanish from the web
+        # viewer while they sat perfectly still once the lights were on.
+        # (COZMO-27 / COZMO-32)
+        self._cube_move_detectors: dict[int, CubeMoveDetector] = {}
         # Wall-clock timestamp of the most recently received camera frame.
         # Used by the main run loop to detect a silent Wi-Fi drop (see run).
         self._last_frame_time = time.time()
@@ -172,6 +181,12 @@ class VisionDisplay:
             return
         if pkt.connected:
             self._current_factory_id = pkt.factory_id
+            # Start the accel grace period + discard the old resting baseline:
+            # the cube is freshly connected and its next accel samples are
+            # not trustworthy (connect storm from the cube-light worker).
+            self._cube_move_detectors.setdefault(
+                cube_id, CubeMoveDetector()
+            ).on_connection(time.time())
             logger_cubes.info(
                 "Cube %d connected: object_id=%s",
                 cube_id,
@@ -288,9 +303,7 @@ class VisionDisplay:
         if not self.vision_processor:
             return
 
-        head_angle = (
-            self.cli.head_angle.radians if self.cli is not None else 0.0
-        )
+        head_angle = self.cli.head_angle.radians if self.cli is not None else 0.0
 
         for m in self.vision_processor.get_cube_measurements():
             self.web_viewer.update_cube_measurement(
@@ -968,22 +981,37 @@ def main():
             # Cube IMU — when the cube's accelerometer detects movement,
             # remove it from the tracker so the next camera frame re-detects
             # it at its new world position. (COZMO-27)
-            _ACCEL_THRESHOLD = 15.0  # m/s² — above gravity + noise
-
+            #
+            # The detection must be robust: the accel stream is only enabled
+            # by the cube-light worker (every cycle it reconnects the cube,
+            # and the first samples after connect are garbage), so the old
+            # single-sample "mag > 15 m/s²" check made a perfectly still cube
+            # vanish/flicker on the web viewer the moment the lights turned on
+            # — even with the light facing away from the camera. CubeMoveDetector
+            # applies a post-connect grace period, a resting baseline and a
+            # debounce before declaring a move. (COZMO-32)
             def _on_object_accel(c, pkt):
                 import math
 
-                mag = math.sqrt(pkt.accel_x**2 + pkt.accel_y**2 + pkt.accel_z**2)
-                if mag > _ACCEL_THRESHOLD and display.vision_processor is not None:
-                    # Map the currently-connected factory_id → cube_id.
-                    fid = display._current_factory_id
-                    if fid is not None:
-                        cube_id = display._cube_id_for_factory(fid)
-                        if cube_id is not None:
-                            # Drop the cube's world pose so it is re-placed at
-                            # its new position on the next camera frame.
-                            display.web_viewer.forget_cube(cube_id - 1)
-                            display.web_viewer.broadcast()
+                if display.vision_processor is None:
+                    return
+                # Map the currently-connected factory_id → cube_id.
+                fid = display._current_factory_id
+                if fid is None:
+                    return
+                cube_id = display._cube_id_for_factory(fid)
+                if cube_id is None:
+                    return
+
+                detector = display._cube_move_detectors.setdefault(
+                    cube_id, CubeMoveDetector()
+                )
+                mag = math.hypot(pkt.accel_x, pkt.accel_y, pkt.accel_z)
+                if detector.update(time.time(), mag):
+                    # Drop the cube's world pose so it is re-placed at its
+                    # new position on the next camera frame.
+                    display.web_viewer.forget_cube(cube_id - 1)
+                    display.web_viewer.broadcast()
 
             cli.add_handler(pycozmo.protocol_encoder.ObjectAccel, _on_object_accel)
             if not args.no_cube_lights:
