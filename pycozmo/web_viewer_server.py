@@ -1,27 +1,26 @@
 """
 WebSocket + HTTP server for the Three.js web viewer.
 
-Serves the browser-side Three.js scene and streams cube poses + robot state
-over WebSocket. Drop-in replacement for World3DViewer in main.py.
+Serves the browser-side Three.js scene and streams world state over WebSocket.
+The browser is a pure display: all localization math lives in ``WorldMap``
+(pycozmo/world_map.py), and this server converts the world frame to scene frame
+for rendering. Drop-in replacement for World3DViewer in main.py.
 
 Usage:
     # Standalone (serves HTML + WebSocket on port 8765):
     python -m pycozmo.web_viewer_server
 
     # Integrated into main.py:
-    server = WebViewerServer()
-    server.update_cube("cube_1", position, rotation_matrix, cube_size=44)
+    server = WebViewerServer(world_map)
+    server.update_cube_measurement(0, position, rotation, 0.9, head_angle)
     server.broadcast()
 """
 
 import asyncio
-import collections
 import json
 import os
 import threading
 import time
-
-import numpy as np
 
 try:
     import websockets
@@ -38,11 +37,8 @@ try:
 except ImportError:
     HAS_AIOHTTP = False
 
-
-# ---------------------------------------------------------------------------
-# Coordinate transform (same as World3DViewer.update_cube)
-# ---------------------------------------------------------------------------
-_T = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32)
+from . import coords
+from .world_map import WorldMap
 
 
 def _encode_jpeg(image, quality: int = 70) -> bytes:
@@ -60,43 +56,35 @@ def _encode_jpeg(image, quality: int = 70) -> bytes:
     return buf.getvalue()
 
 
-def _opencv_to_gl_position(position: np.ndarray) -> list:
-    """Convert OpenCV camera coords (X right, Y down, Z forward) to
-    OpenGL-style coords (X right, Y up, Z forward)."""
-    pos = np.asarray(position, dtype=np.float32)
-    gl = np.array([-pos[0], -pos[1] + 40, pos[2]], dtype=np.float32)
-    return gl.tolist()
-
-
-def _opencv_to_gl_rotation(rotation_matrix: np.ndarray) -> list:
-    """Convert 3x3 rotation matrix from OpenCV to OpenGL coords."""
-    R = np.asarray(rotation_matrix, dtype=np.float32)
-    R_gl = _T @ R @ _T.T
-    return R_gl.tolist()
-
-
 # ---------------------------------------------------------------------------
 # WebViewerServer
 # ---------------------------------------------------------------------------
 class WebViewerServer:
-    """Headless replacement for World3DViewer.
+    """Headless replacement for World3DViewer — thin adapter over ``WorldMap``.
 
-    Same ``update_cube`` / ``remove_cube`` / ``clear_cubes`` interface so
-    ``main.py`` can swap in with minimal changes.  Broadcasts JSON state
-    over WebSocket (coalesced, never queued up) every call to ``broadcast()``.
-    Streams camera frames as MJPEG via ``push_frame()``.
+    Owns a :class:`WorldMap` (created unless one is supplied) and exposes
+    pass-through methods that ``main.py`` calls from its event handlers. On
+    broadcast, it serializes the world map to **scene frame** for the browser,
+    which is a pure display and does no coordinate math.
+
+    Same ``update_cube`` / ``remove_cube`` / ``clear_cubes`` interface is kept
+    for backwards compatibility, but new code should use the WorldMap-backed
+    methods below.
     """
 
     def __init__(
         self,
         host: str = "0.0.0.0",
         port: int = 8765,
+        world_map: WorldMap = None,
     ):
         self.host = host
         self.port = port
-        self.cubes: dict[str, dict] = {}
-        self._robot_position: list[float] = [0.0, 0.0, 0.0]
-        self._robot_heading: float = 0.0
+        self.world_map = world_map if world_map is not None else WorldMap()
+        self.cubes: dict[
+            str, dict
+        ] = {}  # kept for compat; world_map is source of truth
+
         self._clients: set = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._start_time = time.time()
@@ -104,17 +92,6 @@ class WebViewerServer:
         # Camera MJPEG streaming (encode happens in the server loop thread)
         self._latest_image = None
         self._image_id: int = 0
-
-        # Pose trail — rolling buffer of world-frame positions (mm).
-        # Written by the RobotState handler (connection thread), read by
-        # _build_state_json (asyncio loop thread).  A lock guards the list;
-        # the lock is only held for the duration of a list append or copy,
-        # so contention is negligible. (COZMO-27)
-        self._path_lock = threading.Lock()
-        self._path_points: collections.deque[list[float]] = collections.deque(
-            maxlen=5000
-        )
-        self._last_path_origin_id: int | None = None
 
         # Broadcast coalescing: the loop thread keeps a queue and always
         # sends the latest state — broadcasts never pile up.
@@ -147,7 +124,7 @@ class WebViewerServer:
         # We run the server in a background thread
         self._thread: threading.Thread | None = None
 
-    # -- public interface (mirrors World3DViewer) ---------------------------
+    # -- public interface (backwards compatible with World3DViewer) ---------
 
     def update_cube(
         self,
@@ -157,40 +134,61 @@ class WebViewerServer:
         cube_size: float = 44,
         marker_images=None,
     ):
-        """Update or add a cube — same signature as World3DViewer."""
-        pos_gl = _opencv_to_gl_position(position)
-        rot_gl = _opencv_to_gl_rotation(rotation_matrix)
+        """Deprecated — position is expected in world frame now.
+
+        Kept to avoid crashing old callers, but the world-map path
+        (``update_cube_measurement``) is preferred because it transforms and
+        fuses correctly. This stores the value into scene frame directly.
+        """
+        del marker_images, cube_size
+        pos_gl = coords.world_to_scene_point(position)
+        rot_gl = coords.world_to_scene_rotation(rotation_matrix)
         self.cubes[cube_id] = {
             "id": cube_id,
-            "position": pos_gl,
-            "rotation": rot_gl,
-            "size": cube_size,
+            "position": [float(v) for v in pos_gl],
+            "rotation": [row.tolist() for row in rot_gl],
+            "size": 44,
         }
 
     def remove_cube(self, cube_id: str):
-        """Remove a cube from the world."""
+        """Remove a cube (compat shim)."""
         self.cubes.pop(cube_id, None)
 
     def clear_cubes(self):
-        """Remove all cubes."""
+        """Remove all cubes (compat shim)."""
         self.cubes.clear()
 
-    def set_robot_state(self, position, heading):
-        """Update the robot's world-frame pose for the web viewer.
+    # -- WorldMap pass-through (the real API) -------------------------------
 
-        ``position`` is the robot's position in world frame in mm
-        (Anki convention: X right, Y forward, Z up — same as ``cli.pose.position``).
-        ``heading`` is the rotation about world Z in radians
-        (``cli.pose.rotation.angle_z.radians``). The browser uses these to
-        frame the initial camera view along Cozmo's heading instead of
-        always facing the +Z default, so the user doesn't have to rotate
-        the view on every page load.
-        """
-        import numpy as _np
+    def update_robot_pose(self, position, yaw_rad, origin_id=None, record_path=True):
+        """Update the robot's world pose (mm, Anki frame) from ``cli.pose``."""
+        self.world_map.update_robot_pose(
+            position, yaw_rad, origin_id=origin_id, record_path=record_path
+        )
 
-        pos = _np.asarray(position, dtype=_np.float32).reshape(3)
-        self._robot_position = [float(pos[0]), float(pos[1]), float(pos[2])]
-        self._robot_heading = float(heading)
+    def update_cube_measurement(
+        self, cube_id, position_cam, rotation_cam, confidence, head_angle_rad
+    ):
+        """Fuse a camera-frame cube measurement into the world map."""
+        self.world_map.update_cube_measurement(
+            cube_id, position_cam, rotation_cam, confidence, head_angle_rad
+        )
+
+    def forget_cube(self, cube_id):
+        """Drop a cube from the world map (e.g. on IMU-move)."""
+        self.world_map.forget_cube(cube_id)
+
+    def add_path_point(self, position):
+        """Append a world-frame position (mm) to the path trail."""
+        self.world_map.add_path_point(position)
+
+    def clear_path(self):
+        """Clear the path trail."""
+        self.world_map.reset_path()
+
+    def reset_map(self):
+        """Reset the whole world map (entities + path)."""
+        self.world_map.reset_map()
 
     def broadcast(self):
         """Notify the server that the world state changed.
@@ -246,29 +244,6 @@ class WebViewerServer:
         """
         self._active_clients_listeners.append(callback)
 
-    def add_path_point(self, position) -> None:
-        """Append a world-frame position to the trail.
-
-        ``position`` is the robot's position in world frame in mm
-        (Anki convention: X right, Y forward, Z up — same as
-        ``cli.pose.position``).  Called from the RobotState handler
-        (~30 Hz).  The point is stored in world coordinates; the
-        browser converts to scene coordinates when drawing. (COZMO-27)
-        """
-        pos = np.asarray(position, dtype=np.float32).reshape(3)
-        with self._path_lock:
-            self._path_points.append([float(pos[0]), float(pos[1]), float(pos[2])])
-
-    def clear_path(self) -> None:
-        """Remove all stored trail points. (COZMO-27)"""
-        with self._path_lock:
-            self._path_points.clear()
-
-    def _get_path_snapshot(self) -> list[list[float]]:
-        """Return a copy of the current trail points (thread-safe)."""
-        with self._path_lock:
-            return list(self._path_points)
-
     def set_control_listener(self, callback) -> None:
         """Subscribe to browser key updates for remote control.
 
@@ -284,14 +259,39 @@ class WebViewerServer:
     # -- internal -----------------------------------------------------------
 
     def _build_state_json(self) -> str:
-        cube_list = list(self.cubes.values())
+        world = self.world_map.get_world_state()
+
+        # Robot: world frame -> scene frame, with yaw mapped to scene rotation.y.
+        robot_pos = coords.world_to_scene_point(world["robot"]["position"])
+        robot_heading = coords.world_yaw_to_scene(world["robot"]["yaw"])
+
+        # Cubes: world frame -> scene frame.
+        cube_list = []
+        for cube_id, cube_state in world["cubes"].items():
+            pos_gl = coords.world_to_scene_point(cube_state["position"])
+            rot_gl = coords.world_to_scene_rotation(cube_state["rotation"])
+            cube_list.append(
+                {
+                    "id": f"cube_{cube_id + 1}",
+                    "position": [float(v) for v in pos_gl],
+                    "rotation": [row.tolist() for row in rot_gl],
+                    "size": 44,
+                }
+            )
+
+        # Path: world frame -> scene frame.
+        path_scene = [
+            [float(v) for v in coords.world_to_scene_point(p)]
+            for p in world["path_points"]
+        ]
+
         state = {
             "cubes": cube_list,
             "robot": {
-                "position": list(self._robot_position),
-                "heading": self._robot_heading,
+                "position": [float(v) for v in robot_pos],
+                "heading": float(robot_heading),
             },
-            "path_points": self._get_path_snapshot(),
+            "path_points": path_scene,
             "timestamp": int((time.time() - self._start_time) * 1000),
         }
         return json.dumps(state)

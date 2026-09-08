@@ -7,9 +7,8 @@ and provides annotated frames for visualization.
 
 """
 
-from typing import List, Tuple
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -20,7 +19,7 @@ from .camera_calibration import CameraCalibration
 
 # Import CubeFusionTracker
 try:
-    from .cubeDetector.cubeDetector import CubeFusionTracker, CozmoCubeDetector
+    from .cubeDetector.cubeDetector import CozmoCubeDetector, CubeFusionTracker
 
     CUBE_DETECTOR_AVAILABLE = True
 except ImportError:
@@ -29,9 +28,9 @@ except ImportError:
     raise
 
 __all__ = [
+    "AnnotatedVisionProcessor",
     "CubeDetection",
     "VisionProcessor",
-    "AnnotatedVisionProcessor",
 ]
 
 
@@ -84,9 +83,10 @@ class VisionProcessor:
 
     def _init_detector(self):
         """Initialize the CozmoCubeDetector with marker templates."""
-        import cv2
         import glob
         import os
+
+        import cv2
 
         # Load marker templates
         target_markers = []
@@ -142,12 +142,39 @@ class VisionProcessor:
 
     def get_fused_cube_states(self):
         """
-        Get the fused 3D cube states from the fusion tracker.
+        Get the fused per-cube states from the current frame.
 
         Returns:
-            Dict of {cube_id: cube_state} containing position, rotation_matrix, etc.
+            Dict of {cube_id: cube_state} containing position, rotation_matrix,
+            confidence, etc. Poses are in **camera frame** — the temporal
+            fusion and world-frame transform live in ``WorldMap``.
         """
         return self.fused_cubes.copy()
+
+    def get_cube_measurements(self):
+        """
+        Get the camera-frame cube measurements from the current frame.
+
+        These are the raw per-frame fused poses (one per cube) ready to be fed
+        into ``WorldMap.update_cube_measurement``, which transforms them into
+        world frame and fuses them there.
+
+        Returns:
+            List of dicts with keys: ``cube_id`` (0-indexed), ``position``
+            (camera frame mm), ``rotation_matrix`` (camera frame),
+            ``confidence``.
+        """
+        measurements = []
+        for cube_id, cube_state in self.fused_cubes.items():
+            measurements.append(
+                {
+                    "cube_id": cube_id,
+                    "position": cube_state["position"],
+                    "rotation_matrix": cube_state["rotation_matrix"],
+                    "confidence": cube_state["confidence"],
+                }
+            )
+        return measurements
 
     def forget_cube(self, cube_id):
         """Remove a cube from the fusion tracker.
@@ -158,7 +185,7 @@ class VisionProcessor:
         """
         self.cube_tracker.forget_cube(cube_id)
 
-    def detect_cubes(self, image: Image.Image, head_angle_rad: float = 0.0) -> List[CubeDetection]:
+    def detect_cubes(self, image: Image.Image, head_angle_rad: float = 0.0) -> list[CubeDetection]:
         """
         Detect cubes in the given camera image.
 
@@ -180,7 +207,7 @@ class VisionProcessor:
 
         return detections
 
-    def _detect_cubes(self, img_array: np.ndarray, head_angle_rad: float = 0.0) -> List[CubeDetection]:
+    def _detect_cubes(self, img_array: np.ndarray, head_angle_rad: float = 0.0) -> list[CubeDetection]:
         """
         Detect cubes using CozmoCubeDetector with 3D tracking.
 
@@ -249,9 +276,8 @@ class VisionProcessor:
 
     def reset_tracking(self):
         """Reset the cube tracking state."""
-        if self.cube_tracker:
-            self.cube_tracker.cubes.clear()
-            logger.info("Cube tracking reset")
+        self.fused_cubes = {}
+        logger.info("Cube tracking reset")
 
     # Annotation settings
     annotation_colors = [
@@ -267,7 +293,7 @@ class VisionProcessor:
     show_confidence = True
     show_distance = True
 
-    def draw_detections(self, image: Image.Image, detections: List[CubeDetection]) -> Image.Image:
+    def draw_detections(self, image: Image.Image, detections: list[CubeDetection]) -> Image.Image:
         """
         Draw detection bounding boxes and labels on an image.
 
@@ -347,8 +373,8 @@ class VisionProcessor:
 
         return annotated_image
 
-    def detect_and_annotate(self, image: Image.Image, head_angle_rad: float = 0.0) -> Tuple[
-        List[CubeDetection], Image.Image]:
+    def detect_and_annotate(self, image: Image.Image, head_angle_rad: float = 0.0) -> tuple[
+        list[CubeDetection], Image.Image]:
         """
         Detect cubes and return both detections and an annotated image.
 
@@ -480,7 +506,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         except Exception as e:
             logger.error(f"Error processing camera image: {e}", exc_info=True)
 
-    def _dispatch_cube_events(self, cli, detections: List[CubeDetection]):
+    def _dispatch_cube_events(self, cli, detections: list[CubeDetection]):
         """
         Dispatch cube detection events (detected, observed, lost).
 
@@ -535,7 +561,6 @@ class AnnotatedVisionProcessor(VisionProcessor):
         """
         Stop the annotated vision processor and remove handlers.
         """
-        from . import event
 
         # Note: There's no built-in way to remove a specific handler in the current
         # implementation, but we can stop processing by setting a flag

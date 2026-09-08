@@ -195,7 +195,8 @@
     scene.add(robot);
 
     // -----------------------------------------------------------------------
-    // Path trail (world-anchored line). (COZMO-27)
+    // Path trail. (COZMO-27) Points arrive already in scene coordinates —
+    // the library (WorldMap + WebViewerServer) does all frame math.
     // -----------------------------------------------------------------------
     const PATH_MAX_POINTS = 5000;
     const pathPositions = new Float32Array(PATH_MAX_POINTS * 3);
@@ -208,21 +209,12 @@
     scene.add(pathLine);
     let pathPointCount = 0;
 
-    // Convert Anki world coords (X right, Y forward, Z up) to scene coords
-    // (X right, Y up, Z forward).  The +40 Y offset places the trail on
-    // the same plane as the cubes' camera-origin anchor at scene Y=40.
-    function worldToScene(wx, wy, wz) {
-      return [-wx, wz + 40, wy];
-    }
-
     // -----------------------------------------------------------------------
     // Cube management
     // -----------------------------------------------------------------------
     const cubeGroups = {};  // cube_id → THREE.Group
 
-    // Robot pose: cubes are camera-relative (anchored at scene
-    // (0, 40, 0)), so only the heading matters for the 3D view —
-    // world position is invisible here. (COZMO-31)
+    // Cubes arrive in scene coordinates (library does the frame math).
     let hasRobotPose = false;
     let didInitialFrame = false;  // one-shot: re-frame camera on first pose
 
@@ -340,15 +332,14 @@
       }
       document.getElementById('cube-count').textContent = `${seen.size} cubes`;
 
-      // Path trail (world-anchored). (COZMO-27)
+      // Path trail. Points arrive in scene coordinates (library does the math).
       if (state.path_points) {
         const pts = state.path_points;
         pathPointCount = Math.min(pts.length, PATH_MAX_POINTS);
         for (let i = 0; i < pathPointCount; i++) {
-          const [sx, sy, sz] = worldToScene(pts[i][0], pts[i][1], pts[i][2]);
-          pathPositions[i * 3]     = sx;
-          pathPositions[i * 3 + 1] = sy;
-          pathPositions[i * 3 + 2] = sz;
+          pathPositions[i * 3]     = pts[i][0];
+          pathPositions[i * 3 + 1] = pts[i][1];
+          pathPositions[i * 3 + 2] = pts[i][2];
         }
         pathGeometry.attributes.position.needsUpdate = true;
         pathGeometry.setDrawRange(0, pathPointCount);
@@ -356,12 +347,12 @@
         if (pathEl) pathEl.textContent = `${pathPointCount} pts`;
       }
 
-      // Robot pose — move the box to match Cozmo's world position. (COZMO-27)
+      // Robot pose — position and heading arrive already in scene frame
+      // (heading is a scene rotation.y). (COZMO-27)
       if (state.robot) {
         robot.userData.targetHeading = state.robot.heading || 0;
         const rp = state.robot.position || [0, 0, 0];
-        const [rx, ry, rz] = worldToScene(rp[0], rp[1], rp[2]);
-        robot.userData.targetPos.set(rx, ry, rz);
+        robot.userData.targetPos.set(rp[0], rp[1], rp[2]);
         if (!hasRobotPose) {
           robot.userData.heading = robot.userData.targetHeading;
           robot.rotation.y = robot.userData.heading;

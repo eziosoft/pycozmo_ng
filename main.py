@@ -150,13 +150,6 @@ class VisionDisplay:
         # Used by the main run loop to detect a silent Wi-Fi drop (see run).
         self._last_frame_time = time.time()
 
-        # Position-derived heading state.  IMU heading updates instantly
-        # but wheel-based position lags, causing the virtual robot to
-        # slide sideways during turns.  We derive heading from consecutive
-        # positions so they always agree. (COZMO-27)
-        self._prev_pos: Optional[tuple] = None
-        self._derived_heading: float = 0.0
-
     def on_object_connection_state(self, cli, pkt):
         """Log cube connection state transitions for diagnostics.
 
@@ -284,54 +277,29 @@ class VisionDisplay:
         self.latest_debug_images = debug_images
 
     def update_web_viewer(self):
-        """Update web viewer with current cube states.
+        """Feed the latest cube measurements into the world map.
 
-        Cubes persist at their last known position once detected —
-        they are never removed from the viewer, even when temporarily
-        out of sight.  Only new/updated positions are pushed. (COZMO-27)
+        The camera-frame cube measurements are transformed into world frame
+        and fused by ``WorldMap`` (owned by ``self.web_viewer``), then
+        broadcast to any connected browser. The robot's world pose is pushed
+        separately by the RobotState handler (``_on_robot_state_for_trail``),
+        which is independent of the camera stream. (World-map refactor)
         """
         if not self.vision_processor:
             return
 
-        fused_cubes = self.vision_processor.get_fused_cube_states()
+        head_angle = (
+            self.cli.head_angle.radians if self.cli is not None else 0.0
+        )
 
-        for cube_id, cube_state in fused_cubes.items():
-            cube_name = f"cube_{cube_id + 1}"
-            self.web_viewer.update_cube(
-                cube_name,
-                cube_state["position"],
-                cube_state["rotation_matrix"],
-                cube_size=44,
+        for m in self.vision_processor.get_cube_measurements():
+            self.web_viewer.update_cube_measurement(
+                m["cube_id"],
+                m["position"],
+                m["rotation_matrix"],
+                m["confidence"],
+                head_angle,
             )
-
-        # Stream the robot's world pose so the browser can frame the
-        # initial camera view along Cozmo's actual heading instead of
-        # always facing the +Z default. (COZMO-31)
-        if self.cli is not None:
-            try:
-                pose = self.cli.pose
-                pos = pose.position.x_y_z
-
-                # Derive heading from consecutive positions (X/Y plane).
-                # IMU heading updates instantly but wheel-based position
-                # lags — this keeps heading and position perfectly in sync
-                # so the virtual robot never slides sideways. (COZMO-27)
-                if self._prev_pos is not None:
-                    dx = pos[0] - self._prev_pos[0]
-                    dy = pos[1] - self._prev_pos[1]
-                    dist = (dx * dx + dy * dy) ** 0.5
-                    if dist > 0.5:  # >0.5 mm movement — ignore noise
-                        import math
-
-                        self._derived_heading = math.atan2(dx, dy)
-                self._prev_pos = pos
-
-                self.web_viewer.set_robot_state(
-                    pos,
-                    self._derived_heading,
-                )
-            except Exception as e:  # noqa: BLE001 — pose may be transiently invalid
-                print(f"⚠️  web viewer: could not read robot pose: {e}")
 
         self.web_viewer.broadcast()
 
@@ -1012,7 +980,9 @@ def main():
                     if fid is not None:
                         cube_id = display._cube_id_for_factory(fid)
                         if cube_id is not None:
-                            display.vision_processor.forget_cube(cube_id)
+                            # Drop the cube's world pose so it is re-placed at
+                            # its new position on the next camera frame.
+                            display.web_viewer.forget_cube(cube_id - 1)
                             display.web_viewer.broadcast()
 
             cli.add_handler(pycozmo.protocol_encoder.ObjectAccel, _on_object_accel)
@@ -1064,19 +1034,20 @@ def main():
             cli.conn.send(pkt)
             print("✅ Origin set to current position")
 
-            # Pose trail — push every RobotState into the web viewer
-            # so the path is tracked even with --no-camera.  The trail
-            # is cleared on origin reset (pick-up / put-down) and on
-            # the 'p' key. (COZMO-27)
-            _last_trail_origin = [cli.pose.origin_id]
-
+            # Pose trail + robot pose — push every RobotState into the world
+            # map so the path is tracked even with --no-camera.  The map's
+            # robot pose is what transforms cube measurements into world
+            # frame, so it is refreshed here (~30 Hz, independent of the
+            # camera).  The map is reset on origin change (pick-up /
+            # put-down) and the 'p' key. (COZMO-27 / world-map refactor)
             def _on_robot_state_for_trail(c):
                 try:
                     pose = c.pose
-                    if pose.origin_id != _last_trail_origin[0]:
-                        display.web_viewer.clear_path()
-                        _last_trail_origin[0] = pose.origin_id
-                    display.web_viewer.add_path_point(pose.position.x_y_z)
+                    pos = pose.position.x_y_z
+                    yaw = pose.rotation.angle_z.radians
+                    display.web_viewer.update_robot_pose(
+                        pos, yaw, origin_id=pose.origin_id, record_path=True
+                    )
                 except Exception:  # noqa: BLE001 — pose may be transiently invalid
                     pass
                 display.web_viewer.broadcast()

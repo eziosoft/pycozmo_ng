@@ -4,7 +4,6 @@ from collections import defaultdict
 
 import cv2
 import numpy as np
-from scipy.spatial.transform import Rotation as R, Slerp
 
 # Add the tests directory to path so we can import world_3d_viewer
 sys.path.append(os.path.dirname(__file__))
@@ -12,110 +11,57 @@ sys.path.append(os.path.dirname(__file__))
 
 class CubeFusionTracker:
     """
-    Tracks multiple cubes and fuses multiple face detections into a single coherent cube pose.
-    Handles the fact that detecting different faces of the same cube should update the same physical object.
+    Fuses multiple face detections of the same cube into a single coherent cube pose.
+
+    Stateless per-frame fuser: given the marker detections from one camera frame,
+    it returns one pose per cube in **camera frame** (OpenCV: X right, Y down,
+    Z forward). All temporal smoothing, head-tilt compensation, and the
+    camera→body→world transform live in ``WorldMap`` (pycozmo/world_map.py), so
+    fusion happens in world frame and a stationary cube stays put while Cozmo
+    drives.
     """
 
     def __init__(self, cube_size_mm=44.0, smoothing_alpha=0.3, max_age_frames=10):
         """
         :param cube_size_mm: Physical size of the cube (44mm for Cozmo cubes)
-        :param smoothing_alpha: Exponential smoothing factor (0=no update, 1=no smoothing)
-        :param max_age_frames: Number of frames before removing a cube that's no longer detected
+        :param smoothing_alpha: Kept for API compatibility — unused (smoothing
+            moved to WorldMap).
+        :param max_age_frames: Kept for API compatibility — unused (no temporal
+            state is kept here anymore).
         """
         self.cube_size = cube_size_mm
         self.smoothing_alpha = smoothing_alpha
-        self.smoothing_complement = 1.0 - smoothing_alpha  # Precompute for speed
+        self.smoothing_complement = 1.0 - smoothing_alpha
         self.max_age_frames = max_age_frames
 
         # Precompute half size for cube center calculations
         self.half_size = cube_size_mm / 2.0
 
-        # Track each cube: {cube_id: cube_state}
-        self.cubes = {}
-
     def update(self, detections, head_angle_rad=0.0):
         """
-        Update cube states from new detections
-        :param detections: List of detection dicts with 'cube_id', 'face_type', 'position', 'rotation_matrix', etc.
-        :param head_angle_rad: Current head tilt angle in radians (positive = looking up)
-        :return: Dict of {cube_id: fused_cube_state}
+        Fuse all face detections from one frame into per-cube camera-frame poses.
+
+        :param detections: List of detection dicts with 'cube_id', 'face_type',
+            'position', 'rotation_matrix', etc. (camera frame).
+        :param head_angle_rad: Ignored — head-tilt compensation moved to WorldMap.
+        :return: Dict of {cube_id: fused_cube_state} in camera frame.
         """
+        del head_angle_rad
+
         # Group detections by cube_id
         detections_by_cube = defaultdict(list)
         for det in detections:
             detections_by_cube[det['cube_id']].append(det)
 
-        # Age out cubes that weren't detected
-        detected_cube_ids = set(detections_by_cube.keys())
-        for cube_id in list(self.cubes.keys()):
-            if cube_id not in detected_cube_ids:
-                self.cubes[cube_id]['age'] += 1
-                if self.cubes[cube_id]['age'] > self.max_age_frames:
-                    del self.cubes[cube_id]
-
-        # Process each cube's detections
+        fused = {}
         for cube_id, cube_detections in detections_by_cube.items():
-            fused_state = self._fuse_detections(cube_detections)
+            fused[cube_id] = self._fuse_detections(cube_detections)
 
-            # Apply head tilt transformation to position and orientation
-            # so both live in the robot body frame. The position is rotated
-            # by R_head; the rotation matrix (which maps cube-frame basis
-            # vectors to camera-frame vectors) is pre-multiplied by R_head
-            # so its basis vectors are also expressed in body frame.
-            # Without the rotation transform, the cube's yaw in the 3D
-            # viewer depends on the head angle even though its position
-            # does not. (COZMO-13)
-            fused_state["position"] = self._apply_head_tilt(
-                fused_state["position"], head_angle_rad
-            )
-            fused_state["rotation_matrix"] = self._apply_head_tilt_to_rotation(
-                fused_state["rotation_matrix"], head_angle_rad
-            )
-
-            if cube_id in self.cubes:
-                # Smooth with previous state
-                prev_state = self.cubes[cube_id]
-
-                # Smooth position (linear interpolation is fine for positions)
-                fused_state['position'] = (
-                        self.smoothing_alpha * fused_state['position'] +
-                        self.smoothing_complement * prev_state['position']
-                )
-
-                # Smooth rotation using quaternion SLERP (proper SO(3) interpolation)
-                prev_q = R.from_matrix(prev_state['rotation_matrix'])
-                new_q = R.from_matrix(fused_state['rotation_matrix'])
-
-                # Handle quaternion sign ambiguity (q and -q represent same rotation)
-                prev_quat = prev_q.as_quat()
-                new_quat = new_q.as_quat()
-                if np.dot(prev_quat, new_quat) < 0:
-                    new_quat = -new_quat
-                    new_q = R.from_quat(new_quat)
-
-                # Spherical interpolation
-                key_rots = R.concatenate([prev_q, new_q])
-                slerp = Slerp([0, 1], key_rots)
-                smoothed_q = slerp(self.smoothing_alpha)
-
-                fused_state['rotation_matrix'] = smoothed_q.as_matrix()
-                fused_state['age'] = 0
-            else:
-                # New cube
-                fused_state['age'] = 0
-
-            self.cubes[cube_id] = fused_state
-
-        return self.cubes.copy()
+        return fused
 
     def forget_cube(self, cube_id):
-        """Remove a cube from tracking so it gets re-placed on next detection.
-
-        Called when the cube's IMU detects movement — the old position is
-        stale and the cube will be placed fresh on the next camera frame.
-        (COZMO-27)
-        """
-        self.cubes.pop(cube_id, None)
+        """No-op — kept for API compatibility (temporal state lives in WorldMap)."""
+        return
 
     def _fuse_detections(self, detections):
         """
@@ -302,55 +248,6 @@ class CubeFusionTracker:
             cube_rotation = face_rotation
 
         return cube_rotation
-
-    def _apply_head_tilt(self, position, head_angle_rad):
-        """
-        Transform cube position from camera coordinates to robot body coordinates.
-
-        The camera rotates with the head around the robot's X-axis (pitch rotation).
-        When the head tilts up (positive angle), the camera looks up, and detected
-        objects appear lower in the camera frame than they actually are in world space.
-
-        :param position: 3D position in camera coordinates [x, y, z] (mm)
-        :param head_angle_rad: Head tilt angle in radians (positive = looking up)
-        :return: 3D position in robot body coordinates [x, y, z] (mm)
-        """
-        # Create rotation matrix for head tilt (rotation around X-axis)
-        # This transforms from camera frame to robot body frame
-        cos_a = np.cos(head_angle_rad)
-        sin_a = np.sin(head_angle_rad)
-
-        # Rotation matrix for pitch around X-axis
-        R_head = np.array([
-            [1, 0, 0],
-            [0, cos_a, -sin_a],
-            [0, sin_a, cos_a]
-        ], dtype=np.float32)
-
-        # Apply rotation to position
-        # This accounts for the fact that the camera is tilted relative to the robot body
-        transformed_position = R_head @ position
-
-        return transformed_position
-
-    def _apply_head_tilt_to_rotation(self, rotation_matrix, head_angle_rad):
-        """
-        Transform a rotation matrix from camera frame to robot body frame.
-
-        :param rotation_matrix: 3x3 rotation matrix in camera coordinates
-        :param head_angle_rad: Head tilt angle in radians (positive = looking up)
-        :return: 3x3 rotation matrix in robot body coordinates
-        """
-        cos_a = np.cos(head_angle_rad)
-        sin_a = np.sin(head_angle_rad)
-
-        R_head = np.array([
-            [1, 0, 0],
-            [0, cos_a, -sin_a],
-            [0, sin_a, cos_a]
-        ], dtype=np.float32)
-
-        return R_head @ rotation_matrix
 
 
 class CozmoCubeDetector:
