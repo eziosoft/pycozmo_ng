@@ -33,7 +33,20 @@ class TestCoords:
     def test_world_to_scene_point(self):
         # World (X fwd, Y left, Z up) -> scene (X right, Y up, Z fwd).
         scene = coords.world_to_scene_point([10.0, 20.0, 30.0])
-        np.testing.assert_allclose(scene, [-20.0, 30.0, 10.0], atol=1e-9)
+        np.testing.assert_allclose(scene, [20.0, 30.0, 10.0], atol=1e-9)
+
+    def test_world_to_scene_preserves_handedness(self):
+        # The world->scene map is a proper rotation (det=+1), so chirality is
+        # preserved: an Anki left turn (+) must also be a scene left turn — a
+        # clockwise drive-out in real life stays clockwise in the top-down 3D
+        # view (regression: an earlier det=-1 reflection mirrored circles).
+        for yaw in (0.0, np.pi / 4, np.pi / 2, -2.0):
+            fwd_world = np.array([np.cos(yaw), np.sin(yaw), 0.0])
+            fwd_scene = coords.world_to_scene_point(fwd_world)
+            fwd_scene = fwd_scene / np.linalg.norm(fwd_scene)
+            # Reference: what a Three.js rotation.y=yaw turns +Z into.
+            ref_scene = np.array([np.sin(yaw), 0.0, np.cos(yaw)])
+            np.testing.assert_allclose(fwd_scene, ref_scene, atol=1e-9)
 
     def test_world_to_scene_forward_is_scene_forward(self):
         # Robot driving forward (+X world) must render along scene +Z.
@@ -41,12 +54,12 @@ class TestCoords:
         fwd_scene = coords.world_to_scene_point(fwd_world)
         np.testing.assert_allclose(fwd_scene, [0.0, 0.0, 1.0], atol=1e-9)
 
-    def test_world_yaw_to_scene_is_mirrored(self):
-        # Yaw about world Z maps to scene rotation.y with opposite sign (the
-        # world->scene basis is a reflection, det=-1).
+    def test_world_yaw_to_scene_passes_through(self):
+        # Yaw about world Z maps to an equal scene rotation.y: the basis change
+        # is orientation-preserving (det=+1), so the yaw is NOT negated.
         assert coords.world_yaw_to_scene(0.0) == pytest.approx(0.0)
-        assert coords.world_yaw_to_scene(np.pi / 2) == pytest.approx(-np.pi / 2)
-        assert coords.world_yaw_to_scene(-np.pi / 2) == pytest.approx(np.pi / 2)
+        assert coords.world_yaw_to_scene(np.pi / 2) == pytest.approx(np.pi / 2)
+        assert coords.world_yaw_to_scene(-np.pi / 2) == pytest.approx(-np.pi / 2)
 
 
 class TestWorldMapFusion:

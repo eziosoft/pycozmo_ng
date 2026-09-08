@@ -42,11 +42,13 @@ thin adapters over it.
 _Avoid_: scene state, viewer state
 
 **Scene yaw**:
-The world-frame yaw maps to scene `rotation.y` with **opposite sign**
-(`scene_yaw = -world_yaw`). The world→scene basis change is a reflection
-(det = -1) taking world forward (+X) to scene forward (+Z), so the rotation
-sense is mirrored.
-_Avoid_: mapping scene_yaw = +world_yaw (a common but wrong fix)
+The world-frame yaw maps to scene `rotation.y` **unchanged** (`scene_yaw = world_yaw`).
+The world→scene basis change is a proper rotation (det = +1) taking world forward
+(+X) to scene forward (+Z). Chirality is preserved: a clockwise drive-out in real
+life still renders clockwise in the top-down 3D view; a right turn renders as a
+right turn.
+_Avoid_: negating the yaw, or using a reflection (det = -1) world→scene basis —
+either one mirrors every turn/circle (real right turn appears as a left turn).
 
 **Fusion**:
 The process of combining noisy, repeated cube measurements into one stable

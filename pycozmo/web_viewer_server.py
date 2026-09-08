@@ -40,6 +40,12 @@ except ImportError:
 from . import coords
 from .world_map import WorldMap
 
+# How far (mm) to lift the rendered path trail above the scene ground plane
+# (scene +Y). The trail is a zero-thickness line at ground level, so without a
+# small offset it z-fights / clips the grid floor in the browser. This is a
+# pure display artifact — it is NOT applied to world-frame data or cubes/robot.
+PATH_SCENE_LIFT_MM: float = 3.0
+
 
 def _encode_jpeg(image, quality: int = 70) -> bytes:
     """Encode a PIL image to JPEG bytes (runs on a worker thread).
@@ -279,11 +285,13 @@ class WebViewerServer:
                 }
             )
 
-        # Path: world frame -> scene frame.
+        # Path: world frame -> scene frame, lifted just above the ground so the
+        # zero-thickness trail doesn't z-fight the grid floor.
         path_scene = [
             [float(v) for v in coords.world_to_scene_point(p)]
             for p in world["path_points"]
         ]
+        path_scene = [[x, y + PATH_SCENE_LIFT_MM, z] for x, y, z in path_scene]
 
         state = {
             "cubes": cube_list,
@@ -387,7 +395,7 @@ class WebViewerServer:
         for listener in list(self._active_clients_listeners):
             try:
                 listener(count)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"⚠️  active-clients listener failed: {e}")
 
     async def _shutdown(self):

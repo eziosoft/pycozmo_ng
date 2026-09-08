@@ -15,7 +15,9 @@ Frame conventions:
   matches ``cli.pose`` (X = forward, Y = left, Z = up; yaw about Z, CCW positive).
   Origin = current Cozmo localization origin.
 * **Scene** (Three.js): X right, Y up, Z forward. Only used for serializing to
-  the web viewer, which is a pure display.
+  the web viewer, which is a pure display. The world→scene change of basis is a
+  proper rotation (det = +1), so chirality is preserved and turns/circles render
+  with the correct handedness.
 
 > NOTE on the Anki convention: verified from ``pycozmo/util.py`` — ``Matrix44``
 > stores forward on the X row, left on the Y row, up on the Z row, and
@@ -43,15 +45,19 @@ __all__ = [
 # 40 mm above the ground, with no horizontal offset. (design decision)
 CAMERA_TO_BODY_OFFSET: np.ndarray = np.array([0.0, 0.0, 40.0], dtype=np.float64)
 
-# World→scene change-of-basis matrix (orthogonal). Its columns are the scene
-# coordinates of the world basis vectors:
+# World→scene change-of-basis matrix (a proper **rotation**, det = +1; see
+# ``world_to_scene_point`` for why it must not be a reflection). Its columns
+# are the scene coordinates of the world basis vectors:
 #   world X (forward) -> scene Z (forward)   => col1 = (0, 0, 1)
-#   world Y (left)    -> scene -X (left)     => col2 = (-1, 0, 0)
+#   world Y (left)    -> scene X (left)      => col2 = (1, 0, 0)
 #   world Z (up)      -> scene Y (up)        => col3 = (0, 1, 0)
-# So scene = M @ world = (-y_left, z_up, x_forward). det = -1 (a reflection,
-# as expected when mapping a right-handed frame onto the right-handed scene).
+# So scene = M @ world = (y_left, z_up, x_forward). det = +1 (orientation
+# preserving): mapping one right-handed frame to another right-handed frame
+# must be a rotation, NOT a reflection. A reflection (det = -1) would flip
+# chirality and make every turn/circle render mirrored (a real-world
+# clockwise drive-out looks anticlockwise in the top-down 3D view).
 WORLD_TO_SCENE_MATRIX: np.ndarray = np.array(
-    [[0.0, -1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], dtype=np.float64
+    [[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], dtype=np.float64
 )
 
 
@@ -149,7 +155,7 @@ def camera_to_world(
 def world_to_scene_point(position_world: np.ndarray) -> np.ndarray:
     """Map a world-frame point (X fwd, Y left, Z up) to scene (X right, Y up, Z fwd)."""
     p = np.asarray(position_world, dtype=np.float64)
-    return np.array([-p[1], p[2], p[0]], dtype=np.float64)
+    return np.array([p[1], p[2], p[0]], dtype=np.float64)
 
 
 def world_to_scene_rotation(rotation_world: np.ndarray) -> np.ndarray:
@@ -162,9 +168,10 @@ def world_yaw_to_scene(yaw_rad: float) -> float:
     """Map a world-frame yaw (about world Z) to a scene rotation.y.
 
     The robot's world forward at yaw ``ψ`` is ``(cos ψ, sin ψ, 0)`` (forward is
-    +X, rotated about Z). Under the world→scene change of basis it becomes the
-    scene vector ``(-sin ψ, 0, cos ψ)``. A Three.js ``rotation.y = θ`` rotates
-    +Z to ``(sin θ, 0, cos θ)``, so ``sin θ = -sin ψ``, ``cos θ = cos ψ``, i.e.
-    ``θ = -ψ`` (the reflection mirrors the yaw).
+    +X, rotated about Z). Under the world→scene rotation (det = +1, see
+    ``WORLD_TO_SCENE_MATRIX``) it becomes the scene vector ``(sin ψ, 0, cos ψ)``.
+    A Three.js ``rotation.y = θ`` rotates +Z to ``(sin θ, 0, cos θ)``, so
+    ``θ = ψ`` — the yaw passes through unchanged, because the basis change is
+    orientation-preserving. (It is NOT negated.)
     """
-    return -float(yaw_rad)
+    return float(yaw_rad)
