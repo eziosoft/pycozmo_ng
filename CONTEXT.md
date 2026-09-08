@@ -6,13 +6,15 @@ cube detection, and the driven path into one coherent map, rendered in a 3D view
 ## Language
 
 **World frame**:
-The single canonical coordinate frame for the whole map: X right, Y forward, Z up,
-in millimetres. Origin is the current Cozmo localization origin (re-anchored on
-pick-up / put-down). All entities (Cozmo, cubes, path) are stored in this frame.
-_Avoid_: camera frame, body frame, scene frame (for *storage*)
+The single canonical coordinate frame for the whole map: **X forward, Y left,
+Z up**, in millimetres (**Anki convention** — verified from `pycozmo/util.py`
+`Matrix44`, forward on the X row). Yaw is rotation about Z (CCW positive).
+Origin is the current Cozmo localization origin (re-anchored on pick-up /
+put-down). All entities (Cozmo, cubes, path) are stored in this frame.
+_Avoid_: "X right, Y forward, Z up" (a common but wrong statement of the Anki frame)
 
 **Body frame**:
-A robot-relative frame, X right, Y forward, Z up, with origin at the front-centre
+A robot-relative frame, **X forward, Y left, Z up**, with origin at the front-centre
 ground point directly under the camera. The intermediate frame between camera and
 world.
 _Avoid_: robot frame (ambiguous)
@@ -40,10 +42,11 @@ thin adapters over it.
 _Avoid_: scene state, viewer state
 
 **Scene yaw**:
-The world-frame yaw maps to scene `rotation.y` **without** mirroring
-(`scene_yaw = world_yaw`). The world→scene basis change (X→-X, Y→Z, Z→Y) cancels the
-body-forward mirror, so a right-handed yaw stays right-handed — do not negate it.
-_Avoid_: negating the yaw "to account for X reflection" (a common but wrong fix)
+The world-frame yaw maps to scene `rotation.y` with **opposite sign**
+(`scene_yaw = -world_yaw`). The world→scene basis change is a reflection
+(det = -1) taking world forward (+X) to scene forward (+Z), so the rotation
+sense is mirrored.
+_Avoid_: mapping scene_yaw = +world_yaw (a common but wrong fix)
 
 **Fusion**:
 The process of combining noisy, repeated cube measurements into one stable

@@ -10,36 +10,43 @@ from pycozmo.world_map import WorldMap
 
 class TestCoords:
     def test_camera_to_world_straight_ahead(self):
-        # Cube 200 mm straight ahead, level head, robot at origin facing +Y.
+        # Cube 200 mm straight ahead, level head, robot at origin facing +X.
         p_cam = np.array([0.0, 0.0, 200.0])
         pw, _ = coords.camera_to_world(p_cam, np.eye(3), 0.0, np.zeros(3), 0.0)
-        # Body forward is +Y; camera sits 40 mm above ground.
-        np.testing.assert_allclose(pw, [0.0, 200.0, 40.0], atol=1e-9)
+        # Body forward is +X (Anki), camera sits 40 mm above ground.
+        np.testing.assert_allclose(pw, [200.0, 0.0, 40.0], atol=1e-9)
 
     def test_camera_to_world_robot_translation(self):
         p_cam = np.array([0.0, 0.0, 200.0])
         pw, _ = coords.camera_to_world(
             p_cam, np.eye(3), 0.0, np.array([100.0, 0.0, 0.0]), 0.0
         )
-        np.testing.assert_allclose(pw, [100.0, 200.0, 40.0], atol=1e-9)
+        np.testing.assert_allclose(pw, [300.0, 0.0, 40.0], atol=1e-9)
 
     def test_camera_to_world_robot_yaw(self):
-        # Robot turns left 90 deg; the cube now lies to its left (-X).
+        # Robot turns left 90 deg (CCW, +yaw); the cube ahead is now to its left.
         p_cam = np.array([0.0, 0.0, 200.0])
         pw, _ = coords.camera_to_world(p_cam, np.eye(3), 0.0, np.zeros(3), np.pi / 2)
-        np.testing.assert_allclose(pw, [-200.0, 0.0, 40.0], atol=1e-9)
+        # Left is +Y world, so cube at +200 Y.
+        np.testing.assert_allclose(pw, [0.0, 200.0, 40.0], atol=1e-9)
 
     def test_world_to_scene_point(self):
-        # Path on the ground stays at scene y=0; no +40 lift hack.
-        scene = coords.world_to_scene_point([10.0, 20.0, 0.0])
-        np.testing.assert_allclose(scene, [-10.0, 0.0, 20.0], atol=1e-9)
+        # World (X fwd, Y left, Z up) -> scene (X right, Y up, Z fwd).
+        scene = coords.world_to_scene_point([10.0, 20.0, 30.0])
+        np.testing.assert_allclose(scene, [-20.0, 30.0, 10.0], atol=1e-9)
 
-    def test_world_yaw_to_scene_is_not_mirrored(self):
-        # A yaw about world Z maps to the same rotation.y in scene: the world→
-        # scene basis (X→-X, Y→Z, Z→Y) cancels the body-forward mirror.
+    def test_world_to_scene_forward_is_scene_forward(self):
+        # Robot driving forward (+X world) must render along scene +Z.
+        fwd_world = np.array([1.0, 0.0, 0.0])
+        fwd_scene = coords.world_to_scene_point(fwd_world)
+        np.testing.assert_allclose(fwd_scene, [0.0, 0.0, 1.0], atol=1e-9)
+
+    def test_world_yaw_to_scene_is_mirrored(self):
+        # Yaw about world Z maps to scene rotation.y with opposite sign (the
+        # world->scene basis is a reflection, det=-1).
         assert coords.world_yaw_to_scene(0.0) == pytest.approx(0.0)
-        assert coords.world_yaw_to_scene(np.pi / 2) == pytest.approx(np.pi / 2)
-        assert coords.world_yaw_to_scene(-np.pi / 2) == pytest.approx(-np.pi / 2)
+        assert coords.world_yaw_to_scene(np.pi / 2) == pytest.approx(-np.pi / 2)
+        assert coords.world_yaw_to_scene(-np.pi / 2) == pytest.approx(np.pi / 2)
 
 
 class TestWorldMapFusion:
@@ -48,7 +55,7 @@ class TestWorldMapFusion:
         wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
         wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
         pos = wm.get_cubes()[0].position
-        np.testing.assert_allclose(pos, [0.0, 200.0, 40.0], atol=1e-6)
+        np.testing.assert_allclose(pos, [200.0, 0.0, 40.0], atol=1e-6)
 
     def test_confidence_below_floor_dropped(self):
         wm = WorldMap(confidence_floor=0.5)
@@ -84,8 +91,8 @@ class TestWorldMapFusion:
             cube_world = np.array(wm.get_cubes()[0].position)
             # Unit vector from robot to cube, in world frame.
             rel = cube_world[:2] / np.linalg.norm(cube_world[:2])
-            # Robot forward in world = (-sin yaw, cos yaw).
-            fwd = np.array([-np.sin(yaw), np.cos(yaw)])
+            # Robot forward in world (Anki) = (cos yaw, sin yaw) — +X is forward.
+            fwd = np.array([np.cos(yaw), np.sin(yaw)])
             # The cube must be substantially "ahead" (dot positive, near 1).
             dot = float(np.dot(rel, fwd))
             assert dot > 0.9, f"yaw={yaw}: cube not in front (dot={dot:.2f})"
