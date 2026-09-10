@@ -706,10 +706,6 @@ class VisionDisplay:
         # Find the object_id the robot just assigned.
         for oid, info in cli.connected_objects.items():
             if info.get("factory_id") == factory_id:
-                GREEN = pycozmo.lights.Color(rgb=(0, 255, 0))
-                green_light = pycozmo.lights.Light(
-                    on_color=GREEN, off_color=pycozmo.lights.DEFAULT_OFF_COLOR
-                )
                 try:
                     cli.conn.send(
                         pycozmo.protocol_encoder.CubeId(object_id=oid)
@@ -722,10 +718,10 @@ class VisionDisplay:
                     cli.conn.send(
                         pycozmo.protocol_encoder.CubeLights(
                             states=(
-                                green_light,
-                                green_light,
-                                green_light,
-                                green_light,
+                                pycozmo.lights.green_light,
+                                pycozmo.lights.green_light,
+                                pycozmo.lights.green_light,
+                                pycozmo.lights.green_light,
                             )
                         )
                     )
