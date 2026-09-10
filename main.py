@@ -635,10 +635,9 @@ class VisionDisplay:
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
         logger_cubes.info("Cube factory_id map: %s", self.cube_factory_id_map)
 
-        # Connect to all cubes now — one ObjectConnect per cube with a
-        # settle delay so the robot can assign each a unique object_id.
-        # Keeping them connected continuously means accel/event streams
-        # stay active for all cubes (not just the currently-detected one).
+        # Connect to all cubes now — one ObjectConnect per cube, waiting for
+        # confirmation before connecting the next. Keeping them connected
+        # continuously means accel/event streams stay active for all cubes.
         for cube_id, factory_id in self.cube_factory_id_map.items():
             cli.conn.send(
                 pycozmo.protocol_encoder.ObjectConnect(
@@ -650,7 +649,14 @@ class VisionDisplay:
                 cube_id,
                 factory_id,
             )
-            time.sleep(0.5)
+            try:
+                cli.conn.wait_for(
+                    pycozmo.protocol_encoder.ObjectConnectionState, timeout=3.0
+                )
+            except Exception:
+                logger_cubes.warning(
+                    "Cube %d: connect timed out", cube_id
+                )
 
         print(
             "ℹ️  All cubes connected. Light worker refreshes LEDs + accel"
