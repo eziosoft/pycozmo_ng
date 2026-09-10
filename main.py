@@ -284,7 +284,7 @@ class VisionDisplay:
             # give up if we hammer ObjectConnect too often. The 2 s cycle
             # sustained 100 % packet delivery in earlier runs, so use that
             # and trust the LEDs to persist across the gap. (COZMO-20)
-            CYCLE_PERIOD_S = 1.0
+            CYCLE_PERIOD_S = 0.5
             while not self._cube_light_stop.is_set():
                 try:
                     self._cube_light_tick(cli)
@@ -690,7 +690,7 @@ class VisionDisplay:
         connected = False
         try:
             cli.conn.wait_for(
-                pycozmo.protocol_encoder.ObjectConnectionState, timeout=1.0
+                pycozmo.protocol_encoder.ObjectConnectionState, timeout=0.5
             )
             connected = True
         except Exception:
