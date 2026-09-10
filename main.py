@@ -284,7 +284,7 @@ class VisionDisplay:
             # give up if we hammer ObjectConnect too often. The 2 s cycle
             # sustained 100 % packet delivery in earlier runs, so use that
             # and trust the LEDs to persist across the gap. (COZMO-20)
-            CYCLE_PERIOD_S = 2.0
+            CYCLE_PERIOD_S = 1.0
             while not self._cube_light_stop.is_set():
                 try:
                     self._cube_light_tick(cli)
@@ -635,34 +635,19 @@ class VisionDisplay:
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
         logger_cubes.info("Cube factory_id map: %s", self.cube_factory_id_map)
 
-        # Connect to all cubes now — the robot needs several seconds to
-        # fully establish each connection before accepting the next one.
-        for cube_id, factory_id in self.cube_factory_id_map.items():
-            cli.conn.send(
-                pycozmo.protocol_encoder.ObjectConnect(
-                    factory_id=factory_id, connect=True
-                )
-            )
-            logger_cubes.debug(
-                "Cube %d: initial connect (factory_id=0x%08x)",
-                cube_id,
-                factory_id,
-            )
-            time.sleep(3.0)
-
-        connected = dict(cli.connected_objects)
         print(
-            f"ℹ️  {len(connected)} cube(s) connected. Light worker refreshes"
-            "\n   LEDs + accel every tick."
+            "ℹ️  Robot holds one cube BLE connection at a time. Light worker"
+            "\n   cycles through all cubes rapidly so all stay lit."
         )
         print("=" * 70 + "\n")
 
     def _cube_light_tick(self, cli):
-        """Refresh LEDs and accel stream on every connected cube.
+        """Cycle through all cubes — connect, light, enable accel, move on.
 
-        Cubes are connected once at startup in ``setup_cube_mapping``.
-        This tick re-sends CubeId + StreamObjectAccel + CubeLights so
-        LEDs stay on and the accel/event stream stays enabled.
+        The robot holds only one BLE connection at a time, so we rotate
+        through all known cubes each tick.  Each cube gets connected,
+        lit, and has its accel stream enabled before we move to the next.
+        Rapid cycling (~2 s per full rotation) keeps all cubes visually lit.
         """
         # Bail out if the robot has dropped the Wi-Fi connection.
         if cli.conn.state != pycozmo.conn.Connection.CONNECTED:
@@ -674,44 +659,76 @@ class VisionDisplay:
 
         if not self.detection_enabled:
             return
-
-        # Currently-connected cubes: object_id -> {factory_id, object_type}.
-        connected = dict(cli.connected_objects)
-        if not connected:
+        if not self.cube_factory_id_map:
             return
 
-        for object_id, info in connected.items():
-            cube_id = self._cube_id_for_factory(info.get("factory_id"))
-            if cube_id is None:
-                continue
-            try:
-                cli.conn.send(pycozmo.protocol_encoder.CubeId(object_id=object_id))
-                cli.conn.send(
-                    pycozmo.protocol_encoder.StreamObjectAccel(
-                        object_id=object_id, enable=True
-                    )
-                )
-                cli.conn.send(
-                    pycozmo.protocol_encoder.CubeLights(
-                        states=(
-                            pycozmo.lights.blue_light,
-                            pycozmo.lights.blue_light,
-                            pycozmo.lights.blue_light,
-                            pycozmo.lights.blue_light,
+        # Advance to the next cube in rotation.
+        if not hasattr(self, "_cube_cycle_idx"):
+            self._cube_cycle_idx = 0
+
+        cube_ids = sorted(self.cube_factory_id_map.keys())
+        if not cube_ids:
+            return
+
+        idx = self._cube_cycle_idx % len(cube_ids)
+        cube_id = cube_ids[idx]
+        factory_id = self.cube_factory_id_map[cube_id]
+
+        # Connect this cube (robot drops any previous connection).
+        cli.conn.send(
+            pycozmo.protocol_encoder.ObjectConnect(
+                factory_id=factory_id, connect=True
+            )
+        )
+        logger_cubes.debug(
+            "Cube %d: connecting (factory_id=0x%08x)",
+            cube_id,
+            factory_id,
+        )
+
+        # Wait for connection confirmation.
+        connected = False
+        try:
+            cli.conn.wait_for(
+                pycozmo.protocol_encoder.ObjectConnectionState, timeout=1.0
+            )
+            connected = True
+        except Exception:
+            logger_cubes.debug("Cube %d: connect timed out", cube_id)
+
+        if connected:
+            # Find the object_id the robot just assigned.
+            for oid, info in cli.connected_objects.items():
+                if info.get("factory_id") == factory_id:
+                    try:
+                        cli.conn.send(
+                            pycozmo.protocol_encoder.CubeId(object_id=oid)
                         )
-                    )
-                )
-                logger_cubes.debug(
-                    "Cube %d: lit (object_id=%d)",
-                    cube_id,
-                    object_id,
-                )
-            except Exception as e:
-                logger_cubes.warning(
-                    "Cube %d: light refresh failed: %s",
-                    cube_id,
-                    e,
-                )
+                        cli.conn.send(
+                            pycozmo.protocol_encoder.StreamObjectAccel(
+                                object_id=oid, enable=True
+                            )
+                        )
+                        cli.conn.send(
+                            pycozmo.protocol_encoder.CubeLights(
+                                states=(
+                                    pycozmo.lights.blue_light,
+                                    pycozmo.lights.blue_light,
+                                    pycozmo.lights.blue_light,
+                                    pycozmo.lights.blue_light,
+                                )
+                            )
+                        )
+                        logger_cubes.debug(
+                            "Cube %d: lit (object_id=%d)", cube_id, oid
+                        )
+                    except Exception as e:
+                        logger_cubes.warning(
+                            "Cube %d: light/accel failed: %s", cube_id, e
+                        )
+                    break
+
+        self._cube_cycle_idx = (idx + 1) % len(cube_ids)
 
     def run(self, cli):
         """Main display loop."""
