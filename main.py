@@ -635,13 +635,13 @@ class VisionDisplay:
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
         logger_cubes.info("Cube factory_id map: %s", self.cube_factory_id_map)
         print(
-            "ℹ️  Cozmo connects one cube at a time; the light worker cycles"
-            "\n   them so all detected cubes light up."
+            "ℹ️  All detected cubes will be connected simultaneously; the light"
+            "\n   worker keeps them connected so accel/event streams stay active."
         )
         print("=" * 70 + "\n")
 
     def _cube_light_tick(self, cli):
-        """Keep every detected cube connected and lit.
+        """Keep every known cube connected and lit.
 
         Cozmo connects to several light cubes at once; each connection gets
         its own temporary ``object_id`` (``cli.connected_objects`` is keyed
@@ -653,7 +653,9 @@ class VisionDisplay:
         ObjectMoved events (and lights) work for all cubes at once.
 
         Each tick:
-          1. Connect any detected cube that is not connected yet.
+          1. Connect every cube in the factory map that is not connected yet
+             (including cubes outside the camera's field of view, so their
+             accel/event streams stay active for position invalidation).
           2. For each connected cube, re-send CubeId + StreamObjectAccel +
              CubeLights so its LEDs stay on and the accel/event stream stays
              enabled.
@@ -689,10 +691,12 @@ class VisionDisplay:
         connected = dict(cli.connected_objects)
         connected_factory_ids = {info.get("factory_id") for info in connected.values()}
 
-        # 1. Connect any detected cube that isn't connected yet.
-        for cube_id in detected_cube_ids:
-            factory_id = self.cube_factory_id_map.get(cube_id)
-            if factory_id is None or factory_id in connected_factory_ids:
+        # 1. Connect any known cube that isn't connected yet.
+        #    Iterate the full factory map so cubes outside the camera's field
+        #    of view still get connected and receive accel/event streams.
+        for cube_id in self.cube_factory_id_map:
+            factory_id = self.cube_factory_id_map[cube_id]
+            if factory_id in connected_factory_ids:
                 continue
             cli.conn.send(
                 pycozmo.protocol_encoder.ObjectConnect(

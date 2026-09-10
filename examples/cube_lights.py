@@ -4,25 +4,40 @@ import time
 
 import pycozmo
 
+CUBE_TYPES = {
+    pycozmo.protocol_encoder.ObjectType.Block_LIGHTCUBE1,
+    pycozmo.protocol_encoder.ObjectType.Block_LIGHTCUBE2,
+    pycozmo.protocol_encoder.ObjectType.Block_LIGHTCUBE3,
+}
+
 
 with pycozmo.connect() as cli:
-
-    print("Waiting for cube...")
-    cube_factory_id = None
-    while not cube_factory_id:
+    print("Waiting for cubes...")
+    while True:
         available_objects = dict(cli.available_objects)
-        for factory_id, obj in available_objects.items():
-            if obj.object_type == pycozmo.protocol_encoder.ObjectType.Block_LIGHTCUBE1:
-                cube_factory_id = factory_id
-                break
-    print("Cube with S/N 0x{:08x} available.".format(cube_factory_id))
+        cubes = [
+            (fid, obj)
+            for fid, obj in available_objects.items()
+            if obj.object_type in CUBE_TYPES
+        ]
+        if cubes:
+            break
+        time.sleep(0.1)
 
-    print("Connecting to cube...")
-    pkt = pycozmo.protocol_encoder.ObjectConnect(factory_id=cube_factory_id, connect=True)
-    cli.conn.send(pkt)
-    cli.conn.wait_for(pycozmo.protocol_encoder.ObjectConnectionState)
-    cube_id = list(cli.connected_objects.keys())[0]
-    print("Cube connected - ID {}.".format(cube_id))
+    print(f"Found {len(cubes)} cube(s).")
+
+    # Connect to all cubes.
+    cube_ids = []
+    for factory_id, obj in cubes:
+        print(f"Connecting to cube S/N 0x{factory_id:08x} ({obj.object_type.name})...")
+        pkt = pycozmo.protocol_encoder.ObjectConnect(
+            factory_id=factory_id, connect=True
+        )
+        cli.conn.send(pkt)
+        cli.conn.wait_for(pycozmo.protocol_encoder.ObjectConnectionState)
+        object_id = list(cli.connected_objects.keys())[-1]
+        cube_ids.append(object_id)
+        print(f"  Connected — object_id={object_id}")
 
     lights = [
         pycozmo.lights.red_light,
@@ -31,11 +46,11 @@ with pycozmo.connect() as cli:
         pycozmo.lights.off_light,
     ]
     for light in lights:
-        # Select cube
-        pkt = pycozmo.protocol_encoder.CubeId(object_id=cube_id)
-        cli.conn.send(pkt)
-        # Set lights
-        pkt = pycozmo.protocol_encoder.CubeLights(states=(light, light, light, light))
-        cli.conn.send(pkt)
-
+        for cube_id in cube_ids:
+            pkt = pycozmo.protocol_encoder.CubeId(object_id=cube_id)
+            cli.conn.send(pkt)
+            pkt = pycozmo.protocol_encoder.CubeLights(
+                states=(light, light, light, light)
+            )
+            cli.conn.send(pkt)
         time.sleep(2)
