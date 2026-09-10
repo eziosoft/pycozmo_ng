@@ -679,22 +679,26 @@ class VisionDisplay:
         connected = dict(cli.connected_objects)
         connected_factory_ids = {info.get("factory_id") for info in connected.values()}
 
-        # 1. Connect any detected cube that isn't connected yet.
-        for cube_id in detected_cube_ids:
-            factory_id = self.cube_factory_id_map.get(cube_id)
-            if factory_id is None or factory_id in connected_factory_ids:
-                continue
-            cli.conn.send(
-                pycozmo.protocol_encoder.ObjectConnect(
-                    factory_id=factory_id, connect=True
+        # 1. Connect a detected cube only if nothing is currently connected.
+        #    The robot assigns a single object_id at a time — connecting a
+        #    new cube drops the previous one, so we only attempt when idle.
+        if not connected_factory_ids and detected_cube_ids:
+            for cube_id in detected_cube_ids:
+                factory_id = self.cube_factory_id_map.get(cube_id)
+                if factory_id is None:
+                    continue
+                cli.conn.send(
+                    pycozmo.protocol_encoder.ObjectConnect(
+                        factory_id=factory_id, connect=True
+                    )
                 )
-            )
-            logger_cubes.debug(
-                "Cube %d: connecting (factory_id=0x%08x)",
-                cube_id,
-                factory_id,
-            )
-            time.sleep(0.5)
+                logger_cubes.debug(
+                    "Cube %d: connecting (factory_id=0x%08x)",
+                    cube_id,
+                    factory_id,
+                )
+                time.sleep(0.5)
+                break  # only one at a time
 
         # Re-read connected objects AFTER any connects this tick.
         connected = dict(cli.connected_objects)
