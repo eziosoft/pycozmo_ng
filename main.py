@@ -634,31 +634,36 @@ class VisionDisplay:
         print(f"\n✅ Discovered {len(self.cube_factory_id_map)} cube(s)")
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
         logger_cubes.info("Cube factory_id map: %s", self.cube_factory_id_map)
+
+        # Connect to all cubes now — one ObjectConnect per cube with a
+        # settle delay so the robot can assign each a unique object_id.
+        # Keeping them connected continuously means accel/event streams
+        # stay active for all cubes (not just the currently-detected one).
+        for cube_id, factory_id in self.cube_factory_id_map.items():
+            cli.conn.send(
+                pycozmo.protocol_encoder.ObjectConnect(
+                    factory_id=factory_id, connect=True
+                )
+            )
+            logger_cubes.debug(
+                "Cube %d: initial connect (factory_id=0x%08x)",
+                cube_id,
+                factory_id,
+            )
+            time.sleep(0.5)
+
         print(
-            "ℹ️  All detected cubes will be connected simultaneously; the light"
-            "\n   worker keeps them connected so accel/event streams stay active."
+            "ℹ️  All cubes connected. Light worker refreshes LEDs + accel"
+            "\n   every tick."
         )
         print("=" * 70 + "\n")
 
     def _cube_light_tick(self, cli):
-        """Keep every known cube connected and lit.
+        """Refresh LEDs and accel stream on every connected cube.
 
-        Cozmo connects to several light cubes at once; each connection gets
-        its own temporary ``object_id`` (``cli.connected_objects`` is keyed
-        by it). The old cycling approach assumed a single connection slot and
-        therefore disconnected/reconnected cubes every cycle (COZMO-20/23) —
-        which is also why accelerometer-based relocation never worked: the
-        accel stream for a cube only flowed in the brief window it was
-        connected. Keeping cubes connected continuously means the robot's
-        ObjectMoved events (and lights) work for all cubes at once.
-
-        Each tick:
-          1. Connect every cube in the factory map that is not connected yet
-             (including cubes outside the camera's field of view, so their
-             accel/event streams stay active for position invalidation).
-          2. For each connected cube, re-send CubeId + StreamObjectAccel +
-             CubeLights so its LEDs stay on and the accel/event stream stays
-             enabled.
+        Cubes are connected once at startup in ``setup_cube_mapping``.
+        This tick simply re-sends CubeId + StreamObjectAccel + CubeLights
+        so the LEDs stay on and the accel/event stream stays enabled.
         """
         # Bail out if the robot has dropped the Wi-Fi connection.
         if cli.conn.state != pycozmo.conn.Connection.CONNECTED:
@@ -670,62 +675,18 @@ class VisionDisplay:
 
         if not self.detection_enabled:
             return
-        if not self.cube_factory_id_map:
-            return
-
-        # Snapshot detections under the lock (COZMO-3).
-        with self._detections_lock:
-            detected_cube_ids = sorted({det.cube_id for det in self.latest_detections})
-
-        if not hasattr(self, "_last_detected_ids"):
-            self._last_detected_ids = set()
-
-        if set(detected_cube_ids) != self._last_detected_ids:
-            print(f"🔍 Detected cube IDs: {detected_cube_ids}")
-            self._last_detected_ids = set(detected_cube_ids)
-
-        if not detected_cube_ids:
-            return
 
         # Currently-connected cubes: object_id -> {factory_id, object_type}.
         connected = dict(cli.connected_objects)
-        connected_factory_ids = {info.get("factory_id") for info in connected.values()}
+        if not connected:
+            return
 
-        # 1. Connect any known cube that isn't connected yet.
-        #    Iterate the full factory map so cubes outside the camera's field
-        #    of view still get connected and receive accel/event streams.
-        for cube_id in self.cube_factory_id_map:
-            factory_id = self.cube_factory_id_map[cube_id]
-            if factory_id in connected_factory_ids:
-                continue
-            cli.conn.send(
-                pycozmo.protocol_encoder.ObjectConnect(
-                    factory_id=factory_id, connect=True
-                )
-            )
-            logger_cubes.debug(
-                "Cube %d: connecting (factory_id=0x%08x)",
-                cube_id,
-                factory_id,
-            )
-            # Brief settle so the connect registers before CubeId/CubeLights.
-            time.sleep(0.2)
-
-        # Re-read connected objects AFTER any connects this tick, so a cube
-        # freshly connected above still gets its accel/lights this cycle —
-        # otherwise it would wait until the next tick (~2 s). (COZMO-34)
-        connected = dict(cli.connected_objects)
-
-        # 2. Refresh lights + accel stream on each connected cube.
         for object_id, info in connected.items():
             cube_id = self._cube_id_for_factory(info.get("factory_id"))
             if cube_id is None:
                 continue
             try:
                 cli.conn.send(pycozmo.protocol_encoder.CubeId(object_id=object_id))
-                # Enable accelerometer/event streaming for THIS cube, on its
-                # own object_id, so the robot reports ObjectMoved for it.
-                # (COZMO-27)
                 cli.conn.send(
                     pycozmo.protocol_encoder.StreamObjectAccel(
                         object_id=object_id, enable=True
