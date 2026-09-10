@@ -635,9 +635,11 @@ class VisionDisplay:
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
         logger_cubes.info("Cube factory_id map: %s", self.cube_factory_id_map)
 
-        # Connect to all cubes — fire all ObjectConnect packets first, then
-        # wait for all ObjectConnectionState responses.  The SDK does the
-        # same via BlockPoolResetMessage (one command → robot connects all).
+        # Connect to cubes one at a time — wait for each confirmation
+        # before starting the next.  The SDK does the same: sends one
+        # BlockPoolResetMessage, then waits for each ObjectConnectionState
+        # sequentially (timeout=10 s).  Sending ObjectConnect for all three
+        # back-to-back caused the robot to drop earlier connections.
         for cube_id, factory_id in self.cube_factory_id_map.items():
             cli.conn.send(
                 pycozmo.protocol_encoder.ObjectConnect(
@@ -649,36 +651,22 @@ class VisionDisplay:
                 cube_id,
                 factory_id,
             )
-
-        # Wait for all connection confirmations (10 s timeout each, like SDK).
-        for cube_id in self.cube_factory_id_map:
             try:
                 cli.conn.wait_for(
-                    pycozmo.protocol_encoder.ObjectConnectionState, timeout=10.0
+                    pycozmo.protocol_encoder.ObjectConnectionState, timeout=5.0
                 )
+                logger_cubes.debug("Cube %d: connected", cube_id)
             except Exception:
                 logger_cubes.warning("Cube %d: connect timed out", cube_id)
 
         connected = dict(cli.connected_objects)
-        print(
-            f"ℹ️  {len(connected)} cube(s) connected. Light worker refreshes"
-            "\n   LEDs + accel every tick."
+        print(f"\n✅ {len(connected)} cube(s) connected")
+
+        # Light all connected cubes green and enable accel streams.
+        GREEN = pycozmo.lights.Color(r=0.0, g=1.0, b=0.0)
+        green_light = pycozmo.lights.Light(
+            on_color=GREEN, off_color=pycozmo.lights.DEFAULT_OFF_COLOR
         )
-        print("=" * 70 + "\n")
-
-    def _cube_light_tick(self, cli):
-        """Refresh LEDs and accel stream on every connected cube."""
-        # Bail out if the robot has dropped the Wi-Fi connection.
-        if cli.conn.state != pycozmo.conn.Connection.CONNECTED:
-            return
-
-        if not self.detection_enabled:
-            return
-
-        connected = dict(cli.connected_objects)
-        if not connected:
-            return
-
         for object_id, info in connected.items():
             cube_id = self._cube_id_for_factory(info.get("factory_id"))
             if cube_id is None:
@@ -692,20 +680,52 @@ class VisionDisplay:
                 )
                 cli.conn.send(
                     pycozmo.protocol_encoder.CubeLights(
-                        states=(
-                            pycozmo.lights.blue_light,
-                            pycozmo.lights.blue_light,
-                            pycozmo.lights.blue_light,
-                            pycozmo.lights.blue_light,
-                        )
+                        states=(green_light, green_light, green_light, green_light)
                     )
                 )
                 logger_cubes.debug(
-                    "Cube %d: lit (object_id=%d)", cube_id, object_id
+                    "Cube %d: lit green (object_id=%d)", cube_id, object_id
+                )
+            except Exception as e:
+                logger_cubes.warning("Cube %d: light failed: %s", cube_id, e)
+
+        print("🟢 All connected cubes lit green")
+        print("=" * 70 + "\n")
+
+    def _cube_light_tick(self, cli):
+        """Maintain green LEDs and accel stream on all connected cubes."""
+        if cli.conn.state != pycozmo.conn.Connection.CONNECTED:
+            return
+        if not self.detection_enabled:
+            return
+
+        connected = dict(cli.connected_objects)
+        if not connected:
+            return
+
+        GREEN = pycozmo.lights.Color(r=0.0, g=1.0, b=0.0)
+        green_light = pycozmo.lights.Light(
+            on_color=GREEN, off_color=pycozmo.lights.DEFAULT_OFF_COLOR
+        )
+        for object_id, info in connected.items():
+            cube_id = self._cube_id_for_factory(info.get("factory_id"))
+            if cube_id is None:
+                continue
+            try:
+                cli.conn.send(pycozmo.protocol_encoder.CubeId(object_id=object_id))
+                cli.conn.send(
+                    pycozmo.protocol_encoder.StreamObjectAccel(
+                        object_id=object_id, enable=True
+                    )
+                )
+                cli.conn.send(
+                    pycozmo.protocol_encoder.CubeLights(
+                        states=(green_light, green_light, green_light, green_light)
+                    )
                 )
             except Exception as e:
                 logger_cubes.warning(
-                    "Cube %d: light/accel failed: %s", cube_id, e
+                    "Cube %d: refresh failed: %s", cube_id, e
                 )
 
     def run(self, cli):
