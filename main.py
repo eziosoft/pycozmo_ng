@@ -635,41 +635,18 @@ class VisionDisplay:
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
         logger_cubes.info("Cube factory_id map: %s", self.cube_factory_id_map)
 
-        # Connect to all cubes now — one ObjectConnect per cube, waiting for
-        # confirmation before connecting the next. Keeping them connected
-        # continuously means accel/event streams stay active for all cubes.
-        for cube_id, factory_id in self.cube_factory_id_map.items():
-            cli.conn.send(
-                pycozmo.protocol_encoder.ObjectConnect(
-                    factory_id=factory_id, connect=True
-                )
-            )
-            logger_cubes.debug(
-                "Cube %d: initial connect (factory_id=0x%08x)",
-                cube_id,
-                factory_id,
-            )
-            try:
-                cli.conn.wait_for(
-                    pycozmo.protocol_encoder.ObjectConnectionState, timeout=3.0
-                )
-            except Exception:
-                logger_cubes.warning(
-                    "Cube %d: connect timed out", cube_id
-                )
-
         print(
-            "ℹ️  All cubes connected. Light worker refreshes LEDs + accel"
-            "\n   every tick."
+            "ℹ️  Cubes will be connected by the light worker as they are"
+            "\n   detected by the camera."
         )
         print("=" * 70 + "\n")
 
     def _cube_light_tick(self, cli):
-        """Refresh LEDs and accel stream on every connected cube.
+        """Keep every detected cube connected and lit.
 
-        Cubes are connected once at startup in ``setup_cube_mapping``.
-        This tick simply re-sends CubeId + StreamObjectAccel + CubeLights
-        so the LEDs stay on and the accel/event stream stays enabled.
+        Cubes are connected on demand when detected by the camera. The tick
+        re-sends CubeId + StreamObjectAccel + CubeLights so LEDs stay on
+        and the accel/event stream stays enabled for position invalidation.
         """
         # Bail out if the robot has dropped the Wi-Fi connection.
         if cli.conn.state != pycozmo.conn.Connection.CONNECTED:
@@ -681,12 +658,48 @@ class VisionDisplay:
 
         if not self.detection_enabled:
             return
+        if not self.cube_factory_id_map:
+            return
+
+        # Snapshot detections under the lock (COZMO-3).
+        with self._detections_lock:
+            detected_cube_ids = sorted({det.cube_id for det in self.latest_detections})
+
+        if not hasattr(self, "_last_detected_ids"):
+            self._last_detected_ids = set()
+
+        if set(detected_cube_ids) != self._last_detected_ids:
+            print(f"🔍 Detected cube IDs: {detected_cube_ids}")
+            self._last_detected_ids = set(detected_cube_ids)
+
+        if not detected_cube_ids:
+            return
 
         # Currently-connected cubes: object_id -> {factory_id, object_type}.
         connected = dict(cli.connected_objects)
-        if not connected:
-            return
+        connected_factory_ids = {info.get("factory_id") for info in connected.values()}
 
+        # 1. Connect any detected cube that isn't connected yet.
+        for cube_id in detected_cube_ids:
+            factory_id = self.cube_factory_id_map.get(cube_id)
+            if factory_id is None or factory_id in connected_factory_ids:
+                continue
+            cli.conn.send(
+                pycozmo.protocol_encoder.ObjectConnect(
+                    factory_id=factory_id, connect=True
+                )
+            )
+            logger_cubes.debug(
+                "Cube %d: connecting (factory_id=0x%08x)",
+                cube_id,
+                factory_id,
+            )
+            time.sleep(0.5)
+
+        # Re-read connected objects AFTER any connects this tick.
+        connected = dict(cli.connected_objects)
+
+        # 2. Refresh lights + accel stream on each connected cube.
         for object_id, info in connected.items():
             cube_id = self._cube_id_for_factory(info.get("factory_id"))
             if cube_id is None:
