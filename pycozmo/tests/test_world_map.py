@@ -13,22 +13,23 @@ class TestCoords:
         # Cube 200 mm straight ahead, level head, robot at origin facing +X.
         p_cam = np.array([0.0, 0.0, 200.0])
         pw, _ = coords.camera_to_world(p_cam, np.eye(3), 0.0, np.zeros(3), 0.0)
-        # Body forward is +X (Anki), camera sits 40 mm above ground.
-        np.testing.assert_allclose(pw, [200.0, 0.0, 40.0], atol=1e-9)
+        # Body forward is +X (Anki), camera sits 38 mm above ground, 30 mm back.
+        # Cube at 200+30=230 mm forward.
+        np.testing.assert_allclose(pw, [230.0, 0.0, 38.0], atol=1e-9)
 
     def test_camera_to_world_robot_translation(self):
         p_cam = np.array([0.0, 0.0, 200.0])
         pw, _ = coords.camera_to_world(
             p_cam, np.eye(3), 0.0, np.array([100.0, 0.0, 0.0]), 0.0
         )
-        np.testing.assert_allclose(pw, [300.0, 0.0, 40.0], atol=1e-9)
+        np.testing.assert_allclose(pw, [330.0, 0.0, 38.0], atol=1e-9)
 
     def test_camera_to_world_robot_yaw(self):
         # Robot turns left 90 deg (CCW, +yaw); the cube ahead is now to its left.
         p_cam = np.array([0.0, 0.0, 200.0])
         pw, _ = coords.camera_to_world(p_cam, np.eye(3), 0.0, np.zeros(3), np.pi / 2)
-        # Left is +Y world, so cube at +200 Y.
-        np.testing.assert_allclose(pw, [0.0, 200.0, 40.0], atol=1e-9)
+        # Left is +Y world, so cube at +230 Y (200+30 camera setback).
+        np.testing.assert_allclose(pw, [0.0, 230.0, 38.0], atol=1e-9)
 
     def test_world_to_scene_point(self):
         # World (X fwd, Y left, Z up) -> scene (X right, Y up, Z fwd).
@@ -68,7 +69,7 @@ class TestWorldMapFusion:
         wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
         wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
         pos = wm.get_cubes()[0].position
-        np.testing.assert_allclose(pos, [200.0, 0.0, 40.0], atol=1e-6)
+        np.testing.assert_allclose(pos, [230.0, 0.0, 38.0], atol=1e-6)
 
     def test_confidence_below_floor_dropped(self):
         wm = WorldMap(confidence_floor=0.5)

@@ -181,7 +181,7 @@ class World3DViewer:
     """
     # Camera height above the floor in millimetres (Cozmo hardware spec).
     # Used when projecting detections from camera-frame to world-frame.
-    CAMERA_HEIGHT_MM = 40.0  # (COZMO-7)
+    CAMERA_HEIGHT_MM = 38.0  # (COZMO-28, user-measured)
 
     def __init__(self, window_size=(800, 600)):
         """
@@ -687,20 +687,20 @@ class World3DViewer:
         glPopMatrix()
 
     def _draw_camera(self):
-        """Draw robot as a box of dimensions 60x90x55mm positioned on surface with camera at 40mm height"""
+        """Draw robot as a box of dimensions 56x70x90mm positioned on surface with camera at 38mm height"""
         glDisable(GL_LIGHTING)
         glPushMatrix()
 
-        # Robot box dimensions: 60x90x55mm (width x height x depth)
-        width = 55.0   # X dimension
-        height = 60.0  # Y dimension
+        # Robot box dimensions: 56x70x90mm (width x height x depth) (COZMO-28)
+        width = 56.0   # X dimension
+        height = 70.0  # Y dimension
         depth = 90.0   # Z dimension
 
         # Position the robot box so camera is at origin and bottom is on surface
-        # Camera is at (0,0,0) and 40mm above surface, so robot box needs to be offset
-        # Robot front face should be at Z=0, bottom at Y=0, and camera at Y=40mm
+        # Camera is at (0,0,0) and 38mm above surface, so robot box needs to be offset
+        # Robot front face should be at Z=0, bottom at Y=0, and camera at Y=38mm
         robot_x = 0.0
-        robot_y = 0.0  # Robot bottom at Y=0 (on ground), camera at Y=40mm
+        robot_y = 0.0  # Robot bottom at Y=0 (on ground), camera at Y=38mm
         robot_z = -depth/2.0  # Position so front face is at Z=0
 
         glTranslatef(robot_x, robot_y, robot_z)

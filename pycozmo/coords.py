@@ -41,9 +41,10 @@ __all__ = [
 ]
 
 
-# Camera-to-body offset in body frame (mm). Camera sits on the front-centre,
-# 40 mm above the ground, with no horizontal offset. (design decision)
-CAMERA_TO_BODY_OFFSET: np.ndarray = np.array([0.0, 0.0, 40.0], dtype=np.float64)
+# Camera-to-body offset in body frame (mm). Camera sits 30 mm back from
+# the front edge, centred laterally, 38 mm above the ground. (COZMO-28,
+# user-measured: 90 L x 56 W x 70 H, cam 38 mm high, 30 mm setback)
+CAMERA_TO_BODY_OFFSET: np.ndarray = np.array([30.0, 0.0, 38.0], dtype=np.float64)
 
 # World→scene change-of-basis matrix (a proper **rotation**, det = +1; see
 # ``world_to_scene_point`` for why it must not be a reflection). Its columns

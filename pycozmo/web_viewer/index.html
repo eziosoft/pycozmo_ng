@@ -237,15 +237,17 @@
     scene.add(floor);
 
     // -----------------------------------------------------------------------
-    // Robot box  (Cozmo: 108 L x 64 W x 64 H mm — BoxGeometry(x=W, y=H, z=L))
+    // Robot box  (Cozmo: 90 L x 56 W x 70 H mm — BoxGeometry(x=W, y=H, z=L))
+    // Camera: 30 mm back from front, 38 mm high. Rotation point: 50 mm from front.
+    // (COZMO-28, user-measured)
     // -----------------------------------------------------------------------
     function createRobot() {
       const group = new THREE.Group();
 
-      // Cozmo dimensions: 108 mm long and 64 mm wide, 64 mm high.
+      // Cozmo dimensions: 90 mm long, 56 mm wide, 70 mm high.
       // Width along scene X, height along scene Y, length along scene Z
-      // (forward), so BoxGeometry(width=64, height=64, depth=108).
-      const geo = new THREE.BoxGeometry(64, 64, 108);
+      // (forward), so BoxGeometry(width=56, height=70, depth=90).
+      const geo = new THREE.BoxGeometry(56, 70, 90);
       // Wireframe
       const wire = new THREE.LineSegments(
         new THREE.EdgesGeometry(geo),
@@ -263,17 +265,18 @@
       );
       group.add(fill);
 
-      // The group origin is the robot's world position P (= the front-centre
-      // ground point under the camera, per our camera-to-body model). So the
-      // box body sits with its front face at the origin, extending backward
-      // (on the floor) and upward: center at (0, +32, -54).
-      fill.position.set(0, 32, -54);
-      wire.position.set(0, 32, -54);
+      // The group origin is the robot's yaw rotation point (50 mm from front,
+      // on the ground). Camera is 30 mm back from front, 38 mm up.
+      // Box front is at Z = +40 (50 mm forward of rotation point).
+      // Box center: (0, 35, -5) — half-height up, half-length shifted back.
+      fill.position.set(0, 35, -5);
+      wire.position.set(0, 35, -5);
 
-      // Camera origin marker (yellow dot) — at group origin
+      // Camera origin marker (yellow dot) — 30 mm back, 38 mm up
       const camGeo = new THREE.SphereGeometry(3, 12, 8);
       const camMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
       const camMarker = new THREE.Mesh(camGeo, camMat);
+      camMarker.position.set(0, 38, 20); // 20 = 50-30, forward of rotation point
       group.add(camMarker);
 
       return group;
