@@ -986,7 +986,7 @@ class VisionDisplay:
 
         DOCK_DRIVE_DIST = 150.0  # mm forward (away from dock)
         DOCK_REVERSE_SPEED = 80.0  # mm/s reverse speed
-        DOCK_AIM_BEHIND = 20.0  # mm behind dock center — drives the rear
+        DOCK_AIM_BEHIND = 40.0  # mm behind dock center — drives the rear
         # contacts fully onto the charger, not just to the robot center.
         DOCK_CONTACT_DIST = 15.0  # mm — "at" the dock (expect charge here)
         DOCK_MAX_RETRIES = 3  # times to back away and re-attempt
