@@ -823,10 +823,6 @@ class VisionDisplay:
         step1_x = cube_x + ux * STEP1_DIST
         step1_y = cube_y + uy * STEP1_DIST
 
-        # Step 2: 80mm away along face normal
-        step2_x = cube_x + ux * STEP2_DIST
-        step2_y = cube_y + uy * STEP2_DIST
-
         print(
             f"📦 Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f}) "
             f"face normal=({ux:.2f}, {uy:.2f})"
@@ -841,12 +837,47 @@ class VisionDisplay:
 
                 _time.sleep(0.3)
 
-                # Step 2: Re-check heading from new position, drive to 80mm
-                rp = self.cli.pose
-                dx2 = cube_x - rp.position.x
-                dy2 = cube_y - rp.position.y
-                heading2 = math.atan2(dy2, dx2)
+                # Re-fetch cube position with fresh detections (more accurate close up)
+                world2 = self.web_viewer.world_map.get_world_state()
+                cubes2 = world2.get("cubes", {})
+                if cube_idx in cubes2:
+                    cube_x2 = float(cubes2[cube_idx]["position"][0])
+                    cube_y2 = float(cubes2[cube_idx]["position"][1])
+                    cube_rot2 = np.array(cubes2[cube_idx]["rotation"])
 
+                    # Recalculate face normal with updated rotation
+                    local_x2 = cube_rot2 @ np.array([1.0, 0.0, 0.0])
+                    local_y2 = cube_rot2 @ np.array([0.0, 1.0, 0.0])
+                    normals2 = [local_x2, -local_x2, local_y2, -local_y2]
+
+                    rp = self.cli.pose
+                    to_robot2 = np.array(
+                        [rp.position.x - cube_x2, rp.position.y - cube_y2, 0.0]
+                    )
+                    to_robot2_len = np.linalg.norm(to_robot2)
+                    if to_robot2_len > 1:
+                        to_robot2_unit = to_robot2 / to_robot2_len
+                        best2 = None
+                        best_dot2 = -2.0
+                        for n in normals2:
+                            n2d = np.array([n[0], n[1]])
+                            if np.linalg.norm(n2d) < 0.01:
+                                continue
+                            n2d = n2d / np.linalg.norm(n2d)
+                            d = np.dot(n2d, to_robot2_unit[:2])
+                            if d > best_dot2:
+                                best_dot2 = d
+                                best2 = n2d
+                        if best2 is not None:
+                            ux, uy = best2[0], best2[1]
+                            step2_x = cube_x2 + ux * STEP2_DIST
+                            step2_y = cube_y2 + uy * STEP2_DIST
+                            heading2 = math.atan2(-uy, -ux)
+                            print(
+                                f"📦 Updated: cube at ({cube_x2:.0f}, {cube_y2:.0f}) face=({ux:.2f}, {uy:.2f})"
+                            )
+
+                # Step 2: Drive to 80mm with updated data
                 pose2 = Pose(step2_x, step2_y, 0, angle_z=Angle(radians=heading2))
                 print(f"📦 Step 2: 80mm ({step2_x:.0f}, {step2_y:.0f})")
                 self.cli.go_to_pose(pose2, relative_to_robot=False)
