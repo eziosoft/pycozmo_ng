@@ -230,6 +230,9 @@ class VisionDisplay:
         self._dock_lock = threading.Lock()
         self._on_charger = False
         self._charging = False
+        # Origin id of the last pose-origin reset, so charging-triggered
+        # resets are idempotent. (COZMO-28)
+        self._origin_reset_origin_id = None
 
         # Camera lifecycle (COZMO-22): the Cozmo camera is off by default
         # so we don't flood its lossy Wi-Fi AP. A listener on
@@ -948,17 +951,52 @@ class VisionDisplay:
         t = threading.Thread(target=_nav_thread, daemon=True)
         t.start()
 
+    def _reset_pose_origin(self) -> None:
+        """Re-anchor the localization origin at the current pose.
+
+        Sends ``SetOrigin`` so the robot's current pose becomes the new
+        world frame (0,0,0) and records it as the dock pose. The tires
+        slip when they contact the dock, so this must re-baseline
+        whenever charging is detected — during docking AND when the
+        robot is driven onto the pad manually. Idempotent per origin id.
+        (COZMO-28)
+        """
+        cli = self.cli
+        if cli is None:
+            return
+        with self._dock_lock:
+            if self._origin_reset_origin_id == cli.pose.origin_id:
+                return
+        import time as _time
+
+        reset_pkt = pycozmo.protocol_encoder.SetOrigin(
+            pose_frame_id=cli.pose_frame_id + 1,
+            pose_origin_id=cli.pose.origin_id + 1,
+        )
+        cli.conn.send(reset_pkt)
+        _time.sleep(0.5)
+        with self._dock_lock:
+            self._origin_reset_origin_id = cli.pose.origin_id
+            self._dock_pose = cli.pose
+        print("🛟 Pose origin reset — current pose is now origin")
+
     def _on_charger_change(self, cli, state: bool) -> None:
         """Record whether the robot is physically on the charger. (COZMO-28)"""
         del cli
         with self._dock_lock:
             self._on_charger = state
+        if state:
+            print("🔋 On charger detected")
+            threading.Thread(target=self._reset_pose_origin, daemon=True).start()
 
     def _on_charging_change(self, cli, state: bool) -> None:
         """Record whether the robot is actively charging. (COZMO-28)"""
         del cli
         with self._dock_lock:
             self._charging = state
+        if state:
+            print("🔋 Charging detected")
+            threading.Thread(target=self._reset_pose_origin, daemon=True).start()
 
     def _on_dock(self) -> None:
         """Handle 'z' keypress — drive robot back into the dock.
@@ -1092,16 +1130,10 @@ class VisionDisplay:
                 # tires slip when they contact the dock, so the pose is no
                 # longer trustworthy. Reset makes the dock the new (0,0,0)
                 # and updates _dock_pose for the next docking run.
+                # (Handlers also trigger this for manual driving onto the
+                # pad; _reset_pose_origin is idempotent per origin id.)
                 if docked or _is_charging():
-                    print("🛟 Charging detected — resetting pose origin")
-                    _time.sleep(0.2)
-                    reset_pkt = pycozmo.protocol_encoder.SetOrigin(
-                        pose_frame_id=self.cli.pose_frame_id + 1,
-                        pose_origin_id=self.cli.pose.origin_id + 1,
-                    )
-                    self.cli.conn.send(reset_pkt)
-                    _time.sleep(0.5)
-                    self._dock_pose = self.cli.pose
+                    self._reset_pose_origin()
                     print("🛟 Docked and pose reset — dock is now origin")
                 elif not docked:
                     print("🛟 Docking did not complete — no pose reset")
