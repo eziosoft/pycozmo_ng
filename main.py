@@ -24,6 +24,7 @@ Detection throttle (only every Nth frame goes through cube detection):
 
 import argparse
 import logging
+import math
 import os
 import subprocess
 import threading
@@ -703,6 +704,147 @@ class VisionDisplay:
             self._remote_control.stop()
             self._remote_control = None
 
+    def _steer_to_point(
+        self,
+        get_target,
+        speed_mmps: float = 60.0,
+        turn_frac: float = 1.2,
+        stop_mm: float = 8.0,
+        timeout_s: float = 20.0,
+        label: str = "steer",
+    ) -> bool:
+        """Closed-loop drive toward a target that may move / get re-detected.
+
+        ``get_target`` returns ``(tx, ty)`` world coords (Anki frame) or
+        ``None`` (treated as "target lost" -> stop). The target is
+        re-fetched on every tick, so live detections (e.g. the world-map
+        cube pose) keep moving the goal while the robot drives — no
+        dead-reckoning-only hops. Reverse-capable: if the target is more
+        than 90° behind, the robot backs up and curves toward it.
+
+        Returns ``True`` if the goal was reached, ``False`` on timeout or
+        target loss. Blocking; call from a thread.
+        """
+        import time as _time
+
+        t0 = _time.monotonic()
+        while True:
+            if _time.monotonic() - t0 > timeout_s:
+                print(f"{label}: timeout")
+                return False
+            target = get_target()
+            if target is None:
+                print(f"{label}: target lost")
+                return False
+            tx, ty = target[0], target[1]
+            pose = self.cli.pose
+            ex = tx - pose.position.x
+            ey = ty - pose.position.y
+            d = math.hypot(ex, ey)
+            if d < stop_mm:
+                return True
+
+            # Heading error to target, normalized to [-pi, pi].
+            cur_h = pose.rotation.angle_z.radians
+            target_h = math.atan2(ey, ex)
+            err = target_h - cur_h
+            while err > math.pi:
+                err -= 2.0 * math.pi
+            while err < -math.pi:
+                err += 2.0 * math.pi
+
+            reverse = abs(err) > math.pi / 2.0
+            if reverse:
+                # Drive in reverse. The effective steering error is the
+                # angle of the REAR direction toward the target
+                # (err_rear = err - pi, normalized), and positive
+                # err_rear wants positive omega (r > l), same as forward.
+                if err > 0.0:
+                    err -= math.pi
+                else:
+                    err += math.pi
+                turn = err * turn_frac * speed_mmps
+                l_speed = -speed_mmps - turn
+                r_speed = -speed_mmps + turn
+            else:
+                turn = err * turn_frac * speed_mmps
+                l_speed = speed_mmps - turn
+                r_speed = speed_mmps + turn
+
+            # Slow down as we get close so we don't overshoot.
+            slow = max(0.2, min(1.0, d / 40.0))
+            self.cli.drive_wheels(
+                lwheel_speed=l_speed * slow,
+                rwheel_speed=r_speed * slow,
+            )
+            _time.sleep(0.05)
+        return False
+
+    def _cube_approach_target(
+        self, cube_idx: int, standoff_mm: float
+    ) -> Optional[tuple[float, float, float]]:
+        """Live approach target for a cube, from the world map.
+
+        Returns ``(x, y, heading)`` — the point ``standoff_mm`` in front
+        of the cube face closest to the robot, plus the heading that faces
+        the cube. The position/rotation are read fresh from the fused
+        world map each call, so the returned point tracks real-time
+        detections. Returns ``None`` if the cube isn't in the map or the
+        robot is on top of the cube.
+        """
+        world = self.web_viewer.world_map.get_world_state()
+        cubes = world.get("cubes", {})
+        if cube_idx not in cubes:
+            return None
+        cube_state = cubes[cube_idx]
+        cube_x = float(cube_state["position"][0])
+        cube_y = float(cube_state["position"][1])
+        cube_rot = np.array(cube_state["rotation"])
+
+        # Four side face normals (ignore top/bottom Z faces).
+        normals2d = []
+        for axis in (np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])):
+            n = cube_rot @ axis
+            n2d = np.array([n[0], n[1]])
+            ln = np.linalg.norm(n2d)
+            if ln < 0.01:
+                continue
+            n2d = n2d / ln
+            normals2d.extend([n2d, -n2d])
+
+        rp = self.cli.pose
+        rx, ry = rp.position.x, rp.position.y
+        to_robot = np.array([rx - cube_x, ry - cube_y])
+        to_robot_len = np.linalg.norm(to_robot)
+        if to_robot_len < 1:
+            return None
+        to_robot_unit = to_robot / to_robot_len
+
+        # Face normal most aligned with the cube->robot direction.
+        best = None
+        best_dot = -2.0
+        for n2d in normals2d:
+            dot = float(np.dot(n2d, to_robot_unit[:2]))
+            if dot > best_dot:
+                best_dot = dot
+                best = n2d
+        if best is None:
+            return None
+        ux, uy = float(best[0]), float(best[1])
+
+        # Ensure the approach point is between the robot and the cube.
+        app_x = cube_x + ux * standoff_mm
+        app_y = cube_y + uy * standoff_mm
+        d_app = math.hypot(app_x - rx, app_y - ry)
+        d_cube = math.hypot(cube_x - rx, cube_y - ry)
+        if d_app > d_cube:
+            ux, uy = -ux, -uy
+            app_x = cube_x + ux * standoff_mm
+            app_y = cube_y + uy * standoff_mm
+
+        heading = math.atan2(-uy, -ux)
+        return (app_x, app_y, heading)
+
     def _on_navigate_to(self, world_forward: float, world_left: float) -> None:
         """Handle click-to-navigate from browser.
 
@@ -748,63 +890,15 @@ class VisionDisplay:
         dist = math.sqrt(dx * dx + dy * dy)
 
         def _short_navigate(tx: float, ty: float) -> None:
-            """Closed-loop drive to a close target, reversing if needed.
-
-            Computes the heading error to the target; if the target is
-            more than 90° behind the robot, it drives in reverse (which
-            flips the differential-steering sign so the robot curves
-            toward the target while backing up). Stops within NAV_STOP_MM.
-            """
-            import time as _time
-
-            t0 = _time.monotonic()
-            while True:
-                if _time.monotonic() - t0 > NAV_TIMEOUT_S:
-                    print("📍 Short nav timeout")
-                    break
-
-                pose = self.cli.pose
-                cx, cy = pose.position.x, pose.position.y
-                ex = tx - cx
-                ey = ty - cy
-                d = math.hypot(ex, ey)
-                if d < NAV_STOP_MM:
-                    break
-
-                # Heading error to target, normalized to [-pi, pi].
-                cur_h = pose.rotation.angle_z.radians
-                err = heading - cur_h
-                while err > math.pi:
-                    err -= 2.0 * math.pi
-                while err < -math.pi:
-                    err += 2.0 * math.pi
-
-                reverse = abs(err) > math.pi / 2.0
-                if reverse:
-                    # Drive in reverse. The effective steering error is the
-                    # angle of the REAR direction toward the target
-                    # (err_rear = err - pi, normalized), and positive
-                    # err_rear wants positive omega (r > l), same as forward.
-                    if err > 0.0:
-                        err -= math.pi
-                    else:
-                        err += math.pi
-                    turn = err * NAV_TURN_FRAC * NAV_SPEED_MMPS
-                    l_speed = -NAV_SPEED_MMPS - turn
-                    r_speed = -NAV_SPEED_MMPS + turn
-                else:
-                    turn = err * NAV_TURN_FRAC * NAV_SPEED_MMPS
-                    l_speed = NAV_SPEED_MMPS - turn
-                    r_speed = NAV_SPEED_MMPS + turn
-
-                # Slow down as we get close so we don't overshoot.
-                slow = max(0.2, min(1.0, d / 40.0))
-                self.cli.drive_wheels(
-                    lwheel_speed=l_speed * slow,
-                    rwheel_speed=r_speed * slow,
-                )
-                _time.sleep(0.05)
-
+            """Closed-loop drive to a close target, reversing if needed."""
+            self._steer_to_point(
+                lambda: (tx, ty),
+                speed_mmps=NAV_SPEED_MMPS,
+                turn_frac=NAV_TURN_FRAC,
+                stop_mm=NAV_STOP_MM,
+                timeout_s=NAV_TIMEOUT_S,
+                label="📍",
+            )
             self.cli.stop_all_motors()
             print(f"📍 Arrived at ({tx:.0f}, {ty:.0f})")
 
@@ -836,201 +930,52 @@ class VisionDisplay:
     def _on_approach_cube(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
         """Handle cube click from browser — approach cube along its face normal.
 
-        Determines which face is closest to the robot, then approaches
-        perpendicular to that face in two steps: 120mm then 80mm.
-        (COZMO-28)
+        Instead of dead-reckoning to a click-time snapshot in one or two
+        planner hops, this runs a closed-loop drive that re-reads the cube
+        position/rotation from the fused world map on every tick. As the
+        camera re-detects the cube, the target point moves in real time.
+        Stops ``FINAL_STANDOFF_MM`` in front of the cube's closest face.
+        (COZMO-28 / COZMO-35)
         """
         if not self.cli:
             print("📦 Approach: no robot connected")
             return
 
-        import math
         import threading
-        import time as _time
 
-        import numpy as np
-        from pycozmo.util import Angle, Pose
-
-        STEP1_DIST = 120.0  # mm from cube center (first approach)
-        STEP2_DIST = 120.0  # mm from cube center (final alignment)
-        BACK_AWAY_DIST = 150.0  # mm from cube center (back away if too close)
-        TOO_CLOSE = 100.0  # mm - if closer than this, back away first
-
-        # Current robot pose
-        robot_pose = self.cli.pose
-        robot_x = robot_pose.position.x
-        robot_y = robot_pose.position.y
-
-        # Check if too close — need to back away before turning
-        dist_to_cube = math.sqrt((cube_x - robot_x) ** 2 + (cube_y - robot_y) ** 2)
-        need_back_away = dist_to_cube < TOO_CLOSE
-
-        # Get cube rotation from world map to find face normals
-        world = self.web_viewer.world_map.get_world_state()
-        cubes = world.get("cubes", {})
-        if cube_idx not in cubes:
-            print(f"📦 Cube {cube_idx + 1} not in world map")
-            return
-
-        cube_rot = np.array(cubes[cube_idx]["rotation"])  # 3x3 rotation matrix
-
-        # Cube's local axes in world frame (Anki frame: X=fwd, Y=left, Z=up)
-        local_x = cube_rot @ np.array([1.0, 0.0, 0.0])  # face normal 1
-        local_y = cube_rot @ np.array([0.0, 1.0, 0.0])  # face normal 2
-
-        # Four side face normals (ignore top/bottom Z faces)
-        face_normals = [
-            local_x,  # +X face
-            -local_x,  # -X face
-            local_y,  # +Y face
-            -local_y,  # -Y face
-        ]
-
-        # Direction from cube to robot
-        to_robot = np.array([robot_x - cube_x, robot_y - cube_y, 0.0])
-        to_robot_len = np.linalg.norm(to_robot)
-        if to_robot_len < 1:
-            print("📦 Already at cube")
-            return
-        to_robot_unit = to_robot / to_robot_len
-
-        # Find face normal most aligned with direction to robot
-        # (the face the robot is closest to / approaching from)
-        best_face = None
-        best_dot = -2.0
-        for normal in face_normals:
-            # Project to 2D (ignore Z)
-            n2d = np.array([normal[0], normal[1]])
-            n2d_len = np.linalg.norm(n2d)
-            if n2d_len < 0.01:
-                continue
-            n2d = n2d / n2d_len
-            dot = np.dot(n2d, to_robot_unit[:2])
-            if dot > best_dot:
-                best_dot = dot
-                best_face = n2d
-
-        if best_face is None:
-            print("📦 Could not determine approach face")
-            return
-
-        # Approach direction: along face normal (from cube toward robot)
-        ux, uy = best_face[0], best_face[1]
-
-        # Ensure approach point is BETWEEN robot and cube, not behind cube
-        # Check if the face normal points toward the robot or away
-        approach_x = cube_x + ux * STEP1_DIST
-        approach_y = cube_y + uy * STEP1_DIST
-        dist_robot_to_approach = math.sqrt(
-            (approach_x - robot_x) ** 2 + (approach_y - robot_y) ** 2
-        )
-        dist_robot_to_cube = math.sqrt(
-            (cube_x - robot_x) ** 2 + (cube_y - robot_y) ** 2
-        )
-        if dist_robot_to_approach > dist_robot_to_cube:
-            # Face normal points away from robot — flip it
-            ux, uy = -ux, -uy
-
-        # Heading: face the cube (opposite of approach direction)
-        heading = math.atan2(-uy, -ux)
-
-        # Step 1: 120mm away along face normal
-        step1_x = cube_x + ux * STEP1_DIST
-        step1_y = cube_y + uy * STEP1_DIST
-
-        print(
-            f"📦 Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f}) "
-            f"face normal=({ux:.2f}, {uy:.2f})"
-        )
+        STANDOFF_MM = 120.0  # final distance from cube center (face-to-robot)
+        STOP_MM = 12.0  # arrive within this distance of the standoff point
+        SPEED_MMPS = 60.0  # closed-loop approach speed
+        TURN_FRAC = 1.2  # differential turn magnitude vs heading error
+        TIMEOUT_S = 30.0
 
         # Tilt the head down so the camera sees the cube closer up while
         # navigating. Sent immediately on cube click. (COZMO-35)
         HEAD_TILT_DEG = -10.0
-        self.cli.set_head_angle(
-            math.radians(HEAD_TILT_DEG), accel=30.0, max_speed=30.0
-        )
+        self.cli.set_head_angle(math.radians(HEAD_TILT_DEG), accel=30.0, max_speed=30.0)
         print(f"📦 Head tilt {HEAD_TILT_DEG:.0f}°")
+
+        print(
+            f"📦 Approaching cube {cube_idx + 1} (click pos {cube_x:.0f}, {cube_y:.0f})"
+        )
+
+        def _target():
+            # Live approach target re-read from the fused world map.
+            return self._cube_approach_target(cube_idx, STANDOFF_MM)
 
         def _nav_thread():
             try:
-                # If too close, back away first so turning doesn't bump cube
-                if need_back_away:
-                    back_heading = math.atan2(robot_y - cube_y, robot_x - cube_x)
-                    back_x = cube_x + (robot_x - cube_x) / dist_to_cube * BACK_AWAY_DIST
-                    back_y = cube_y + (robot_y - cube_y) / dist_to_cube * BACK_AWAY_DIST
-                    pose_back = Pose(
-                        back_x, back_y, 0, angle_z=Angle(radians=back_heading)
-                    )
-                    print(f"📦 Backing away to ({back_x:.0f}, {back_y:.0f})")
-                    self.cli.go_to_pose(pose_back, relative_to_robot=False)
-                    _time.sleep(0.3)
-
-                # Step 1: Drive to 120mm
-                pose1 = Pose(step1_x, step1_y, 0, angle_z=Angle(radians=heading))
-                print(f"📦 Step 1: 120mm ({step1_x:.0f}, {step1_y:.0f})")
-                self.cli.go_to_pose(pose1, relative_to_robot=False)
-
-                _time.sleep(0.3)
-
-                # Re-fetch cube position with fresh detections (more accurate close up)
-                world2 = self.web_viewer.world_map.get_world_state()
-                cubes2 = world2.get("cubes", {})
-                if cube_idx in cubes2:
-                    cube_x2 = float(cubes2[cube_idx]["position"][0])
-                    cube_y2 = float(cubes2[cube_idx]["position"][1])
-                    cube_rot2 = np.array(cubes2[cube_idx]["rotation"])
-
-                    # Recalculate face normal with updated rotation
-                    local_x2 = cube_rot2 @ np.array([1.0, 0.0, 0.0])
-                    local_y2 = cube_rot2 @ np.array([0.0, 1.0, 0.0])
-                    normals2 = [local_x2, -local_x2, local_y2, -local_y2]
-
-                    rp = self.cli.pose
-                    to_robot2 = np.array(
-                        [rp.position.x - cube_x2, rp.position.y - cube_y2, 0.0]
-                    )
-                    to_robot2_len = np.linalg.norm(to_robot2)
-                    if to_robot2_len > 1:
-                        to_robot2_unit = to_robot2 / to_robot2_len
-                        best2 = None
-                        best_dot2 = -2.0
-                        for n in normals2:
-                            n2d = np.array([n[0], n[1]])
-                            if np.linalg.norm(n2d) < 0.01:
-                                continue
-                            n2d = n2d / np.linalg.norm(n2d)
-                            d = np.dot(n2d, to_robot2_unit[:2])
-                            if d > best_dot2:
-                                best_dot2 = d
-                                best2 = n2d
-                        if best2 is not None:
-                            ux2, uy2 = best2[0], best2[1]
-                            # Ensure approach point is between robot and cube
-                            app2_x = cube_x2 + ux2 * STEP2_DIST
-                            app2_y = cube_y2 + uy2 * STEP2_DIST
-                            d_app = math.sqrt(
-                                (app2_x - rp.position.x) ** 2
-                                + (app2_y - rp.position.y) ** 2
-                            )
-                            d_cube = math.sqrt(
-                                (cube_x2 - rp.position.x) ** 2
-                                + (cube_y2 - rp.position.y) ** 2
-                            )
-                            if d_app > d_cube:
-                                ux2, uy2 = -ux2, -uy2
-                            step2_x = cube_x2 + ux2 * STEP2_DIST
-                            step2_y = cube_y2 + uy2 * STEP2_DIST
-                            heading2 = math.atan2(-uy2, -ux2)
-                            print(
-                                f"📦 Updated: cube at ({cube_x2:.0f}, {cube_y2:.0f}) face=({ux2:.2f}, {uy2:.2f})"
-                            )
-
-                # Step 2: Drive to 80mm with updated data
-                pose2 = Pose(step2_x, step2_y, 0, angle_z=Angle(radians=heading2))
-                print(f"📦 Step 2: 80mm ({step2_x:.0f}, {step2_y:.0f})")
-                self.cli.go_to_pose(pose2, relative_to_robot=False)
-
-                print(f"📦 Aligned with cube {cube_idx + 1}")
+                reached = self._steer_to_point(
+                    _target,
+                    speed_mmps=SPEED_MMPS,
+                    turn_frac=TURN_FRAC,
+                    stop_mm=STOP_MM,
+                    timeout_s=TIMEOUT_S,
+                    label="📦 approach",
+                )
+                self.cli.stop_all_motors()
+                if reached:
+                    print(f"📦 Aligned with cube {cube_idx + 1}")
             except Exception as e:
                 print(f"📦 Approach error: {e}")
 
