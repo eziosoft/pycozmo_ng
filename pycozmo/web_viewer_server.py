@@ -400,7 +400,8 @@ class WebViewerServer:
                             world_pos = coords.scene_to_world_point(
                                 np.array([scene_x, 0, scene_z])
                             )
-                            listener(float(world_pos[0]), float(world_pos[2]))
+                            # Pass (world_forward, world_left) = (pos[0], pos[1])
+                            listener(float(world_pos[0]), float(world_pos[1]))
                         except Exception as e:  # noqa: BLE001
                             print(f"⚠️  navigate listener failed: {e}")
                 elif mtype == "navigate_cancel":

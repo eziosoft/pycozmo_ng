@@ -695,14 +695,14 @@ class VisionDisplay:
             self._remote_control.stop()
             self._remote_control = None
 
-    def _on_navigate_to(self, world_x: float, world_z: float) -> None:
+    def _on_navigate_to(self, world_forward: float, world_left: float) -> None:
         """Handle click-to-navigate from browser.
 
-        world_x = forward, world_z = up (Anki frame).
+        world_forward = X (Anki frame), world_left = Y (Anki frame).
         Simple turn-then-drive using drive_wheels().
         (COZMO-28)
         """
-        if world_x is None:
+        if world_forward is None:
             # Navigation cancelled
             if self.cli:
                 self.cli.stop_all_motors()
@@ -728,14 +728,14 @@ class VisionDisplay:
         robot_y = robot_pose.position.y
 
         # Calculate heading to target (Anki frame: X=fwd, Y=left)
-        dx = world_x - robot_x
-        dy = 0 - robot_y  # target is on ground (y=0)
+        dx = world_forward - robot_x
+        dy = world_left - robot_y
         target_heading = math.atan2(dy, dx)
 
         # Distance
         dist = math.sqrt(dx * dx + dy * dy)
         print(
-            f"📍 Navigating to ({world_x:.0f}, {world_z:.0f}) — "
+            f"📍 Navigating to ({world_forward:.0f}, {world_left:.0f}) — "
             f"dist={dist:.0f}mm, heading={math.degrees(target_heading):.0f}°"
         )
 
@@ -797,7 +797,9 @@ class VisionDisplay:
                     pose = self.cli.pose
                     cx = pose.position.x
                     cy = pose.position.y
-                    remaining = math.sqrt((world_x - cx) ** 2 + (0 - cy) ** 2)
+                    remaining = math.sqrt(
+                        (world_forward - cx) ** 2 + (world_left - cy) ** 2
+                    )
                     if remaining < 15:
                         break
                     time.sleep(0.05)
