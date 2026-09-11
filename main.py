@@ -221,6 +221,9 @@ class VisionDisplay:
         self.fps = 0.0
         self.vision_processor = None
         self.cli = None  # set after pycozmo.connect() succeeds (used for robot pose)
+        self._dock_pose = (
+            None  # robot pose at start — assumed to be the dock (COZMO-28)
+        )
 
         # Camera lifecycle (COZMO-22): the Cozmo camera is off by default
         # so we don't flood its lossy Wi-Fi AP. A listener on
@@ -677,9 +680,14 @@ class VisionDisplay:
         self.web_viewer.set_control_listener(self._remote_control.update_keys)
         self.web_viewer.set_navigate_listener(self._on_navigate_to)
         self.web_viewer.set_approach_listener(self._on_approach_cube)
+        self.web_viewer.set_dock_listener(self._on_dock)
+        # Remember the pose when the app starts — this is assumed to be the dock.
+        if self.cli is not None:
+            self._dock_pose = self.cli.pose
         print("🎮 Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
         print("📍 Click-to-navigate enabled: click ground to drive there")
         print("📦 Click cube to approach and align")
+        print("🛟 Z to dock: drive back to start position")
 
     def stop_remote_control(self) -> None:
         if hasattr(self, "_remote_control") and self._remote_control is not None:
@@ -932,6 +940,57 @@ class VisionDisplay:
                 print(f"📦 Approach error: {e}")
 
         t = threading.Thread(target=_nav_thread, daemon=True)
+        t.start()
+
+    def _on_dock(self) -> None:
+        """Handle 'z' keypress — drive robot back into the dock.
+
+        Assumes robot started at the dock. Drives 150mm forward, turns
+        180° to face the dock, then drives back to the start pose.
+        (COZMO-28)
+        """
+        if not self.cli:
+            print("🛟 Dock: no robot connected")
+            return
+        if self._dock_pose is None:
+            print("🛟 Dock: no start pose recorded")
+            return
+
+        import math
+        import threading
+        import time as _time
+
+        from pycozmo.util import Angle, Pose
+
+        DOCK_DRIVE_DIST = 150.0  # mm forward (away from dock)
+
+        dock = self._dock_pose
+        dock_x = dock.position.x
+        dock_y = dock.position.y
+        dock_heading = dock.rotation.angle_z.radians
+
+        # Point 150mm in front of the dock (along the dock heading)
+        turn_x = dock_x + DOCK_DRIVE_DIST * math.cos(dock_heading)
+        turn_y = dock_y + DOCK_DRIVE_DIST * math.sin(dock_heading)
+
+        def _dock_thread():
+            try:
+                # Step 1: Drive to 150mm in front, then turn 180° to face dock
+                turn_pose = Pose(
+                    turn_x, turn_y, 0, angle_z=Angle(radians=dock_heading + math.pi)
+                )
+                print("🛟 Driving to 150mm in front of dock")
+                self.cli.go_to_pose(turn_pose, relative_to_robot=False)
+                _time.sleep(0.3)
+
+                # Step 2: Drive back into the dock
+                print("🛟 Driving back into dock")
+                self.cli.go_to_pose(dock, relative_to_robot=False)
+                print("🛟 Docked")
+            except Exception as e:
+                print(f"🛟 Dock error: {e}")
+
+        t = threading.Thread(target=_dock_thread, daemon=True)
         t.start()
 
     def setup_cube_mapping(self, cli):

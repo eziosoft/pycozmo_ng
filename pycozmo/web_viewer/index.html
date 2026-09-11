@@ -225,6 +225,15 @@
       }
     }
 
+    function sendDock() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'dock' }));
+      } catch (e) {
+        console.warn('dock send failed', e);
+      }
+    }
+
     // Right-click or Escape cancels navigation
     function cancelNavigation() {
       navTarget = null;
@@ -593,8 +602,13 @@
     function onKeyDown(e) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const norm = normalizeKey(e);
-      if (!(norm in CONTROL_KEYS)) return;
       if (e.repeat) return;
+      if (norm === 'z') {
+        e.preventDefault();
+        sendDock();
+        return;
+      }
+      if (!(norm in CONTROL_KEYS)) return;
       e.preventDefault();
       heldKeys.add(norm);
       sendControl();

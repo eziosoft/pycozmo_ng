@@ -136,6 +136,11 @@ class WebViewerServer:
         # (COZMO-28)
         self._approach_listener = None
 
+        # Dock listener. The browser sends a ``{"type": "dock"}`` message
+        # on 'z' keypress; the listener drives the robot back into the
+        # dock. (COZMO-28)
+        self._dock_listener = None
+
         # Validate that at least websockets is available
         if not HAS_WEBSOCKETS:
             raise ImportError(
@@ -301,6 +306,15 @@ class WebViewerServer:
         """
         self._approach_listener = callback
 
+    def set_dock_listener(self, callback) -> None:
+        """Subscribe to browser dock requests.
+
+        ``callback()`` is invoked whenever a ``{"type": "dock"}`` message
+        arrives (user presses 'z'). The listener drives the robot back
+        into the dock. Pass ``None`` to unsubscribe. (COZMO-28)
+        """
+        self._dock_listener = callback
+
     # -- internal -----------------------------------------------------------
 
     def _build_state_json(self) -> str:
@@ -448,6 +462,14 @@ class WebViewerServer:
                                 )
                         except Exception as e:  # noqa: BLE001
                             print(f"⚠️  approach listener failed: {e}")
+                elif mtype == "dock":
+                    # User pressed 'z' — drive robot back into dock. (COZMO-28)
+                    listener = self._dock_listener
+                    if listener is not None:
+                        try:
+                            listener()
+                        except Exception as e:  # noqa: BLE001
+                            print(f"⚠️  dock listener failed: {e}")
         finally:
             self._clients.discard(websocket)
             self._fire_active_clients_change()
