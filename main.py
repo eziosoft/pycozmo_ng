@@ -946,8 +946,8 @@ class VisionDisplay:
         """Handle 'z' keypress — drive robot back into the dock.
 
         Assumes robot started at the dock. Drives 150mm forward (away
-        from the dock), then reverses straight back into the start pose.
-        (COZMO-28)
+        from the dock), then reverses straight back until close to the
+        start pose. No forward navigation — reverse only. (COZMO-28)
         """
         if not self.cli:
             print("🛟 Dock: no robot connected")
@@ -963,7 +963,9 @@ class VisionDisplay:
         from pycozmo.util import Angle, Pose
 
         DOCK_DRIVE_DIST = 150.0  # mm forward (away from dock)
-        DOCK_SPEED = 80.0  # mm/s reverse speed
+        DOCK_REVERSE_SPEED = 80.0  # mm/s reverse speed
+        DOCK_STOP_DIST = 30.0  # mm — stop reversing when within this of dock
+        DOCK_STALL_ITERS = 20  # stop after this many no-progress iterations
 
         dock = self._dock_pose
         dock_x = dock.position.x
@@ -984,17 +986,38 @@ class VisionDisplay:
                 self.cli.go_to_pose(turn_pose, relative_to_robot=False)
                 _time.sleep(0.3)
 
-                # Step 2: Reverse straight back into the dock
+                # Step 2: Reverse straight back until close to the dock
                 print("🛟 Reversing into dock")
-                self.cli.drive_wheels(
-                    lwheel_speed=-DOCK_SPEED,
-                    rwheel_speed=-DOCK_SPEED,
-                    duration=DOCK_DRIVE_DIST / DOCK_SPEED,
-                )
-                _time.sleep(0.2)
+                prev_dist = None
+                stall = 0
+                while True:
+                    rp = self.cli.pose
+                    dx = dock_x - rp.position.x
+                    dy = dock_y - rp.position.y
+                    dist_to_dock = math.sqrt(dx * dx + dy * dy)
 
-                # Step 3: Fine alignment to the exact dock pose
-                self.cli.go_to_pose(dock, relative_to_robot=False)
+                    if dist_to_dock < DOCK_STOP_DIST:
+                        print(f"🛟 Within {dist_to_dock:.0f}mm of dock — stopping")
+                        break
+
+                    # Stall detection: if we're not getting closer, stop to
+                    # avoid grinding against the dock.
+                    if prev_dist is not None and dist_to_dock >= prev_dist - 1.0:
+                        stall += 1
+                        if stall >= DOCK_STALL_ITERS:
+                            print("🛟 No progress reversing — stopping")
+                            break
+                    else:
+                        stall = 0
+                    prev_dist = dist_to_dock
+
+                    self.cli.drive_wheels(
+                        lwheel_speed=-DOCK_REVERSE_SPEED,
+                        rwheel_speed=-DOCK_REVERSE_SPEED,
+                    )
+                    _time.sleep(0.05)
+
+                self.cli.stop_all_motors()
                 print("🛟 Docked")
             except Exception as e:
                 print(f"🛟 Dock error: {e}")
