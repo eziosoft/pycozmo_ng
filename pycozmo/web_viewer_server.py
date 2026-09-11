@@ -141,6 +141,11 @@ class WebViewerServer:
         # dock. (COZMO-28)
         self._dock_listener = None
 
+        # Latest robot telemetry (battery, charging, speed, head/lift).
+        # Updated from ``main.py``'s RobotState handler; included in the
+        # broadcast state so the browser can render a telemetry HUD.
+        self._telemetry: dict = {}
+
         # Validate that at least websockets is available
         if not HAS_WEBSOCKETS:
             raise ImportError(
@@ -216,6 +221,17 @@ class WebViewerServer:
     def reset_map(self):
         """Reset the whole world map (entities + path)."""
         self.world_map.reset_map()
+
+    def update_telemetry(self, **kwargs) -> None:
+        """Store the latest robot telemetry for the browser HUD.
+
+        Called from ``main.py``'s RobotState handler with named fields:
+        ``charging`` (bool), ``on_charger`` (bool), ``battery_voltage``
+        (float, V), ``left_wheel_speed`` / ``right_wheel_speed`` (float,
+        mm/s), ``head_angle`` (float, degrees) and ``lift_height``
+        (float, mm). Included in the next broadcast.
+        """
+        self._telemetry.update(kwargs)
 
     def broadcast(self):
         """Notify the server that the world state changed.
@@ -353,6 +369,7 @@ class WebViewerServer:
                 "heading": float(robot_heading),
             },
             "path_points": path_scene,
+            "telemetry": dict(self._telemetry),
             "timestamp": int((time.time() - self._start_time) * 1000),
         }
         return json.dumps(state)

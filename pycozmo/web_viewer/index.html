@@ -23,6 +23,16 @@
     <span id="path-count"></span>
   </div>
 
+  <!-- Telemetry HUD. Populated from the broadcast state's "telemetry"
+       field, updated on every RobotState packet. (COZMO-28) -->
+  <div id="telemetry-hud">
+    <span class="tel-charge" id="tel-charge">⏻ --</span>
+    <span id="tel-battery">🔋 --</span>
+    <span id="tel-speed">── mm/s</span>
+    <span id="tel-head">cam --°</span>
+    <span id="tel-lift">fork --mm</span>
+  </div>
+
   <!-- Remote-control HUD. Keys light up while held; keys register
        whenever the browser tab itself is focused. (COZMO-25) -->
   <div id="controls-hud">
@@ -517,6 +527,34 @@
             navLine.visible = false;
           }
         }
+      }
+
+      // Telemetry HUD (COZMO-28)
+      if (state.telemetry) {
+        const t = state.telemetry;
+        const chargeEl = document.getElementById('tel-charge');
+        if (t.on_charger || t.charging) {
+          chargeEl.textContent = '⏻ CHARGING';
+          chargeEl.className = 'tel-charge on';
+        } else {
+          chargeEl.textContent = '⏻ --';
+          chargeEl.className = 'tel-charge';
+        }
+        const bat = t.battery_voltage;
+        document.getElementById('tel-battery').textContent =
+          bat ? `🔋 ${bat.toFixed(2)}V` : '🔋 --';
+        const speed = Math.max(
+          Math.abs(t.left_wheel_speed || 0),
+          Math.abs(t.right_wheel_speed || 0)
+        );
+        document.getElementById('tel-speed').textContent =
+          speed > 0.01 ? `🚗 ${speed.toFixed(0)} mm/s` : '🚗 0 mm/s';
+        const head = t.head_angle;
+        document.getElementById('tel-head').textContent =
+          head != null ? `🎥 ${head.toFixed(0)}°` : '🎥 --°';
+        const lift = t.lift_height;
+        document.getElementById('tel-lift').textContent =
+          lift != null ? `🍴 ${lift.toFixed(0)}mm` : '🍴 --mm';
       }
     }
 

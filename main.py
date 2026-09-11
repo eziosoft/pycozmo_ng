@@ -1567,6 +1567,27 @@ def main():
                     )
                 except Exception:  # noqa: BLE001 — pose may be transiently invalid
                     pass
+
+                # Telemetry for the browser HUD. Charging flags come from
+                # the charge-change handlers (display._on_charger /
+                # display._charging); the rest is read straight off the
+                # latest RobotState packet. (COZMO-28)
+                try:
+                    with display._dock_lock:
+                        on_charger = display._on_charger
+                        charging = display._charging
+                    display.web_viewer.update_telemetry(
+                        charging=charging,
+                        on_charger=on_charger,
+                        battery_voltage=round(c.battery_voltage, 3),
+                        left_wheel_speed=round(c.left_wheel_speed.mmps, 1),
+                        right_wheel_speed=round(c.right_wheel_speed.mmps, 1),
+                        head_angle=round(c.head_angle.degrees, 1),
+                        lift_height=round(c.lift_position.height.mm, 1),
+                    )
+                except Exception:  # noqa: BLE001 — fields may be unavailable
+                    pass
+
                 display.web_viewer.broadcast()
 
             cli.add_handler(
