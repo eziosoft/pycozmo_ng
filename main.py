@@ -256,18 +256,6 @@ class VisionDisplay:
         # (COZMO-20)
         self._cube_last_seen_frame = {}
         # Cube-movement detectors (cube_id 1..3 -> CubeMoveDetector). Fed by
-        # ObjectAccel (enabled by the cube-light worker). Two invalidation
-        # sources:
-        #   1. ObjectAccel + CubeMoveDetector (baseline/debounce) — the
-        #      reliable path; ObjectAccel is proven to arrive at ~30 ms on the
-        #      raw link once StreamObjectAccel is enabled.
-        #   2. ObjectMoved (0xb4) — the robot's own accel-processing event,
-        #      used as a fast-path when the raw link provides it.
-        # (COZMO-27, COZMO-32, COZMO-33, COZMO-34)
-        self._cube_move_detectors: dict[int, CubeMoveDetector] = {}
-
-        # Navigation stop flag (COZMO-28)
-        self._nav_stop = False
         # Rapid cube cycler — cycles through cubes, connecting to one at a
         # time. Replaces the old keepalive worker which tried to maintain
         # simultaneous connections (impossible due to firmware limit).
@@ -699,14 +687,13 @@ class VisionDisplay:
         """Handle click-to-navigate from browser.
 
         world_forward = X (Anki frame), world_left = Y (Anki frame).
-        Simple turn-then-drive using drive_wheels().
+        Uses Cozmo's built-in path planner via go_to_pose().
         (COZMO-28)
         """
         if world_forward is None:
             # Navigation cancelled
             if self.cli:
                 self.cli.stop_all_motors()
-                self._nav_stop = True
             print("📍 Navigation cancelled")
             return
 
@@ -714,13 +701,8 @@ class VisionDisplay:
             print("📍 Navigation: no robot connected")
             return
 
-        # Cancel any previous navigation
-        self._nav_stop = True
-        time.sleep(0.05)
-        self._nav_stop = False
-
         import math
-        import threading
+        from pycozmo.util import Pose, Angle
 
         # Current robot pose
         robot_pose = self.cli.pose
@@ -730,90 +712,21 @@ class VisionDisplay:
         # Calculate heading to target (Anki frame: X=fwd, Y=left)
         dx = world_forward - robot_x
         dy = world_left - robot_y
-        target_heading = math.atan2(dy, dx)
+        heading = math.atan2(dy, dx)
 
         # Distance
         dist = math.sqrt(dx * dx + dy * dy)
         print(
             f"📍 Navigating to ({world_forward:.0f}, {world_left:.0f}) — "
-            f"dist={dist:.0f}mm, heading={math.degrees(target_heading):.0f}°"
+            f"dist={dist:.0f}mm, heading={math.degrees(heading):.0f}°"
         )
 
-        if dist < 10:
-            print("📍 Already at target")
-            return
-
-        def _drive_thread():
-            try:
-                # Step 1: Turn to face target
-                current_heading = self.cli.pose.rotation.angle_z.radians
-                angle_diff = target_heading - current_heading
-                # Normalize to [-pi, pi]
-                while angle_diff > math.pi:
-                    angle_diff -= 2 * math.pi
-                while angle_diff < -math.pi:
-                    angle_diff += 2 * math.pi
-
-                if abs(angle_diff) > 0.05:  # > ~3 degrees
-                    turn_speed = 80.0  # mm/s wheel speed for turning
-                    if angle_diff > 0:
-                        # Turn left: left wheel reverse, right wheel forward
-                        self.cli.drive_wheels(
-                            lwheel_speed=-turn_speed, rwheel_speed=turn_speed
-                        )
-                    else:
-                        # Turn right: left wheel forward, right wheel reverse
-                        self.cli.drive_wheels(
-                            lwheel_speed=turn_speed, rwheel_speed=-turn_speed
-                        )
-
-                    # Wait for turn to complete
-                    while not self._nav_stop:
-                        current_heading = self.cli.pose.rotation.angle_z.radians
-                        remaining = target_heading - current_heading
-                        while remaining > math.pi:
-                            remaining -= 2 * math.pi
-                        while remaining < -math.pi:
-                            remaining += 2 * math.pi
-                        if abs(remaining) < 0.05:
-                            break
-                        time.sleep(0.02)
-
-                    self.cli.stop_all_motors()
-                    if self._nav_stop:
-                        return
-                    time.sleep(0.1)
-
-                # Step 2: Drive straight to target
-                drive_speed = 100.0  # mm/s
-                self.cli.drive_wheels(
-                    lwheel_speed=drive_speed,
-                    rwheel_speed=drive_speed,
-                    duration=dist / drive_speed + 0.5,  # extra time for decel
-                )
-
-                # Wait until close enough
-                while not self._nav_stop:
-                    pose = self.cli.pose
-                    cx = pose.position.x
-                    cy = pose.position.y
-                    remaining = math.sqrt(
-                        (world_forward - cx) ** 2 + (world_left - cy) ** 2
-                    )
-                    if remaining < 15:
-                        break
-                    time.sleep(0.05)
-
-                self.cli.stop_all_motors()
-                print("📍 Arrived at target")
-
-            except Exception as e:
-                print(f"📍 Navigation error: {e}")
-                self.cli.stop_all_motors()
-
-        self._nav_stop = False
-        t = threading.Thread(target=_drive_thread, daemon=True)
-        t.start()
+        # Use Cozmo's built-in path planner
+        target_pose = Pose(world_forward, world_left, 0, angle_z=Angle(radians=heading))
+        try:
+            self.cli.go_to_pose(target_pose, relative_to_robot=False)
+        except Exception as e:
+            print(f"📍 Navigation error: {e}")
 
     def setup_cube_mapping(self, cli):
         """Discover available cubes and create mapping from detected cube_id to factory_id."""
