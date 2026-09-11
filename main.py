@@ -701,12 +701,12 @@ class VisionDisplay:
         """
         if world_x is None:
             # Navigation cancelled
-            if hasattr(self, "_cli") and self._cli:
-                self._cli.stop_all_motors()
+            if self.cli:
+                self.cli.stop_all_motors()
             print("📍 Navigation cancelled")
             return
 
-        if not hasattr(self, "_cli") or not self._cli:
+        if not self.cli:
             print("📍 Navigation: no robot connected")
             return
 
@@ -714,7 +714,7 @@ class VisionDisplay:
         from pycozmo.util import Pose, Angle
 
         # Current robot pose
-        robot_pose = self._cli.pose
+        robot_pose = self.cli.pose
         robot_x = robot_pose.position.x
         robot_y = robot_pose.position.y
 
@@ -733,7 +733,7 @@ class VisionDisplay:
         # Use Cozmo's built-in path planner
         target_pose = Pose(world_x, 0, world_z, angle_z=Angle(radians=heading))
         try:
-            self._cli.go_to_pose(target_pose, relative_to_robot=False)
+            self.cli.go_to_pose(target_pose, relative_to_robot=False)
         except Exception as e:
             print(f"📍 Navigation error: {e}")
 
