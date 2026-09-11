@@ -307,7 +307,7 @@ class VisionDisplay:
             self._cube_move_detectors.setdefault(
                 cube_id, CubeMoveDetector()
             ).on_connection(time.time())
-            logger_cubes.info(
+            logger_cubes.debug(
                 "Cube %d connected: object_id=%s",
                 cube_id,
                 pkt.object_id,
@@ -315,7 +315,7 @@ class VisionDisplay:
         else:
             # Clear the mapping — the cycler will reconnect if needed.
             self._cube_object_id_map.pop(cube_id, None)
-            logger_cubes.info(
+            logger_cubes.debug(
                 "Cube %d disconnected (object_id=%s)",
                 cube_id,
                 pkt.object_id,
