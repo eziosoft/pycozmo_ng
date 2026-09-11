@@ -758,11 +758,17 @@ class VisionDisplay:
 
         STEP1_DIST = 120.0  # mm from cube center (first approach)
         STEP2_DIST = 80.0  # mm from cube center (final alignment)
+        BACK_AWAY_DIST = 150.0  # mm from cube center (back away if too close)
+        TOO_CLOSE = 100.0  # mm - if closer than this, back away first
 
         # Current robot pose
         robot_pose = self.cli.pose
         robot_x = robot_pose.position.x
         robot_y = robot_pose.position.y
+
+        # Check if too close — need to back away before turning
+        dist_to_cube = math.sqrt((cube_x - robot_x) ** 2 + (cube_y - robot_y) ** 2)
+        need_back_away = dist_to_cube < TOO_CLOSE
 
         # Get cube rotation from world map to find face normals
         world = self.web_viewer.world_map.get_world_state()
@@ -844,6 +850,18 @@ class VisionDisplay:
 
         def _nav_thread():
             try:
+                # If too close, back away first so turning doesn't bump cube
+                if need_back_away:
+                    # Back away along line from cube to robot
+                    bx = robot_x + (robot_x - cube_x) / dist_to_cube * BACK_AWAY_DIST
+                    by = robot_y + (robot_y - cube_y) / dist_to_cube * BACK_AWAY_DIST
+                    print(f"📦 Backing away to ({bx:.0f}, {by:.0f})")
+                    self.cli.drive_straight(
+                        distance=Angle(radians=-BACK_AWAY_DIST),
+                        speed=pycozmo.util.Speed(mmps=60),
+                    )
+                    _time.sleep(0.5)
+
                 # Step 1: Drive to 120mm
                 pose1 = Pose(step1_x, step1_y, 0, angle_z=Angle(radians=heading))
                 print(f"📦 Step 1: 120mm ({step1_x:.0f}, {step1_y:.0f})")
