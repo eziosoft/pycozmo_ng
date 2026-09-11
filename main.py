@@ -688,7 +688,7 @@ class VisionDisplay:
 
         world_forward = X (Anki frame), world_left = Y (Anki frame).
         Uses Cozmo's built-in path planner via go_to_pose().
-        (COZMO-28)
+        Runs in a thread so camera preview keeps working. (COZMO-28)
         """
         if world_forward is None:
             # Navigation cancelled
@@ -702,6 +702,7 @@ class VisionDisplay:
             return
 
         import math
+        import threading
         from pycozmo.util import Pose, Angle
 
         # Current robot pose
@@ -721,12 +722,18 @@ class VisionDisplay:
             f"dist={dist:.0f}mm, heading={math.degrees(heading):.0f}°"
         )
 
-        # Use Cozmo's built-in path planner
+        # Use Cozmo's built-in path planner (in thread so camera keeps working)
         target_pose = Pose(world_forward, world_left, 0, angle_z=Angle(radians=heading))
-        try:
-            self.cli.go_to_pose(target_pose, relative_to_robot=False)
-        except Exception as e:
-            print(f"📍 Navigation error: {e}")
+
+        def _nav_thread():
+            try:
+                self.cli.go_to_pose(target_pose, relative_to_robot=False)
+                print("📍 Arrived at target")
+            except Exception as e:
+                print(f"📍 Navigation error: {e}")
+
+        t = threading.Thread(target=_nav_thread, daemon=True)
+        t.start()
 
     def setup_cube_mapping(self, cli):
         """Discover available cubes and create mapping from detected cube_id to factory_id."""
