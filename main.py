@@ -183,7 +183,7 @@ class CubeCycler:
 
             # Enable accel stream + set CubeId
             cli.conn.send(pe.CubeId(object_id=oid))
-            cli.conn.send(pe.StreamObjectAccel(object_id=oid, enable=True))
+            # cli.conn.send(pe.StreamObjectAccel(object_id=oid, enable=True))  # Disabled (COZMO-28)
 
             # Collect data for cycle_ms
             self._stop.wait(self._cycle_ms / 1000.0)
@@ -1153,69 +1153,20 @@ def main():
             )
 
             # ------------------------------------------------------------------
-            # Cube relocation — two complementary invalidation paths.
-            #
-            # Path A (RELIABLE): threshold raw ObjectAccel ourselves. The raw
-            #   SoC link streams ObjectAccel at ~30 ms once StreamObjectAccel
-            #   is enabled — this is proven to arrive (it's what made cubes
-            #   vanish in COZMO-32). CubeMoveDetector gates on post-connect
-            #   grace + resting baseline + debounce so a still cube never
-            #   trips, but a real pickup does. (COZMO-27, COZMO-32)
-            #
-            # Path B (FAST-PATH): the robot's own ObjectMoved (0xb4). Only
-            #   available when the robot has cubes in accel-processing mode,
-            #   which on the raw link appears to require the app's persistent
-            #   "block pool" we can't request — so it may never fire. Kept as
-            #   a fast-path; both paths converge on forget_cube + broadcast.
-            #   (COZMO-33, COZMO-34)
+            # Cube relocation — DISABLED (COZMO-28)
+            # User requested no cube position reset on move.
             # ------------------------------------------------------------------
             def _invalidate_cube_pose(cube_id, source):
-                display.web_viewer.forget_cube(cube_id - 1)
-                display.web_viewer.broadcast()
-                # Suppress camera measurements for this cube until it is
-                # re-detected stably at its new position, so the stale vision
-                # pose does not immediately re-seed the world map. (COZMO-34)
-                display._cube_suppress["ids"].add(cube_id - 1)
-                display._cube_suppress["fresh_frames"].pop(cube_id - 1, None)
-                logger_cubes.info(
-                    "Cube %d moved (%s) — reacquiring world pose",
-                    cube_id,
-                    source,
-                )
+                pass  # Disabled — don't reset cube position on move
 
             def _on_object_accel(c, pkt):
-                import math
-
-                if display.vision_processor is None:
-                    return
-                cube_id = display._cube_id_for_object_id(cli, pkt.object_id)
-                if cube_id is None:
-                    # Debug aid: if this fires but cubes never relocate, the
-                    # object_id mapping is wrong (COZMO-34).
-                    logger_cubes.warning(
-                        "ObjectAccel for unknown object_id=%s (connected=%s) — "
-                        "cube relocation may be broken",
-                        pkt.object_id,
-                        list(cli.connected_objects.keys()),
-                    )
-                    return
-                detector = display._cube_move_detectors.setdefault(
-                    cube_id, CubeMoveDetector()
-                )
-                mag = math.hypot(pkt.accel_x, pkt.accel_y, pkt.accel_z)
-                if detector.update(time.time(), mag):
-                    _invalidate_cube_pose(cube_id, "ObjectAccel")
+                pass  # Disabled — no cube relocation
 
             def _on_object_moved(c, pkt):
-                if display.vision_processor is None:
-                    return
-                cube_id = display._cube_id_for_object_id(cli, pkt.object_id)
-                if cube_id is None:
-                    return
-                _invalidate_cube_pose(cube_id, "ObjectMoved")
+                pass  # Disabled — no cube relocation
 
-            cli.add_handler(pycozmo.protocol_encoder.ObjectAccel, _on_object_accel)
-            cli.add_handler(pycozmo.protocol_encoder.ObjectMoved, _on_object_moved)
+            # cli.add_handler(pycozmo.protocol_encoder.ObjectAccel, _on_object_accel)
+            # cli.add_handler(pycozmo.protocol_encoder.ObjectMoved, _on_object_moved)
             if not args.no_cube_lights:
                 display.start_cube_light_worker(cli)
             else:
