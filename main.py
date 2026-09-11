@@ -265,6 +265,9 @@ class VisionDisplay:
         #      used as a fast-path when the raw link provides it.
         # (COZMO-27, COZMO-32, COZMO-33, COZMO-34)
         self._cube_move_detectors: dict[int, CubeMoveDetector] = {}
+
+        # Navigation stop flag (COZMO-28)
+        self._nav_stop = False
         # Rapid cube cycler — cycles through cubes, connecting to one at a
         # time. Replaces the old keepalive worker which tried to maintain
         # simultaneous connections (impossible due to firmware limit).
@@ -696,13 +699,14 @@ class VisionDisplay:
         """Handle click-to-navigate from browser.
 
         world_x = forward, world_z = up (Anki frame).
-        Uses Cozmo's built-in path planner via go_to_pose().
+        Simple turn-then-drive using drive_wheels().
         (COZMO-28)
         """
         if world_x is None:
             # Navigation cancelled
             if self.cli:
                 self.cli.stop_all_motors()
+                self._nav_stop = True
             print("📍 Navigation cancelled")
             return
 
@@ -710,32 +714,104 @@ class VisionDisplay:
             print("📍 Navigation: no robot connected")
             return
 
+        # Cancel any previous navigation
+        self._nav_stop = True
+        time.sleep(0.05)
+        self._nav_stop = False
+
         import math
-        from pycozmo.util import Pose, Angle
+        import threading
 
         # Current robot pose
         robot_pose = self.cli.pose
         robot_x = robot_pose.position.x
         robot_y = robot_pose.position.y
 
-        # Calculate heading to target
+        # Calculate heading to target (Anki frame: X=fwd, Y=left)
         dx = world_x - robot_x
         dy = 0 - robot_y  # target is on ground (y=0)
-        heading = math.atan2(dy, dx)
+        target_heading = math.atan2(dy, dx)
 
         # Distance
         dist = math.sqrt(dx * dx + dy * dy)
         print(
             f"📍 Navigating to ({world_x:.0f}, {world_z:.0f}) — "
-            f"dist={dist:.0f}mm, heading={math.degrees(heading):.0f}°"
+            f"dist={dist:.0f}mm, heading={math.degrees(target_heading):.0f}°"
         )
 
-        # Use Cozmo's built-in path planner
-        target_pose = Pose(world_x, 0, world_z, angle_z=Angle(radians=heading))
-        try:
-            self.cli.go_to_pose(target_pose, relative_to_robot=False)
-        except Exception as e:
-            print(f"📍 Navigation error: {e}")
+        if dist < 10:
+            print("📍 Already at target")
+            return
+
+        def _drive_thread():
+            try:
+                # Step 1: Turn to face target
+                current_heading = self.cli.pose.rotation.angle_z.radians
+                angle_diff = target_heading - current_heading
+                # Normalize to [-pi, pi]
+                while angle_diff > math.pi:
+                    angle_diff -= 2 * math.pi
+                while angle_diff < -math.pi:
+                    angle_diff += 2 * math.pi
+
+                if abs(angle_diff) > 0.05:  # > ~3 degrees
+                    turn_speed = 80.0  # mm/s wheel speed for turning
+                    if angle_diff > 0:
+                        # Turn left: left wheel reverse, right wheel forward
+                        self.cli.drive_wheels(
+                            lwheel_speed=-turn_speed, rwheel_speed=turn_speed
+                        )
+                    else:
+                        # Turn right: left wheel forward, right wheel reverse
+                        self.cli.drive_wheels(
+                            lwheel_speed=turn_speed, rwheel_speed=-turn_speed
+                        )
+
+                    # Wait for turn to complete
+                    while not self._nav_stop:
+                        current_heading = self.cli.pose.rotation.angle_z.radians
+                        remaining = target_heading - current_heading
+                        while remaining > math.pi:
+                            remaining -= 2 * math.pi
+                        while remaining < -math.pi:
+                            remaining += 2 * math.pi
+                        if abs(remaining) < 0.05:
+                            break
+                        time.sleep(0.02)
+
+                    self.cli.stop_all_motors()
+                    if self._nav_stop:
+                        return
+                    time.sleep(0.1)
+
+                # Step 2: Drive straight to target
+                drive_speed = 100.0  # mm/s
+                self.cli.drive_wheels(
+                    lwheel_speed=drive_speed,
+                    rwheel_speed=drive_speed,
+                    duration=dist / drive_speed + 0.5,  # extra time for decel
+                )
+
+                # Wait until close enough
+                while not self._nav_stop:
+                    pose = self.cli.pose
+                    cx = pose.position.x
+                    cy = pose.position.y
+                    remaining = math.sqrt((world_x - cx) ** 2 + (0 - cy) ** 2)
+                    if remaining < 15:
+                        break
+                    time.sleep(0.05)
+
+                self.cli.stop_all_motors()
+                print("📍 Arrived at target")
+
+            except Exception as e:
+                print(f"📍 Navigation error: {e}")
+                self.cli.stop_all_motors()
+
+        self._nav_stop = False
+        t = threading.Thread(target=_drive_thread, daemon=True)
+        t.start()
 
     def setup_cube_mapping(self, cli):
         """Discover available cubes and create mapping from detected cube_id to factory_id."""
