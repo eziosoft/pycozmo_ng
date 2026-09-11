@@ -943,15 +943,16 @@ class VisionDisplay:
             f"face normal=({ux:.2f}, {uy:.2f})"
         )
 
+        # Tilt the head down so the camera sees the cube closer up while
+        # navigating. Sent immediately on cube click. (COZMO-35)
+        HEAD_TILT_DEG = -10.0
+        self.cli.set_head_angle(
+            math.radians(HEAD_TILT_DEG), accel=30.0, max_speed=30.0
+        )
+        print(f"📦 Head tilt {HEAD_TILT_DEG:.0f}°")
+
         def _nav_thread():
             try:
-                # Tilt the head down so the camera sees the cube closer up
-                # while navigating. (head angle in radians, negative = down)
-                HEAD_TILT_DEG = -10.0
-                self.cli.set_head_angle(math.radians(HEAD_TILT_DEG))
-                print(f"📦 Head tilt {HEAD_TILT_DEG:.0f}°")
-                _time.sleep(0.3)
-
                 # If too close, back away first so turning doesn't bump cube
                 if need_back_away:
                     back_heading = math.atan2(robot_y - cube_y, robot_x - cube_x)
