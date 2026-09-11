@@ -739,11 +739,11 @@ class VisionDisplay:
         t.start()
 
     def _on_approach_cube(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
-        """Handle cube click from browser — two-step approach to align with cube wall.
+        """Handle cube click from browser — approach cube along its face normal.
 
-        Step 1: Navigate to 120mm from cube, perpendicular to wall.
-        Step 2: Navigate to 80mm from cube, same perpendicular line.
-        Both steps run in a thread so camera keeps working. (COZMO-28)
+        Determines which face is closest to the robot, then approaches
+        perpendicular to that face in two steps: 120mm then 80mm.
+        (COZMO-28)
         """
         if not self.cli:
             print("📦 Approach: no robot connected")
@@ -752,7 +752,9 @@ class VisionDisplay:
         import math
         import threading
         import time as _time
-        from pycozmo.util import Pose, Angle
+
+        import numpy as np
+        from pycozmo.util import Angle, Pose
 
         STEP1_DIST = 120.0  # mm from cube center (first approach)
         STEP2_DIST = 80.0  # mm from cube center (final alignment)
@@ -762,50 +764,91 @@ class VisionDisplay:
         robot_x = robot_pose.position.x
         robot_y = robot_pose.position.y
 
-        # Direction from robot to cube (perpendicular to nearest wall)
-        dx = cube_x - robot_x
-        dy = cube_y - robot_y
-        dist_to_cube = math.sqrt(dx * dx + dy * dy)
-
-        if dist_to_cube < 1:
-            print("📦 Already at cube")
+        # Get cube rotation from world map to find face normals
+        world = self.web_viewer.world_map.get_world_state()
+        cubes = world.get("cubes", {})
+        if cube_idx not in cubes:
+            print(f"📦 Cube {cube_idx + 1} not in world map")
             return
 
-        # Unit vector from robot to cube
-        ux = dx / dist_to_cube
-        uy = dy / dist_to_cube
+        cube_rot = np.array(cubes[cube_idx]["rotation"])  # 3x3 rotation matrix
 
-        # Heading: face the cube
-        heading = math.atan2(uy, ux)
+        # Cube's local axes in world frame (Anki frame: X=fwd, Y=left, Z=up)
+        local_x = cube_rot @ np.array([1.0, 0.0, 0.0])  # face normal 1
+        local_y = cube_rot @ np.array([0.0, 1.0, 0.0])  # face normal 2
 
-        # Step 1: 120mm away
-        step1_x = cube_x - ux * STEP1_DIST
-        step1_y = cube_y - uy * STEP1_DIST
+        # Four side face normals (ignore top/bottom Z faces)
+        face_normals = [
+            local_x,  # +X face
+            -local_x,  # -X face
+            local_y,  # +Y face
+            -local_y,  # -Y face
+        ]
 
-        # Step 2: 80mm away (same line, closer)
-        step2_x = cube_x - ux * STEP2_DIST
-        step2_y = cube_y - uy * STEP2_DIST
+        # Direction from cube to robot
+        to_robot = np.array([robot_x - cube_x, robot_y - cube_y, 0.0])
+        to_robot_len = np.linalg.norm(to_robot)
+        if to_robot_len < 1:
+            print("📦 Already at cube")
+            return
+        to_robot_unit = to_robot / to_robot_len
 
-        print(f"📦 Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f})")
+        # Find face normal most aligned with direction to robot
+        # (the face the robot is closest to / approaching from)
+        best_face = None
+        best_dot = -2.0
+        for normal in face_normals:
+            # Project to 2D (ignore Z)
+            n2d = np.array([normal[0], normal[1]])
+            n2d_len = np.linalg.norm(n2d)
+            if n2d_len < 0.01:
+                continue
+            n2d = n2d / n2d_len
+            dot = np.dot(n2d, to_robot_unit[:2])
+            if dot > best_dot:
+                best_dot = dot
+                best_face = n2d
+
+        if best_face is None:
+            print("📦 Could not determine approach face")
+            return
+
+        # Approach direction: along face normal (from cube toward robot)
+        ux, uy = best_face[0], best_face[1]
+
+        # Heading: face the cube (opposite of approach direction)
+        heading = math.atan2(-uy, -ux)
+
+        # Step 1: 120mm away along face normal
+        step1_x = cube_x + ux * STEP1_DIST
+        step1_y = cube_y + uy * STEP1_DIST
+
+        # Step 2: 80mm away along face normal
+        step2_x = cube_x + ux * STEP2_DIST
+        step2_y = cube_y + uy * STEP2_DIST
+
+        print(
+            f"📦 Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f}) "
+            f"face normal=({ux:.2f}, {uy:.2f})"
+        )
 
         def _nav_thread():
             try:
                 # Step 1: Drive to 120mm
                 pose1 = Pose(step1_x, step1_y, 0, angle_z=Angle(radians=heading))
-                print(f"📦 Step 1: driving to 120mm ({step1_x:.0f}, {step1_y:.0f})")
+                print(f"📦 Step 1: 120mm ({step1_x:.0f}, {step1_y:.0f})")
                 self.cli.go_to_pose(pose1, relative_to_robot=False)
 
-                # Small pause to settle
                 _time.sleep(0.3)
 
-                # Step 2: Drive to 80mm (re-check heading in case robot shifted)
-                robot_pose2 = self.cli.pose
-                dx2 = cube_x - robot_pose2.position.x
-                dy2 = cube_y - robot_pose2.position.y
+                # Step 2: Re-check heading from new position, drive to 80mm
+                rp = self.cli.pose
+                dx2 = cube_x - rp.position.x
+                dy2 = cube_y - rp.position.y
                 heading2 = math.atan2(dy2, dx2)
 
                 pose2 = Pose(step2_x, step2_y, 0, angle_z=Angle(radians=heading2))
-                print(f"📦 Step 2: aligning to 80mm ({step2_x:.0f}, {step2_y:.0f})")
+                print(f"📦 Step 2: 80mm ({step2_x:.0f}, {step2_y:.0f})")
                 self.cli.go_to_pose(pose2, relative_to_robot=False)
 
                 print(f"📦 Aligned with cube {cube_idx + 1}")
