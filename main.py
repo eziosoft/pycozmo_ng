@@ -138,6 +138,7 @@ class VisionDisplay:
 
         # Cube tracking variables
         self.cube_factory_id_map = {}
+        self._cube_object_id_map = {}  # cube_id → object_id (assigned by robot)
         # Per-cube "last seen" frame index, for diagnostics only. The cube-
         # light worker no longer uses it to drive disconnects — Cozmo drops
         # out-of-range cubes on its own, and old proactive disconnect
@@ -169,11 +170,11 @@ class VisionDisplay:
     def on_object_connection_state(self, cli, pkt):
         """Log cube connection state transitions for diagnostics.
 
-        Cozmo keeps several cubes connected simultaneously; each connection
-        has its own temporary ``object_id`` (``cli.connected_objects`` is
-        keyed by it — see ``_cube_id_for_object_id``). The robot assigns
-        ``object_id=1`` to the first connection, 2 to the next, and so on.
-        (COZMO-20)
+        Each cube is identified by its permanent ``factory_id`` (set at
+        the factory); the robot assigns a temporary ``object_id`` per
+        connection.  We track by factory_id — not object_id — because
+        the robot may reassign the same object_id to different cubes.
+        (COZMO-20, COZMO-23)
         """
         cube_id = self._cube_id_for_factory(pkt.factory_id)
         if cube_id is None:
@@ -186,6 +187,7 @@ class VisionDisplay:
             )
             return
         if pkt.connected:
+            self._cube_object_id_map[cube_id] = pkt.object_id
             # Start the accel grace period + discard the old resting baseline:
             # freshly-connected cubes emit unreliable accel for a moment.
             self._cube_move_detectors.setdefault(
@@ -197,6 +199,8 @@ class VisionDisplay:
                 pkt.object_id,
             )
         else:
+            # Clear the mapping so the keepalive worker will reconnect.
+            self._cube_object_id_map.pop(cube_id, None)
             logger_cubes.info(
                 "Cube %d disconnected (object_id=%s)",
                 cube_id,
@@ -268,32 +272,24 @@ class VisionDisplay:
             self._cube_last_seen_frame[cube_id] = self.frame_count
 
     def start_cube_light_worker(self, cli):
-        """Spawn a background thread that cycles cube lights every second.
+        """Spawn a background thread that keeps cubes connected and lit.
 
-        Runs on its own thread so the small sleeps inside the cycle
-        don't block the pycozmo event dispatcher (which would drop camera
-        frames — see COZMO-2). The worker exits when ``self.running`` goes
-        False. (COZMO-20)
+        Runs on its own thread so reconnects / keepalive commands don't
+        block the pycozmo event dispatcher.  The worker exits when
+        ``self.running`` goes False.  (COZMO-20, COZMO-23)
         """
         self._cube_light_stop = threading.Event()
 
         def _loop():
-            # Run one cycle, then pause for CYCLE_PERIOD_S before the next.
-            # Empirically the 0.8 s cycle triggered a Wi-Fi drop on the
-            # Pi after a few seconds — Cozmo's connection stack seems to
-            # give up if we hammer ObjectConnect too often. The 2 s cycle
-            # sustained 100 % packet delivery in earlier runs, so use that
-            # and trust the LEDs to persist across the gap. (COZMO-20)
-            CYCLE_PERIOD_S = 0.5
             while not self._cube_light_stop.is_set():
                 try:
-                    self._cube_light_tick(cli)
+                    self._cube_keepalive_tick(cli)
                 except Exception as e:
-                    print(f"⚠️  Cube light tick failed: {e}")
-                if self._cube_light_stop.wait(timeout=CYCLE_PERIOD_S):
+                    print(f"⚠️  Cube keepalive tick failed: {e}")
+                if self._cube_light_stop.wait(timeout=1.0):
                     return
 
-        thread = threading.Thread(target=_loop, name="CubeLightWorker", daemon=True)
+        thread = threading.Thread(target=_loop, name="CubeKeepaliveWorker", daemon=True)
         thread.start()
         return thread
 
@@ -635,84 +631,131 @@ class VisionDisplay:
         print(f"📋 Cube mapping: {self.cube_factory_id_map}")
         logger_cubes.info("Cube factory_id map: %s", self.cube_factory_id_map)
 
-        # Connect to cubes one at a time — wait for each confirmation
-        # before starting the next.  The SDK does the same: sends one
-        # BlockPoolResetMessage, then waits for each ObjectConnectionState
-        # sequentially (timeout=10 s).  Sending ObjectConnect for all three
-        # back-to-back caused the robot to drop earlier connections.
-        for cube_id, factory_id in self.cube_factory_id_map.items():
+        # Connect to all cubes — fire ObjectConnect packets back-to-back
+        # (no sleeps).  The engine does the same: it sends all three
+        # ObjectConnects in one burst and lets the robot firmware handle
+        # BLE time-slicing internally.  Waiting between connects causes
+        # the robot to drop the previous connection.
+        all_factory_ids = list(self.cube_factory_id_map.values())
+        for factory_id in all_factory_ids:
             cli.conn.send(
                 pycozmo.protocol_encoder.ObjectConnect(
                     factory_id=factory_id, connect=True
                 )
             )
-            logger_cubes.debug(
-                "Cube %d: connect sent (factory_id=0x%08x)",
+            logger_cubes.debug("ObjectConnect sent (factory_id=0x%08x)", factory_id)
+
+        # Factory-id-aware wait — each ObjectConnectionState is matched
+        # to the specific factory_id we asked for, not just "any" event.
+        try:
+            confirmations = cli.wait_for_factory_ids(
+                all_factory_ids, connect=True, timeout=10.0
+            )
+        except Exception as exc:
+            logger_cubes.warning("Cube connect wait failed: %s", exc)
+            confirmations = {}
+
+        # For each confirmed cube: set CubeId, enable accel stream,
+        # and light it green.  CubeId tells the robot which cube the
+        # subsequent CubeLights / StreamObjectAccel packets apply to.
+        for factory_id, object_id in confirmations.items():
+            cube_id = self._cube_id_for_factory(factory_id)
+            if cube_id is None:
+                continue
+            self._cube_object_id_map[cube_id] = object_id
+            try:
+                cli.conn.send(pycozmo.protocol_encoder.CubeId(object_id=object_id))
+                cli.conn.send(
+                    pycozmo.protocol_encoder.StreamObjectAccel(
+                        object_id=object_id, enable=True
+                    )
+                )
+                cli.conn.send(
+                    pycozmo.protocol_encoder.CubeLights(
+                        states=(
+                            pycozmo.lights.green_light,
+                            pycozmo.lights.green_light,
+                            pycozmo.lights.green_light,
+                            pycozmo.lights.green_light,
+                        )
+                    )
+                )
+            except Exception:
+                pass
+            logger_cubes.info(
+                "Cube %d confirmed: object_id=%d (factory_id=0x%08x)",
                 cube_id,
+                object_id,
                 factory_id,
             )
-            try:
-                cli.conn.wait_for(
-                    pycozmo.protocol_encoder.ObjectConnectionState, timeout=5.0
-                )
-                logger_cubes.debug("Cube %d: connected", cube_id)
-            except Exception:
-                logger_cubes.warning("Cube %d: connect timed out", cube_id)
 
-        connected = dict(cli.connected_objects)
-        print(f"\n✅ {len(connected)} cube(s) connected")
-        print(
-            "ℹ️  Robot holds one BLE connection at a time. Light worker cycles"
-            "\n   through all cubes rapidly so they all appear lit."
-        )
+        print(f"\n✅ {len(confirmations)} cube(s) connected")
         print("=" * 70 + "\n")
 
-    def _cube_light_tick(self, cli):
-        """Cycle through all cubes — connect, light green, enable accel, move on.
+    def _cube_keepalive_tick(self, cli):
+        """Keep all cubes connected and refresh their accel/lights.
 
-        The robot holds only one BLE connection at a time, so we rotate
-        through all known cubes each tick.  Each cube gets connected,
-        lit green, and has its accel stream enabled before we move to the next.
-        Rapid cycling (~0.5 s per full rotation) keeps all cubes visually lit.
+        For each known cube:
+        - If disconnected: re-send ObjectConnect, wait for confirmation,
+          then set up CubeId + StreamObjectAccel + CubeLights.
+        - If connected: just refresh CubeId + StreamObjectAccel + CubeLights
+          (no ObjectConnect — that would tear down the connection).
+
+        The engine never re-sends ObjectConnect to an already-connected
+        cube; it only sends keepalive commands (CubeId, StreamObjectAccel,
+        CubeLights).  We follow the same pattern.  (COZMO-23)
         """
         if cli.conn.state != pycozmo.conn.Connection.CONNECTED:
             return
         if not self.detection_enabled or not self.cube_factory_id_map:
             return
 
-        if not hasattr(self, "_cube_cycle_idx"):
-            self._cube_cycle_idx = 0
+        for cube_id, factory_id in self.cube_factory_id_map.items():
+            object_id = self._cube_object_id_map.get(cube_id)
 
-        cube_ids = sorted(self.cube_factory_id_map.keys())
-        idx = self._cube_cycle_idx % len(cube_ids)
-        cube_id = cube_ids[idx]
-        factory_id = self.cube_factory_id_map[cube_id]
+            # Check if this cube is still connected.
+            is_connected = False
+            if object_id is not None:
+                for oid, info in cli.connected_objects.items():
+                    if oid == object_id and info.get("factory_id") == factory_id:
+                        is_connected = True
+                        break
 
-        # Connect this cube (robot drops any previous connection).
-        cli.conn.send(
-            pycozmo.protocol_encoder.ObjectConnect(
-                factory_id=factory_id, connect=True
-            )
-        )
-
-        try:
-            cli.conn.wait_for(
-                pycozmo.protocol_encoder.ObjectConnectionState, timeout=0.5
-            )
-        except Exception:
-            self._cube_cycle_idx = (idx + 1) % len(cube_ids)
-            return
-
-        # Find the object_id the robot just assigned.
-        for oid, info in cli.connected_objects.items():
-            if info.get("factory_id") == factory_id:
+            if not is_connected:
+                # Reconnect this cube.
                 try:
                     cli.conn.send(
-                        pycozmo.protocol_encoder.CubeId(object_id=oid)
+                        pycozmo.protocol_encoder.ObjectConnect(
+                            factory_id=factory_id, connect=True
+                        )
                     )
+                    confirmations = cli.wait_for_factory_ids(
+                        [factory_id], connect=True, timeout=3.0
+                    )
+                    if factory_id in confirmations:
+                        object_id = confirmations[factory_id]
+                        self._cube_object_id_map[cube_id] = object_id
+                        self._cube_move_detectors.setdefault(
+                            cube_id, CubeMoveDetector()
+                        ).on_connection(time.time())
+                        logger_cubes.info(
+                            "Cube %d reconnected: object_id=%d",
+                            cube_id,
+                            object_id,
+                        )
+                    else:
+                        continue
+                except Exception:
+                    continue
+
+            # Refresh keepalive: CubeId + StreamObjectAccel + CubeLights.
+            # CubeId tells the robot which cube subsequent commands apply to.
+            if object_id is not None:
+                try:
+                    cli.conn.send(pycozmo.protocol_encoder.CubeId(object_id=object_id))
                     cli.conn.send(
                         pycozmo.protocol_encoder.StreamObjectAccel(
-                            object_id=oid, enable=True
+                            object_id=object_id, enable=True
                         )
                     )
                     cli.conn.send(
@@ -727,9 +770,6 @@ class VisionDisplay:
                     )
                 except Exception:
                     pass
-                break
-
-        self._cube_cycle_idx = (idx + 1) % len(cube_ids)
 
     def run(self, cli):
         """Main display loop."""
@@ -884,10 +924,9 @@ def main():
         "--no-cube-lights",
         action="store_true",
         help=(
-            "Disable the cube-light worker entirely (no ObjectConnect / "
-            "CubeLights cycling). Use this for debugging Wi-Fi stability — "
-            "if Cozmo stays connected with --no-cube-lights, the worker "
-            "is the cause of the disconnects."
+            "Disable the cube keepalive worker (no reconnection / "
+            "CubeLights refresh). Cubes will disconnect after the robot's "
+            "idle timeout and not be reconnected."
         ),
     )
     parser.add_argument(
@@ -1075,8 +1114,8 @@ def main():
                 display.start_cube_light_worker(cli)
             else:
                 print(
-                    "ℹ️  Cube-light worker disabled (--no-cube-lights)."
-                    "\n   No cubes will be lit; detection still runs."
+                    "ℹ️  Cube keepalive worker disabled (--no-cube-lights)."
+                    "\n   Cubes will disconnect after idle timeout."
                 )
 
             if not args.no_camera:

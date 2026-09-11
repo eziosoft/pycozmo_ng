@@ -4,7 +4,7 @@ Cozmo protocol client and high-level API.
 
 """
 
-from threading import Event, Thread, Timer
+from threading import Event, Lock, Timer
 from typing import Optional, Tuple
 import json
 import time
@@ -39,14 +39,16 @@ __all__ = [
 
 
 class Client(event.Dispatcher):
-    """ Cozmo protocol client and high-level API class. """
+    """Cozmo protocol client and high-level API class."""
 
-    def __init__(self,
-                 robot_addr: Optional[Tuple[str, int]] = None,
-                 protocol_log_messages: Optional[list] = None,
-                 auto_initialize: bool = True,
-                 enable_animations: bool = True,
-                 enable_procedural_face: bool = True) -> None:
+    def __init__(
+        self,
+        robot_addr: Optional[Tuple[str, int]] = None,
+        protocol_log_messages: Optional[list] = None,
+        auto_initialize: bool = True,
+        enable_animations: bool = True,
+        enable_procedural_face: bool = True,
+    ) -> None:
         super().__init__()
         # Whether to automatically initialize the robot when connection is established.
         self.auto_initialize = bool(auto_initialize)
@@ -55,7 +57,9 @@ class Client(event.Dispatcher):
         self.conn.add_child_dispatcher(self)
         self.anim_controller = anim_controller.AnimationController(self)
         self.anim_controller.enable_animations(auto_initialize and enable_animations)
-        self.anim_controller.enable_procedural_face(auto_initialize and enable_animations and enable_procedural_face)
+        self.anim_controller.enable_procedural_face(
+            auto_initialize and enable_animations and enable_procedural_face
+        )
 
         self.serial_number_head = None
         self.robot_fw_sig = None
@@ -65,7 +69,9 @@ class Client(event.Dispatcher):
         # Robot state
         # Heading in X-Y plane.
         self.pose_frame_id = 0
-        self.pose = util.Pose(0.0, 0.0, 0.0, angle_z=util.Angle(radians=0.0), origin_id=1)
+        self.pose = util.Pose(
+            0.0, 0.0, 0.0, angle_z=util.Angle(radians=0.0), origin_id=1
+        )
         self.pose_pitch = util.Angle(radians=0.0)
         self.head_angle = util.Angle(radians=robot.MIN_HEAD_ANGLE.radians)
         self.left_wheel_speed = util.Speed(mmps=0.0)
@@ -104,13 +110,17 @@ class Client(event.Dispatcher):
     def start(self) -> None:
         logger.debug("Starting client...")
         self.add_handler(protocol_encoder.HardwareInfo, self._on_hardware_info)
-        self.add_handler(protocol_encoder.FirmwareSignature, self._on_firmware_signature)
+        self.add_handler(
+            protocol_encoder.FirmwareSignature, self._on_firmware_signature
+        )
         self.add_handler(protocol_encoder.BodyInfo, self._on_body_info)
         self.add_handler(protocol_encoder.ImageChunk, self._on_image_chunk)
         self.add_handler(protocol_encoder.RobotState, self._on_robot_state)
         self.add_handler(protocol_encoder.AnimationState, self._on_animation_state)
         self.add_handler(protocol_encoder.ObjectAvailable, self._on_object_available)
-        self.add_handler(protocol_encoder.ObjectConnectionState, self._on_object_connection_state)
+        self.add_handler(
+            protocol_encoder.ObjectConnectionState, self._on_object_connection_state
+        )
         self.add_handler(protocol_encoder.DebugData, self._on_debug_data)
         self.add_handler(event.EvtRobotPickedUpChange, self._on_robot_picked_up)
         self.add_handler(event.EvtRobotWheelsMovingChange, self._on_robot_moving)
@@ -160,11 +170,15 @@ class Client(event.Dispatcher):
         self.robot_fw_sig = json.loads(pkt.signature)
         logger.info("Firmware version %s.", self.robot_fw_sig["version"])
         if self.robot_fw_sig.get("build") == "FACTORY":
-            logger.warning("Factory/recovery firmware detected. Functionality is degraded.")
+            logger.warning(
+                "Factory/recovery firmware detected. Functionality is degraded."
+            )
         elif self.robot_fw_sig["version"] < protocol_declaration.FIRMWARE_VERSION:
             logger.warning(
                 "Old firmware detected. PyCozmo works best with v{}. Functionality may be degraded.".format(
-                    protocol_declaration.FIRMWARE_VERSION))
+                    protocol_declaration.FIRMWARE_VERSION
+                )
+            )
         self._enable_robot()
 
     def _on_body_info(self, cli, pkt: protocol_encoder.BodyInfo):
@@ -172,8 +186,12 @@ class Client(event.Dispatcher):
         self.serial_number = pkt.serial_number
         self.body_hw_version = pkt.body_hw_version
         self.body_color = pkt.body_color
-        logger.info("Body S/N 0x%08x, HW version %i, color %i.",
-                    self.serial_number, self.body_hw_version, self.body_color.value)
+        logger.info(
+            "Body S/N 0x%08x, HW version %i, color %i.",
+            self.serial_number,
+            self.body_hw_version,
+            self.body_color.value,
+        )
         if self.auto_initialize:
             self._initialize_robot()
         self.dispatch(event.EvtRobotFound, self)
@@ -183,6 +201,48 @@ class Client(event.Dispatcher):
         self.add_handler(evt, lambda cli: e.set(), one_shot=True)
         if not e.wait(timeout):
             raise exception.Timeout("Timeout waiting for event {}".format(evt))
+
+    def wait_for_factory_ids(
+        self,
+        factory_ids,
+        connect: bool = True,
+        timeout: float = 10.0,
+    ):
+        """Wait for ObjectConnectionState from each requested factory_id.
+
+        Returns a dict  ``{factory_id: object_id}``  mapping every
+        *factory_id* to the object_id the robot assigned.
+
+        Raises ``Timeout`` if not all cubes report within *timeout*.
+        """
+        remaining = set(factory_ids)
+        result = {}
+        lock = Lock()
+        done = Event()
+
+        def _handler(cli, pkt):
+            del cli
+            if pkt.connected != connect:
+                return
+            if pkt.factory_id not in remaining:
+                return
+            with lock:
+                remaining.discard(pkt.factory_id)
+                result[pkt.factory_id] = pkt.object_id
+                if not remaining:
+                    done.set()
+
+        self.add_handler(protocol_encoder.ObjectConnectionState, _handler)
+        try:
+            if not done.wait(timeout):
+                raise exception.Timeout(
+                    "Timed out waiting for factory_ids: {}".format(
+                        ", ".join("0x%08x" % f for f in remaining)
+                    )
+                )
+        finally:
+            self.del_handler(protocol_encoder.ObjectConnectionState, _handler)
+        return result
 
     def wait_for_robot(self, timeout: float = 5.0) -> None:
         if not self.robot_fw_sig:
@@ -227,23 +287,35 @@ class Client(event.Dispatcher):
             self._reset_partial_state()
             self._partial_image_timestamp = pkt.frame_timestamp
             self._partial_image_id = pkt.image_id
-            self._partial_image_encoding = protocol_encoder.ImageEncoding(pkt.image_encoding)
-            self._partial_image_resolution = protocol_encoder.ImageResolution(pkt.image_resolution)
+            self._partial_image_encoding = protocol_encoder.ImageEncoding(
+                pkt.image_encoding
+            )
+            self._partial_image_resolution = protocol_encoder.ImageResolution(
+                pkt.image_resolution
+            )
 
             image_resolution = protocol_encoder.ImageResolution(pkt.image_resolution)
             width, height = camera.RESOLUTIONS[image_resolution]
             max_size = width * height * 3  # 3 bytes per pixel (RGB)
             self._partial_data = np.empty(max_size, dtype=np.uint8)
 
-        if pkt.chunk_id != (self._last_chunk_id + 1) or pkt.image_id != self._partial_image_id:
-            logger.debug("Image missing chunks - discarding (last_chunk_id=%d partial_image_id=%s).",
-                         self._last_chunk_id, self._partial_image_id)
+        if (
+            pkt.chunk_id != (self._last_chunk_id + 1)
+            or pkt.image_id != self._partial_image_id
+        ):
+            logger.debug(
+                "Image missing chunks - discarding (last_chunk_id=%d partial_image_id=%s).",
+                self._last_chunk_id,
+                self._partial_image_id,
+            )
             self._reset_partial_state()
             self._partial_invalid = True
             return
 
         offset = self._partial_size
-        self._partial_data[offset:offset + len(pkt.data)] = np.frombuffer(pkt.data, dtype=np.uint8)
+        self._partial_data[offset : offset + len(pkt.data)] = np.frombuffer(
+            pkt.data, dtype=np.uint8
+        )
         self._partial_size += len(pkt.data)
         self._last_chunk_id = pkt.chunk_id
 
@@ -252,12 +324,15 @@ class Client(event.Dispatcher):
             self._reset_partial_state()
 
     def _process_completed_image(self):
-        data = self._partial_data[0:self._partial_size]
+        data = self._partial_data[0 : self._partial_size]
 
         # The first byte of the image is whether or not it is in color
         is_color_image = data[0] != 0
 
-        if self._partial_image_encoding == protocol_encoder.ImageEncoding.JPEGMinimizedGray:
+        if (
+            self._partial_image_encoding
+            == protocol_encoder.ImageEncoding.JPEGMinimizedGray
+        ):
             width, height = camera.RESOLUTIONS[self._partial_image_resolution]
 
             if is_color_image:
@@ -267,7 +342,7 @@ class Client(event.Dispatcher):
             else:
                 data = camera.minigray_to_jpeg(data, width, height)
 
-        image = Image.open(io.BytesIO(data)).convert('RGB')
+        image = Image.open(io.BytesIO(data)).convert("RGB")
 
         # Color images need to be resized to the proper resolution
         if is_color_image:
@@ -287,13 +362,20 @@ class Client(event.Dispatcher):
     def _on_robot_state(self, cli, pkt: protocol_encoder.RobotState):
         del cli
         self.pose_frame_id = pkt.pose_frame_id
-        self.pose = util.Pose(pkt.pose_x, pkt.pose_y, pkt.pose_z,
-                              angle_z=util.Angle(radians=pkt.pose_angle_rad), origin_id=pkt.pose_origin_id)
+        self.pose = util.Pose(
+            pkt.pose_x,
+            pkt.pose_y,
+            pkt.pose_z,
+            angle_z=util.Angle(radians=pkt.pose_angle_rad),
+            origin_id=pkt.pose_origin_id,
+        )
         self.pose_pitch = util.Angle(radians=pkt.pose_pitch_rad)
         self.head_angle = util.Angle(radians=pkt.head_angle_rad)
         self.left_wheel_speed = util.Speed(mmps=pkt.lwheel_speed_mmps)
         self.right_wheel_speed = util.Speed(mmps=pkt.rwheel_speed_mmps)
-        self.lift_position = robot.LiftPosition(height=util.Distance(mm=pkt.lift_height_mm))
+        self.lift_position = robot.LiftPosition(
+            height=util.Distance(mm=pkt.lift_height_mm)
+        )
         self.battery_voltage = pkt.battery_voltage
         self.accel = util.Vector3(pkt.accel_x, pkt.accel_y, pkt.accel_z)
         self.gyro = util.Vector3(pkt.gyro_x, pkt.gyro_y, pkt.gyro_z)
@@ -329,7 +411,9 @@ class Client(event.Dispatcher):
             # Robot put down - reset world frame origin.
             self.robot_picked_up = False
             pkt = protocol_encoder.SetOrigin(
-                pose_frame_id=self.pose_frame_id + 1, pose_origin_id=self.pose.origin_id + 1)
+                pose_frame_id=self.pose_frame_id + 1,
+                pose_origin_id=self.pose.origin_id + 1,
+            )
             self.conn.send(pkt)
 
     def _on_robot_moving(self, cli, state):
@@ -350,9 +434,15 @@ class Client(event.Dispatcher):
         obj = object.Object(factory_id=factory_id, object_type=object_type)
         if factory_id not in self.available_objects:
             self.available_objects[factory_id] = obj
-            logger.debug("Object of type %s with S/N 0x%08x available.", str(obj.object_type), obj.factory_id)
+            logger.debug(
+                "Object of type %s with S/N 0x%08x available.",
+                str(obj.object_type),
+                obj.factory_id,
+            )
 
-    def _on_object_connection_state(self, cli, pkt: protocol_encoder.ObjectConnectionState):
+    def _on_object_connection_state(
+        self, cli, pkt: protocol_encoder.ObjectConnectionState
+    ):
         del cli
         if pkt.connected:
             # Connected
@@ -370,31 +460,58 @@ class Client(event.Dispatcher):
         msg = robot_debug.get_debug_message(pkt.name_id, pkt.format_id, pkt.args)
         logger_robot.log(robot_debug.get_log_level(pkt.level), msg)
 
-    def set_head_angle(self, angle: float, accel: float = 10.0, max_speed: float = 10.0,
-                       duration: float = 0.0):
-        pkt = protocol_encoder.SetHeadAngle(angle_rad=angle, accel_rad_per_sec2=accel,
-                                            max_speed_rad_per_sec=max_speed, duration_sec=duration)
+    def set_head_angle(
+        self,
+        angle: float,
+        accel: float = 10.0,
+        max_speed: float = 10.0,
+        duration: float = 0.0,
+    ):
+        pkt = protocol_encoder.SetHeadAngle(
+            angle_rad=angle,
+            accel_rad_per_sec2=accel,
+            max_speed_rad_per_sec=max_speed,
+            duration_sec=duration,
+        )
         self.conn.send(pkt)
 
     def move_head(self, speed: float) -> None:
         pkt = protocol_encoder.MoveHead(speed_rad_per_sec=speed)
         self.conn.send(pkt)
 
-    def set_lift_height(self, height: float, accel: float = 10.0, max_speed: float = 10.0,
-                        duration: float = 0.0):
-        pkt = protocol_encoder.SetLiftHeight(height_mm=height, accel_rad_per_sec2=accel,
-                                             max_speed_rad_per_sec=max_speed, duration_sec=duration)
+    def set_lift_height(
+        self,
+        height: float,
+        accel: float = 10.0,
+        max_speed: float = 10.0,
+        duration: float = 0.0,
+    ):
+        pkt = protocol_encoder.SetLiftHeight(
+            height_mm=height,
+            accel_rad_per_sec2=accel,
+            max_speed_rad_per_sec=max_speed,
+            duration_sec=duration,
+        )
         self.conn.send(pkt)
 
     def move_lift(self, speed: float) -> None:
         pkt = protocol_encoder.MoveLift(speed_rad_per_sec=speed)
         self.conn.send(pkt)
 
-    def drive_wheels(self, lwheel_speed: float, rwheel_speed: float,
-                     lwheel_acc: Optional[float] = 0.0, rwheel_acc: Optional[float] = 0.0,
-                     duration: Optional[float] = None) -> None:
-        pkt = protocol_encoder.DriveWheels(lwheel_speed_mmps=lwheel_speed, rwheel_speed_mmps=rwheel_speed,
-                                           lwheel_accel_mmps2=lwheel_acc, rwheel_accel_mmps2=rwheel_acc)
+    def drive_wheels(
+        self,
+        lwheel_speed: float,
+        rwheel_speed: float,
+        lwheel_acc: Optional[float] = 0.0,
+        rwheel_acc: Optional[float] = 0.0,
+        duration: Optional[float] = None,
+    ) -> None:
+        pkt = protocol_encoder.DriveWheels(
+            lwheel_speed_mmps=lwheel_speed,
+            rwheel_speed_mmps=rwheel_speed,
+            lwheel_accel_mmps2=lwheel_acc,
+            rwheel_accel_mmps2=rwheel_acc,
+        )
         self.conn.send(pkt)
         if duration is not None:
             time.sleep(duration)
@@ -405,22 +522,35 @@ class Client(event.Dispatcher):
         self.conn.send(pkt)
 
     def go_to_pose(self, pose: util.Pose, relative_to_robot: bool = False) -> None:
-        """ Move to a specific pose (position and orientation). """
+        """Move to a specific pose (position and orientation)."""
 
         if relative_to_robot:
-            pose = util.Pose(self.pose.position.x, self.pose.position.y,
-                             self.pose.position.z, angle_z=self.pose.rotation.angle_z).define_pose_relative_this(pose)
+            pose = util.Pose(
+                self.pose.position.x,
+                self.pose.position.y,
+                self.pose.position.z,
+                angle_z=self.pose.rotation.angle_z,
+            ).define_pose_relative_this(pose)
 
         pkt = protocol_encoder.AppendPathSegLine(
-            from_x=self.pose.position.x, from_y=self.pose.position.y,
-            to_x=pose.position.x, to_y=pose.position.y,
-            speed_mmps=100.0, accel_mmps2=20.0, decel_mmps2=20.0)
+            from_x=self.pose.position.x,
+            from_y=self.pose.position.y,
+            to_x=pose.position.x,
+            to_y=pose.position.y,
+            speed_mmps=100.0,
+            accel_mmps2=20.0,
+            decel_mmps2=20.0,
+        )
         self.conn.send(pkt)
         pkt = protocol_encoder.AppendPathSegPointTurn(
-            x=pose.position.x, y=pose.position.y,
+            x=pose.position.x,
+            y=pose.position.y,
             angle_rad=pose.rotation.angle_z.radians,
             angle_tolerance_rad=0.01,
-            speed_mmps=40.0, accel_mmps2=20.0, decel_mmps2=20.0)
+            speed_mmps=40.0,
+            accel_mmps2=20.0,
+            decel_mmps2=20.0,
+        )
         self.conn.send(pkt)
         pkt = protocol_encoder.ExecutePath(event_id=1)
         self.conn.send(pkt)
@@ -434,31 +564,46 @@ class Client(event.Dispatcher):
         self.add_handler(protocol_encoder.PathFollowingEvent, event_wait)
         e.wait()
 
-    def set_backpack_lights(self, left_light, front_light, center_light, rear_light, right_light) -> None:
-        pkt = protocol_encoder.LightStateCenter(states=(front_light, center_light, rear_light))
+    def set_backpack_lights(
+        self, left_light, front_light, center_light, rear_light, right_light
+    ) -> None:
+        pkt = protocol_encoder.LightStateCenter(
+            states=(front_light, center_light, rear_light)
+        )
         self.conn.send(pkt)
         pkt = protocol_encoder.LightStateSide(states=(left_light, right_light))
         self.conn.send(pkt)
 
     def set_center_backpack_lights(self, light) -> None:
-        self.set_backpack_lights(lights.off_light, light, light, light, lights.off_light)
+        self.set_backpack_lights(
+            lights.off_light, light, light, light, lights.off_light
+        )
 
     def set_all_backpack_lights(self, light) -> None:
         self.set_backpack_lights(light, light, light, light, light)
 
     def set_backpack_lights_off(self) -> None:
-        self.set_backpack_lights(lights.off_light, lights.off_light, lights.off_light,
-                                 lights.off_light, lights.off_light)
+        self.set_backpack_lights(
+            lights.off_light,
+            lights.off_light,
+            lights.off_light,
+            lights.off_light,
+            lights.off_light,
+        )
 
     def set_head_light(self, enable: bool) -> None:
         pkt = protocol_encoder.SetHeadLight(enable=enable)
         self.conn.send(pkt)
 
-    def enable_camera(self, enable: bool = True, color: bool = False,
-                      resolution: "protocol_encoder.ImageResolution" = None,
-                      single_shot: bool = False,
-                      fps: float = 0.0) -> None:
-        """ Enable or disable camera image streaming in color or grayscale.
+    def enable_camera(
+        self,
+        enable: bool = True,
+        color: bool = False,
+        resolution: "protocol_encoder.ImageResolution" = None,
+        single_shot: bool = False,
+        fps: float = 0.0,
+    ) -> None:
+        """Enable or disable camera image streaming in color or grayscale.
 
         Args:
             enable: If True, request streaming; if False, turn the camera off.
@@ -494,7 +639,11 @@ class Client(event.Dispatcher):
             image_send_mode = protocol_encoder.ImageSendMode.Off
             self._single_shot_mode = False
             self._single_shot_min_interval = None
-        image_resolution = resolution if resolution is not None else protocol_encoder.ImageResolution.QVGA
+        image_resolution = (
+            resolution
+            if resolution is not None
+            else protocol_encoder.ImageResolution.QVGA
+        )
         pkt = protocol_encoder.EnableCamera(
             image_send_mode=image_send_mode,
             image_resolution=image_resolution,
@@ -540,9 +689,18 @@ class Client(event.Dispatcher):
         )
         self.conn.send(pkt)
 
-    def set_camera_params(self, gain: float = 0.0, exposure_ms: int = 0, auto_exposure_enabled: bool = False) -> None:
-        """ Set camera parameters: gain, exposure time, and auto exposure. """
-        pkt = protocol_encoder.SetCameraParams(gain=gain, exposure_ms=exposure_ms, auto_exposure_enabled=auto_exposure_enabled)
+    def set_camera_params(
+        self,
+        gain: float = 0.0,
+        exposure_ms: int = 0,
+        auto_exposure_enabled: bool = False,
+    ) -> None:
+        """Set camera parameters: gain, exposure time, and auto exposure."""
+        pkt = protocol_encoder.SetCameraParams(
+            gain=gain,
+            exposure_ms=exposure_ms,
+            auto_exposure_enabled=auto_exposure_enabled,
+        )
         self.conn.send(pkt)
 
     def clear_screen(self) -> None:
@@ -559,7 +717,6 @@ class Client(event.Dispatcher):
             self.clear_screen()
 
     def _load_clips(self, fspec: str) -> None:
-
         start_time = time.perf_counter()
 
         if fspec.endswith(".bin"):
@@ -571,16 +728,17 @@ class Client(event.Dispatcher):
         for clip in clips.clips:
             self._clips[clip.name] = clip
 
-        logger.debug("Loaded {} in {:.02f} s.".format(fspec, time.perf_counter() - start_time))
+        logger.debug(
+            "Loaded {} in {:.02f} s.".format(fspec, time.perf_counter() - start_time)
+        )
 
     def play_anim_ppclip(self, ppclip: anim.PreprocessedClip) -> None:
-
         # Ensure no other animation is playing.
         self.cancel_anim()
 
         # Start animation.
         pkt = protocol_encoder.StartAnimation(anim_id=self._next_anim_id)
-        self.anim_controller.play_anim_frame(None, None, (pkt, ))
+        self.anim_controller.play_anim_frame(None, None, (pkt,))
         self._next_anim_id += 1
 
         # Send frames to the animation controller.
@@ -610,7 +768,7 @@ class Client(event.Dispatcher):
 
         # End animation.
         pkt = protocol_encoder.EndAnimation()
-        self.anim_controller.play_anim_frame(None, None, (pkt, ))
+        self.anim_controller.play_anim_frame(None, None, (pkt,))
 
     def play_anim(self, name: str) -> None:
         if not self._clip_metadata:
@@ -634,7 +792,9 @@ class Client(event.Dispatcher):
         logger_animation.info("Playing animation group {}".format(anim_group_name))
         animation_group = self.animation_groups.get(anim_group_name)
         if not animation_group:
-            logger_animation.error("Failed to find animation group {}.".format(anim_group_name))
+            logger_animation.error(
+                "Failed to find animation group {}.".format(anim_group_name)
+            )
             return
         member = animation_group.choose_member()
         logger_animation.info("Playing animation {}".format(member.name))
@@ -656,7 +816,7 @@ class Client(event.Dispatcher):
         return self.get_anim_names()
 
     def set_volume(self, level: int) -> None:
-        """ Set audio output volume to a level in the range 0-65535. """
+        """Set audio output volume to a level in the range 0-65535."""
         pkt = protocol_encoder.SetRobotVolume(level=level)
         self.conn.send(pkt)
 
