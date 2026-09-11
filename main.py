@@ -224,6 +224,12 @@ class VisionDisplay:
         self._dock_pose = (
             None  # robot pose at start — assumed to be the dock (COZMO-28)
         )
+        # Charging state (COZMO-28): set by EvtRobotOnChargerChange /
+        # EvtRobotChargingChange handlers running on the event-dispatch
+        # thread; read by the dock thread. Guarded by _dock_lock.
+        self._dock_lock = threading.Lock()
+        self._on_charger = False
+        self._charging = False
 
         # Camera lifecycle (COZMO-22): the Cozmo camera is off by default
         # so we don't flood its lossy Wi-Fi AP. A listener on
@@ -942,12 +948,27 @@ class VisionDisplay:
         t = threading.Thread(target=_nav_thread, daemon=True)
         t.start()
 
+    def _on_charger_change(self, cli, state: bool) -> None:
+        """Record whether the robot is physically on the charger. (COZMO-28)"""
+        del cli
+        with self._dock_lock:
+            self._on_charger = state
+
+    def _on_charging_change(self, cli, state: bool) -> None:
+        """Record whether the robot is actively charging. (COZMO-28)"""
+        del cli
+        with self._dock_lock:
+            self._charging = state
+
     def _on_dock(self) -> None:
         """Handle 'z' keypress — drive robot back into the dock.
 
         Assumes robot started at the dock. Drives 150mm forward (away
-        from the dock), then reverses straight back until close to the
-        start pose. No forward navigation — reverse only. (COZMO-28)
+        from the dock), then reverses straight back until charging is
+        detected (or the robot is no longer making progress). On a
+        successful dock the pose origin is reset so the slip that
+        happens when the tires contact the dock doesn't bias future
+        pose readings. (COZMO-28)
         """
         if not self.cli:
             print("🛟 Dock: no robot connected")
@@ -964,7 +985,7 @@ class VisionDisplay:
 
         DOCK_DRIVE_DIST = 150.0  # mm forward (away from dock)
         DOCK_REVERSE_SPEED = 80.0  # mm/s reverse speed
-        DOCK_STOP_DIST = 0.0  # mm — stop reversing when within this of dock
+        DOCK_STOP_DIST = 25.0  # mm — within this of dock we expect charge
         DOCK_STALL_ITERS = 20  # stop after this many no-progress iterations
 
         dock = self._dock_pose
@@ -986,18 +1007,36 @@ class VisionDisplay:
                 self.cli.go_to_pose(turn_pose, relative_to_robot=False)
                 _time.sleep(0.3)
 
-                # Step 2: Reverse straight back until close to the dock
+                # Step 2: Reverse straight back until charging detected
                 print("🛟 Reversing into dock")
                 prev_dist = None
                 stall = 0
+                docked = False
                 while True:
+                    with self._dock_lock:
+                        on_charger = self._on_charger
+                        charging = self._charging
+
+                    # Success: robot reports being on the charger / charging
+                    if on_charger or charging:
+                        print("🛟 Charging detected — docked")
+                        docked = True
+                        break
+
                     rp = self.cli.pose
                     dx = dock_x - rp.position.x
                     dy = dock_y - rp.position.y
                     dist_to_dock = math.sqrt(dx * dx + dy * dy)
 
+                    # We're at the dock but never saw a charge: give up rather
+                    # than grind forever (misaligned / bad contacts).
                     if dist_to_dock < DOCK_STOP_DIST:
-                        print(f"🛟 Within {dist_to_dock:.0f}mm of dock — stopping")
+                        print(
+                            f"🛟 Within {dist_to_dock:.0f}mm of dock but no charge "
+                            f"(on_charger={on_charger}, charging={charging}) — docking "
+                            f"may be misaligned"
+                        )
+                        docked = False
                         break
 
                     # Stall detection: if we're not getting closer, stop to
@@ -1006,6 +1045,7 @@ class VisionDisplay:
                         stall += 1
                         if stall >= DOCK_STALL_ITERS:
                             print("🛟 No progress reversing — stopping")
+                            docked = False
                             break
                     else:
                         stall = 0
@@ -1018,7 +1058,19 @@ class VisionDisplay:
                     _time.sleep(0.05)
 
                 self.cli.stop_all_motors()
-                print("🛟 Docked")
+
+                if docked:
+                    # Tires slip slightly when they contact the dock, so
+                    # reset the pose origin to make the dock the new (0,0,0).
+                    _time.sleep(0.2)
+                    reset_pkt = pycozmo.protocol_encoder.SetOrigin(
+                        pose_frame_id=self.cli.pose_frame_id + 1,
+                        pose_origin_id=self.cli.pose.origin_id + 1,
+                    )
+                    self.cli.conn.send(reset_pkt)
+                    _time.sleep(0.5)
+                    self._dock_pose = self.cli.pose
+                    print("🛟 Docked and pose reset — dock is now origin")
             except Exception as e:
                 print(f"🛟 Dock error: {e}")
 
@@ -1329,6 +1381,12 @@ def main():
             display.cli = cli
             cli.add_handler(
                 pycozmo.event.EvtNewRawCameraImage, display.on_raw_camera_image
+            )
+            cli.add_handler(
+                pycozmo.event.EvtRobotOnChargerChange, display._on_charger_change
+            )
+            cli.add_handler(
+                pycozmo.event.EvtRobotChargingChange, display._on_charging_change
             )
 
             print("🎨 Initializing vision processor with cubeDetector.py...")
