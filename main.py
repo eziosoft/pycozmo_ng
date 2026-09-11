@@ -964,11 +964,12 @@ class VisionDisplay:
         """Handle 'z' keypress — drive robot back into the dock.
 
         Assumes robot started at the dock. Drives 150mm forward (away
-        from the dock), then reverses straight back until charging is
-        detected (or the robot is no longer making progress). On a
-        successful dock the pose origin is reset so the slip that
-        happens when the tires contact the dock doesn't bias future
-        pose readings. (COZMO-28)
+        from the dock), then reverses back to the dock position and
+        expects charging there. If charging isn't detected at contact,
+        backs away and retries; gives up after ``DOCK_MAX_RETRIES``.
+        On success the pose origin is reset so the slip that happens
+        when the tires contact the dock doesn't bias future poses.
+        (COZMO-28)
         """
         if not self.cli:
             print("🛟 Dock: no robot connected")
@@ -985,8 +986,11 @@ class VisionDisplay:
 
         DOCK_DRIVE_DIST = 150.0  # mm forward (away from dock)
         DOCK_REVERSE_SPEED = 80.0  # mm/s reverse speed
-        DOCK_STOP_DIST = 25.0  # mm — within this of dock we expect charge
-        DOCK_STALL_ITERS = 20  # stop after this many no-progress iterations
+        DOCK_CONTACT_DIST = 15.0  # mm — "at" the dock (expect charge here)
+        DOCK_MAX_RETRIES = 3  # times to back away and re-attempt
+        DOCK_RETRY_SPEED = 60.0  # mm/s when backing away between attempts
+        DOCK_RETRY_DRIVE = 40.0  # mm to back away between attempts
+        DOCK_STALL_ITERS = 20  # stop reversing after this many no-progress iters
 
         dock = self._dock_pose
         dock_x = dock.position.x
@@ -999,6 +1003,45 @@ class VisionDisplay:
         turn_x = dock_x + DOCK_DRIVE_DIST * math.cos(dock_heading)
         turn_y = dock_y + DOCK_DRIVE_DIST * math.sin(dock_heading)
 
+        def _is_charging() -> bool:
+            with self._dock_lock:
+                return self._on_charger or self._charging
+
+        def _dist_to_dock() -> float:
+            rp = self.cli.pose
+            dx = dock_x - rp.position.x
+            dy = dock_y - rp.position.y
+            return math.sqrt(dx * dx + dy * dy)
+
+        def _reverse_until_contact() -> bool:
+            """Reverse until contact/stall. Returns True if charge detected."""
+            prev_dist = None
+            stall = 0
+            while True:
+                if _is_charging():
+                    return True
+
+                dist = _dist_to_dock()
+
+                # At the dock position — expect charging now.
+                if dist < DOCK_CONTACT_DIST:
+                    return False
+
+                # Stall: no longer making progress (grinding on the dock).
+                if prev_dist is not None and dist >= prev_dist - 1.0:
+                    stall += 1
+                    if stall >= DOCK_STALL_ITERS:
+                        return False
+                else:
+                    stall = 0
+                prev_dist = dist
+
+                self.cli.drive_wheels(
+                    lwheel_speed=-DOCK_REVERSE_SPEED,
+                    rwheel_speed=-DOCK_REVERSE_SPEED,
+                )
+                _time.sleep(0.05)
+
         def _dock_thread():
             try:
                 # Step 1: Drive to 150mm in front, keeping the heading
@@ -1007,55 +1050,33 @@ class VisionDisplay:
                 self.cli.go_to_pose(turn_pose, relative_to_robot=False)
                 _time.sleep(0.3)
 
-                # Step 2: Reverse straight back until charging detected
-                print("🛟 Reversing into dock")
-                prev_dist = None
-                stall = 0
+                # Step 2: Reverse in; if no charge at contact, back away and
+                # retry. Give up after DOCK_MAX_RETRIES attempts.
                 docked = False
-                while True:
-                    with self._dock_lock:
-                        on_charger = self._on_charger
-                        charging = self._charging
-
-                    # Success: robot reports being on the charger / charging
-                    if on_charger or charging:
-                        print("🛟 Charging detected — docked")
+                for attempt in range(1, DOCK_MAX_RETRIES + 1):
+                    print(f"🛟 Docking attempt {attempt}/{DOCK_MAX_RETRIES}")
+                    if _reverse_until_contact():
                         docked = True
                         break
 
-                    rp = self.cli.pose
-                    dx = dock_x - rp.position.x
-                    dy = dock_y - rp.position.y
-                    dist_to_dock = math.sqrt(dx * dx + dy * dy)
-
-                    # We're at the dock but never saw a charge: give up rather
-                    # than grind forever (misaligned / bad contacts).
-                    if dist_to_dock < DOCK_STOP_DIST:
-                        print(
-                            f"🛟 Within {dist_to_dock:.0f}mm of dock but no charge "
-                            f"(on_charger={on_charger}, charging={charging}) — docking "
-                            f"may be misaligned"
-                        )
-                        docked = False
+                    if _is_charging():
+                        docked = True
                         break
 
-                    # Stall detection: if we're not getting closer, stop to
-                    # avoid grinding against the dock.
-                    if prev_dist is not None and dist_to_dock >= prev_dist - 1.0:
-                        stall += 1
-                        if stall >= DOCK_STALL_ITERS:
-                            print("🛟 No progress reversing — stopping")
-                            docked = False
-                            break
+                    # At the dock but no charge: back away and try again.
+                    if attempt < DOCK_MAX_RETRIES:
+                        print("🛟 No charge at contact — backing away to retry")
+                        self.cli.drive_wheels(
+                            lwheel_speed=DOCK_RETRY_SPEED,
+                            rwheel_speed=DOCK_RETRY_SPEED,
+                            duration=DOCK_RETRY_DRIVE / DOCK_RETRY_SPEED,
+                        )
+                        _time.sleep(0.3)
                     else:
-                        stall = 0
-                    prev_dist = dist_to_dock
-
-                    self.cli.drive_wheels(
-                        lwheel_speed=-DOCK_REVERSE_SPEED,
-                        rwheel_speed=-DOCK_REVERSE_SPEED,
-                    )
-                    _time.sleep(0.05)
+                        print(
+                            f"🛟 Docking failed after {DOCK_MAX_RETRIES} attempts "
+                            f"(dist={_dist_to_dock():.0f}mm, no charge)"
+                        )
 
                 self.cli.stop_all_motors()
 
