@@ -986,6 +986,8 @@ class VisionDisplay:
 
         DOCK_DRIVE_DIST = 150.0  # mm forward (away from dock)
         DOCK_REVERSE_SPEED = 80.0  # mm/s reverse speed
+        DOCK_AIM_BEHIND = 20.0  # mm behind dock center — drives the rear
+        # contacts fully onto the charger, not just to the robot center.
         DOCK_CONTACT_DIST = 15.0  # mm — "at" the dock (expect charge here)
         DOCK_MAX_RETRIES = 3  # times to back away and re-attempt
         DOCK_RETRY_SPEED = 60.0  # mm/s when backing away between attempts
@@ -1003,14 +1005,20 @@ class VisionDisplay:
         turn_x = dock_x + DOCK_DRIVE_DIST * math.cos(dock_heading)
         turn_y = dock_y + DOCK_DRIVE_DIST * math.sin(dock_heading)
 
+        # Aim slightly BEHIND the dock so the robot's rear (contacts)
+        # seat on the charger — reversing to the dock center leaves the
+        # robot a robot-length short of good contact. (COZMO-28)
+        aim_x = dock_x - DOCK_AIM_BEHIND * math.cos(dock_heading)
+        aim_y = dock_y - DOCK_AIM_BEHIND * math.sin(dock_heading)
+
         def _is_charging() -> bool:
             with self._dock_lock:
                 return self._on_charger or self._charging
 
         def _dist_to_dock() -> float:
             rp = self.cli.pose
-            dx = dock_x - rp.position.x
-            dy = dock_y - rp.position.y
+            dx = aim_x - rp.position.x
+            dy = aim_y - rp.position.y
             return math.sqrt(dx * dx + dy * dy)
 
         def _reverse_until_contact() -> bool:
