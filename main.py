@@ -852,15 +852,15 @@ class VisionDisplay:
             try:
                 # If too close, back away first so turning doesn't bump cube
                 if need_back_away:
-                    # Back away along line from cube to robot
-                    bx = robot_x + (robot_x - cube_x) / dist_to_cube * BACK_AWAY_DIST
-                    by = robot_y + (robot_y - cube_y) / dist_to_cube * BACK_AWAY_DIST
-                    print(f"📦 Backing away to ({bx:.0f}, {by:.0f})")
-                    self.cli.drive_straight(
-                        distance=Angle(radians=-BACK_AWAY_DIST),
-                        speed=pycozmo.util.Speed(mmps=60),
+                    back_heading = math.atan2(robot_y - cube_y, robot_x - cube_x)
+                    back_x = cube_x + (robot_x - cube_x) / dist_to_cube * BACK_AWAY_DIST
+                    back_y = cube_y + (robot_y - cube_y) / dist_to_cube * BACK_AWAY_DIST
+                    pose_back = Pose(
+                        back_x, back_y, 0, angle_z=Angle(radians=back_heading)
                     )
-                    _time.sleep(0.5)
+                    print(f"📦 Backing away to ({back_x:.0f}, {back_y:.0f})")
+                    self.cli.go_to_pose(pose_back, relative_to_robot=False)
+                    _time.sleep(0.3)
 
                 # Step 1: Drive to 120mm
                 pose1 = Pose(step1_x, step1_y, 0, angle_z=Angle(radians=heading))
