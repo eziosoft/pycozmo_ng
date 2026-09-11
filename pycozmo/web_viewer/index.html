@@ -111,6 +111,94 @@
     controls.target.set(0, 0, 0);
 
     // -----------------------------------------------------------------------
+    // Click-to-navigate: raycasting on ground plane (COZMO-28)
+    // -----------------------------------------------------------------------
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Y=0 plane
+
+    // Target marker (ring on ground)
+    const targetMarker = new THREE.Mesh(
+      new THREE.RingGeometry(15, 25, 32),
+      new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
+    );
+    targetMarker.rotation.x = -Math.PI / 2;
+    targetMarker.position.y = 0.5;
+    targetMarker.visible = false;
+    scene.add(targetMarker);
+
+    // Line from robot to target
+    const navLineGeo = new THREE.BufferGeometry();
+    navLineGeo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 0,0,0], 3));
+    const navLineMat = new THREE.LineDashedMaterial({ color: 0x00ff88, dashSize: 10, gapSize: 5 });
+    const navLine = new THREE.Line(navLineGeo, navLineMat);
+    navLine.visible = false;
+    scene.add(navLine);
+
+    let navTarget = null; // scene-frame Vector3 of clicked point
+
+    function onViewerClick(event) {
+      // Only handle left click, ignore if orbiting (right-click/middle)
+      if (event.button !== 0) return;
+
+      const panel = document.getElementById('viewer-panel');
+      const rect = panel.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const hit = new THREE.Vector3();
+      const intersected = raycaster.ray.intersectPlane(groundPlane, hit);
+
+      if (intersected) {
+        // Clamp to grid bounds (±1000mm)
+        hit.x = Math.max(-1000, Math.min(1000, hit.x));
+        hit.z = Math.max(-1000, Math.min(1000, hit.z));
+        hit.y = 0.5;
+
+        navTarget = hit.clone();
+        targetMarker.position.copy(hit);
+        targetMarker.visible = true;
+
+        // Draw dashed line from robot to target
+        const rp = robot.position;
+        const positions = navLine.geometry.attributes.position.array;
+        positions[0] = rp.x; positions[1] = 0.5; positions[2] = rp.z;
+        positions[3] = hit.x; positions[4] = 0.5; positions[5] = hit.z;
+        navLine.geometry.attributes.position.needsUpdate = true;
+        navLine.computeLineDistances();
+        navLine.visible = true;
+
+        // Send navigate_to (scene coords — server converts to world)
+        sendNavigateTo(hit.x, hit.z);
+      }
+    }
+
+    function sendNavigateTo(sceneX, sceneZ) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'navigate_to', x: sceneX, z: sceneZ }));
+      } catch (e) {
+        console.warn('navigate_to send failed', e);
+      }
+    }
+
+    // Right-click or Escape cancels navigation
+    function cancelNavigation() {
+      navTarget = null;
+      targetMarker.visible = false;
+      navLine.visible = false;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'navigate_cancel' }));
+      } catch (e) { /* ignore */ }
+    }
+
+    viewerPanel.addEventListener('click', onViewerClick);
+    viewerPanel.addEventListener('contextmenu', (e) => { e.preventDefault(); cancelNavigation(); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelNavigation(); });
+
+    // -----------------------------------------------------------------------
     // Lighting
     // -----------------------------------------------------------------------
     const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
@@ -363,6 +451,17 @@
           robot.position.copy(robot.userData.targetPos);
           robot.userData.pos.copy(robot.userData.targetPos);
           hasRobotPose = true;
+        }
+
+        // Hide nav markers when robot is close to target (within 30mm)
+        if (navTarget) {
+          const dx = rp[0] - navTarget.x;
+          const dz = rp[2] - navTarget.z;
+          if (Math.sqrt(dx*dx + dz*dz) < 30) {
+            navTarget = null;
+            targetMarker.visible = false;
+            navLine.visible = false;
+          }
         }
       }
     }

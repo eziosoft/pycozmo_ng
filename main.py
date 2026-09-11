@@ -683,12 +683,59 @@ class VisionDisplay:
         self._remote_control = RemoteControl(cli)
         self._remote_control.start()
         self.web_viewer.set_control_listener(self._remote_control.update_keys)
+        self.web_viewer.set_navigate_listener(self._on_navigate_to)
         print("🎮 Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
+        print("📍 Click-to-navigate enabled: click ground to drive there")
 
     def stop_remote_control(self) -> None:
         if hasattr(self, "_remote_control") and self._remote_control is not None:
             self._remote_control.stop()
             self._remote_control = None
+
+    def _on_navigate_to(self, world_x: float, world_z: float) -> None:
+        """Handle click-to-navigate from browser.
+
+        world_x = forward, world_z = up (Anki frame).
+        Uses Cozmo's built-in path planner via go_to_pose().
+        (COZMO-28)
+        """
+        if world_x is None:
+            # Navigation cancelled
+            if hasattr(self, "_cli") and self._cli:
+                self._cli.stop_all_motors()
+            print("📍 Navigation cancelled")
+            return
+
+        if not hasattr(self, "_cli") or not self._cli:
+            print("📍 Navigation: no robot connected")
+            return
+
+        import math
+        from pycozmo.util import Pose, Angle
+
+        # Current robot pose
+        robot_pose = self._cli.pose
+        robot_x = robot_pose.position.x
+        robot_y = robot_pose.position.y
+
+        # Calculate heading to target
+        dx = world_x - robot_x
+        dy = 0 - robot_y  # target is on ground (y=0)
+        heading = math.atan2(dy, dx)
+
+        # Distance
+        dist = math.sqrt(dx * dx + dy * dy)
+        print(
+            f"📍 Navigating to ({world_x:.0f}, {world_z:.0f}) — "
+            f"dist={dist:.0f}mm, heading={math.degrees(heading):.0f}°"
+        )
+
+        # Use Cozmo's built-in path planner
+        target_pose = Pose(world_x, 0, world_z, angle_z=Angle(radians=heading))
+        try:
+            self._cli.go_to_pose(target_pose, relative_to_robot=False)
+        except Exception as e:
+            print(f"📍 Navigation error: {e}")
 
     def setup_cube_mapping(self, cli):
         """Discover available cubes and create mapping from detected cube_id to factory_id."""

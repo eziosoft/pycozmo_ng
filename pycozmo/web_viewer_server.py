@@ -22,6 +22,8 @@ import os
 import threading
 import time
 
+import numpy as np
+
 try:
     import websockets
     import websockets.server
@@ -117,8 +119,16 @@ class WebViewerServer:
         # ``{"type": "control", "keys": [...]}`` message on every keydown/
         # keyup; the most recent set is forwarded to the listener (e.g. a
         # :class:`pycozmo.remote_control.RemoteControl` instance) which
-        # translates it into Cozmo commands. (COZMO-25)
+        # translates it into Cozmo commands. We hand off the raw set;
+        # the listener is responsible for any thread/async
+        # marshalling. (COZMO-25)
         self._control_listener = None
+
+        # Navigation target listener. The browser sends a
+        # ``{"type": "navigate_to", "x": scene_x, "z": scene_z}`` message
+        # on ground-plane click; the listener (e.g. a navigation handler in
+        # main.py) receives world-frame coordinates. (COZMO-28)
+        self._navigate_listener = None
 
         # Validate that at least websockets is available
         if not HAS_WEBSOCKETS:
@@ -262,6 +272,19 @@ class WebViewerServer:
         """
         self._control_listener = callback
 
+    def set_navigate_listener(self, callback) -> None:
+        """Subscribe to browser click-to-navigate events.
+
+        ``callback(target_world_x, target_world_z)`` is invoked (on the
+        asyncio loop thread) whenever a ``{"type": "navigate_to", "x":,
+        "z":}`` message arrives. Coordinates are converted from scene
+        frame to world frame before delivery. Pass ``None`` to unsubscribe.
+
+        ``callback(None)`` is invoked on ``{"type": "navigate_cancel"}``.
+        (COZMO-28)
+        """
+        self._navigate_listener = callback
+
     # -- internal -----------------------------------------------------------
 
     def _build_state_json(self) -> str:
@@ -366,6 +389,28 @@ class WebViewerServer:
                             listener(set(keys))
                         except Exception as e:  # noqa: BLE001
                             print(f"⚠️  control listener failed: {e}")
+                elif mtype == "navigate_to":
+                    # Click-to-navigate from browser. Convert scene coords
+                    # to world frame and forward to listener. (COZMO-28)
+                    listener = self._navigate_listener
+                    if listener is not None:
+                        try:
+                            scene_x = msg.get("x", 0)
+                            scene_z = msg.get("z", 0)
+                            world_pos = coords.scene_to_world_point(
+                                np.array([scene_x, 0, scene_z])
+                            )
+                            listener(float(world_pos[0]), float(world_pos[2]))
+                        except Exception as e:  # noqa: BLE001
+                            print(f"⚠️  navigate listener failed: {e}")
+                elif mtype == "navigate_cancel":
+                    # Navigation cancelled by browser. (COZMO-28)
+                    listener = self._navigate_listener
+                    if listener is not None:
+                        try:
+                            listener(None)
+                        except Exception as e:  # noqa: BLE001
+                            print(f"⚠️  navigate cancel failed: {e}")
         finally:
             self._clients.discard(websocket)
             self._fire_active_clients_change()

@@ -158,6 +158,12 @@ def world_to_scene_point(position_world: np.ndarray) -> np.ndarray:
     return np.array([p[1], p[2], p[0]], dtype=np.float64)
 
 
+def scene_to_world_point(position_scene: np.ndarray) -> np.ndarray:
+    """Map a scene-frame point (X right, Y up, Z fwd) back to world (X fwd, Y left, Z up)."""
+    p = np.asarray(position_scene, dtype=np.float64)
+    return np.array([p[2], p[0], p[1]], dtype=np.float64)
+
+
 def world_to_scene_rotation(rotation_world: np.ndarray) -> np.ndarray:
     """Map a world-frame 3x3 rotation to scene frame via change of basis."""
     m = WORLD_TO_SCENE_MATRIX
