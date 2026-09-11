@@ -707,8 +707,11 @@ class VisionDisplay:
         """Handle click-to-navigate from browser.
 
         world_forward = X (Anki frame), world_left = Y (Anki frame).
-        Uses Cozmo's built-in path planner via go_to_pose().
-        Runs in a thread so camera preview keeps working. (COZMO-28)
+        Long distances use Cozmo's built-in path planner via go_to_pose().
+        Short distances (<= _SHORT_DIST_MM) use a closed-loop differential
+        drive that can reverse, so targets just behind the robot don't
+        force it to sweep around forward-only. (COZMO-28 / COZMO-30)
+        Runs in a thread so camera preview keeps working.
         """
         if world_forward is None:
             # Navigation cancelled
@@ -725,6 +728,12 @@ class VisionDisplay:
         import threading
         from pycozmo.util import Pose, Angle
 
+        SHORT_DIST_MM = 100.0  # at most this far: attempt reverse-capable drive
+        NAV_SPEED_MMPS = 60.0  # closed-loop approach speed
+        NAV_STOP_MM = 8.0  # arrive within this distance
+        NAV_TURN_FRAC = 1.2  # differential turn magnitude vs heading error
+        NAV_TIMEOUT_S = 15.0
+
         # Current robot pose
         robot_pose = self.cli.pose
         robot_x = robot_pose.position.x
@@ -737,18 +746,87 @@ class VisionDisplay:
 
         # Distance
         dist = math.sqrt(dx * dx + dy * dy)
+
+        def _short_navigate(tx: float, ty: float) -> None:
+            """Closed-loop drive to a close target, reversing if needed.
+
+            Computes the heading error to the target; if the target is
+            more than 90° behind the robot, it drives in reverse (which
+            flips the differential-steering sign so the robot curves
+            toward the target while backing up). Stops within NAV_STOP_MM.
+            """
+            import time as _time
+
+            t0 = _time.monotonic()
+            while True:
+                if _time.monotonic() - t0 > NAV_TIMEOUT_S:
+                    print("📍 Short nav timeout")
+                    break
+
+                pose = self.cli.pose
+                cx, cy = pose.position.x, pose.position.y
+                ex = tx - cx
+                ey = ty - cy
+                d = math.hypot(ex, ey)
+                if d < NAV_STOP_MM:
+                    break
+
+                # Heading error to target, normalized to [-pi, pi].
+                cur_h = pose.rotation.angle_z.radians
+                err = heading - cur_h
+                while err > math.pi:
+                    err -= 2.0 * math.pi
+                while err < -math.pi:
+                    err += 2.0 * math.pi
+
+                reverse = abs(err) > math.pi / 2.0
+                if reverse:
+                    # Drive in reverse. The effective steering error is the
+                    # angle of the REAR direction toward the target
+                    # (err_rear = err - pi, normalized), and positive
+                    # err_rear wants positive omega (r > l), same as forward.
+                    if err > 0.0:
+                        err -= math.pi
+                    else:
+                        err += math.pi
+                    turn = err * NAV_TURN_FRAC * NAV_SPEED_MMPS
+                    l_speed = -NAV_SPEED_MMPS - turn
+                    r_speed = -NAV_SPEED_MMPS + turn
+                else:
+                    turn = err * NAV_TURN_FRAC * NAV_SPEED_MMPS
+                    l_speed = NAV_SPEED_MMPS - turn
+                    r_speed = NAV_SPEED_MMPS + turn
+
+                # Slow down as we get close so we don't overshoot.
+                slow = max(0.2, min(1.0, d / 40.0))
+                self.cli.drive_wheels(
+                    lwheel_speed=l_speed * slow,
+                    rwheel_speed=r_speed * slow,
+                )
+                _time.sleep(0.05)
+
+            self.cli.stop_all_motors()
+            print(f"📍 Arrived at ({tx:.0f}, {ty:.0f})")
+
         print(
             f"📍 Navigating to ({world_forward:.0f}, {world_left:.0f}) — "
             f"dist={dist:.0f}mm, heading={math.degrees(heading):.0f}°"
         )
 
-        # Use Cozmo's built-in path planner (in thread so camera keeps working)
-        target_pose = Pose(world_forward, world_left, 0, angle_z=Angle(radians=heading))
-
         def _nav_thread():
             try:
-                self.cli.go_to_pose(target_pose, relative_to_robot=False)
-                print("📍 Arrived at target")
+                if dist <= SHORT_DIST_MM:
+                    _short_navigate(world_forward, world_left)
+                else:
+                    # Use Cozmo's built-in path planner for longer hops.
+                    target_pose = Pose(
+                        world_forward,
+                        world_left,
+                        0,
+                        angle_z=Angle(radians=heading),
+                    )
+                    self.cli.go_to_pose(target_pose, relative_to_robot=False)
+                    print("📍 Arrived at target")
             except Exception as e:
                 print(f"📍 Navigation error: {e}")
 
