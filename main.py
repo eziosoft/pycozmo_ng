@@ -1088,9 +1088,12 @@ class VisionDisplay:
 
                 self.cli.stop_all_motors()
 
-                if docked:
-                    # Tires slip slightly when they contact the dock, so
-                    # reset the pose origin to make the dock the new (0,0,0).
+                # Always reset the origin when charging is detected — the
+                # tires slip when they contact the dock, so the pose is no
+                # longer trustworthy. Reset makes the dock the new (0,0,0)
+                # and updates _dock_pose for the next docking run.
+                if docked or _is_charging():
+                    print("🛟 Charging detected — resetting pose origin")
                     _time.sleep(0.2)
                     reset_pkt = pycozmo.protocol_encoder.SetOrigin(
                         pose_frame_id=self.cli.pose_frame_id + 1,
@@ -1100,6 +1103,8 @@ class VisionDisplay:
                     _time.sleep(0.5)
                     self._dock_pose = self.cli.pose
                     print("🛟 Docked and pose reset — dock is now origin")
+                elif not docked:
+                    print("🛟 Docking did not complete — no pose reset")
             except Exception as e:
                 print(f"🛟 Dock error: {e}")
 
