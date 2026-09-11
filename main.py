@@ -261,6 +261,7 @@ class VisionDisplay:
         # simultaneous connections (impossible due to firmware limit).
         # (COZMO-23)
         self._cube_cycler: Optional[CubeCycler] = None
+        self._cube_move_detectors: dict[int, CubeMoveDetector] = {}
         # Cube-measurement suppression while a cube is being relocated (COZMO-34).
         # Mapping: ids=set of cube_id being suppressed; fresh_frames=consecutive
         # re-detection frame count per cube; fresh_frames_needed=threshold.
