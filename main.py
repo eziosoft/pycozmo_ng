@@ -964,7 +964,7 @@ class VisionDisplay:
 
         DOCK_DRIVE_DIST = 150.0  # mm forward (away from dock)
         DOCK_REVERSE_SPEED = 80.0  # mm/s reverse speed
-        DOCK_STOP_DIST = 10.0  # mm — stop reversing when within this of dock
+        DOCK_STOP_DIST = 0.0  # mm — stop reversing when within this of dock
         DOCK_STALL_ITERS = 20  # stop after this many no-progress iterations
 
         dock = self._dock_pose
