@@ -945,8 +945,8 @@ class VisionDisplay:
     def _on_dock(self) -> None:
         """Handle 'z' keypress — drive robot back into the dock.
 
-        Assumes robot started at the dock. Drives 150mm forward, turns
-        180° to face the dock, then drives back to the start pose.
+        Assumes robot started at the dock. Drives 150mm forward (away
+        from the dock), then reverses straight back into the start pose.
         (COZMO-28)
         """
         if not self.cli:
@@ -963,28 +963,37 @@ class VisionDisplay:
         from pycozmo.util import Angle, Pose
 
         DOCK_DRIVE_DIST = 150.0  # mm forward (away from dock)
+        DOCK_SPEED = 80.0  # mm/s reverse speed
 
         dock = self._dock_pose
         dock_x = dock.position.x
         dock_y = dock.position.y
         dock_heading = dock.rotation.angle_z.radians
 
-        # Point 150mm in front of the dock (along the dock heading)
+        # Point 150mm in front of the dock (along the dock heading).
+        # The robot keeps heading dock_heading here (facing away from the
+        # dock) so the dock ends up directly behind it.
         turn_x = dock_x + DOCK_DRIVE_DIST * math.cos(dock_heading)
         turn_y = dock_y + DOCK_DRIVE_DIST * math.sin(dock_heading)
 
         def _dock_thread():
             try:
-                # Step 1: Drive to 150mm in front, then turn 180° to face dock
-                turn_pose = Pose(
-                    turn_x, turn_y, 0, angle_z=Angle(radians=dock_heading + math.pi)
-                )
+                # Step 1: Drive to 150mm in front, keeping the heading
+                turn_pose = Pose(turn_x, turn_y, 0, angle_z=Angle(radians=dock_heading))
                 print("🛟 Driving to 150mm in front of dock")
                 self.cli.go_to_pose(turn_pose, relative_to_robot=False)
                 _time.sleep(0.3)
 
-                # Step 2: Drive back into the dock
-                print("🛟 Driving back into dock")
+                # Step 2: Reverse straight back into the dock
+                print("🛟 Reversing into dock")
+                self.cli.drive_wheels(
+                    lwheel_speed=-DOCK_SPEED,
+                    rwheel_speed=-DOCK_SPEED,
+                    duration=DOCK_DRIVE_DIST / DOCK_SPEED,
+                )
+                _time.sleep(0.2)
+
+                # Step 3: Fine alignment to the exact dock pose
                 self.cli.go_to_pose(dock, relative_to_robot=False)
                 print("🛟 Docked")
             except Exception as e:
