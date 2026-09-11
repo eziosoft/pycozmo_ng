@@ -739,10 +739,11 @@ class VisionDisplay:
         t.start()
 
     def _on_approach_cube(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
-        """Handle cube click from browser — drive to cube and align with its face.
+        """Handle cube click from browser — two-step approach to align with cube wall.
 
-        cube_idx = 0-based cube index, cube_x/cube_y = world position (Anki frame).
-        Approaches from 80mm away, facing the cube. (COZMO-28)
+        Step 1: Navigate to 120mm from cube, perpendicular to wall.
+        Step 2: Navigate to 80mm from cube, same perpendicular line.
+        Both steps run in a thread so camera keeps working. (COZMO-28)
         """
         if not self.cli:
             print("📦 Approach: no robot connected")
@@ -750,16 +751,18 @@ class VisionDisplay:
 
         import math
         import threading
+        import time as _time
         from pycozmo.util import Pose, Angle
 
-        APPROACH_DIST = 80.0  # mm from cube center
+        STEP1_DIST = 120.0  # mm from cube center (first approach)
+        STEP2_DIST = 80.0  # mm from cube center (final alignment)
 
         # Current robot pose
         robot_pose = self.cli.pose
         robot_x = robot_pose.position.x
         robot_y = robot_pose.position.y
 
-        # Direction from robot to cube
+        # Direction from robot to cube (perpendicular to nearest wall)
         dx = cube_x - robot_x
         dy = cube_y - robot_y
         dist_to_cube = math.sqrt(dx * dx + dy * dy)
@@ -772,24 +775,39 @@ class VisionDisplay:
         ux = dx / dist_to_cube
         uy = dy / dist_to_cube
 
-        # Approach point: 80mm in front of cube (along robot-to-cube line)
-        approach_x = cube_x - ux * APPROACH_DIST
-        approach_y = cube_y - uy * APPROACH_DIST
-
-        # Heading: face the cube from the approach point
+        # Heading: face the cube
         heading = math.atan2(uy, ux)
 
-        print(
-            f"📦 Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f}) — "
-            f"approach from ({approach_x:.0f}, {approach_y:.0f}), "
-            f"heading={math.degrees(heading):.0f}°"
-        )
+        # Step 1: 120mm away
+        step1_x = cube_x - ux * STEP1_DIST
+        step1_y = cube_y - uy * STEP1_DIST
 
-        target_pose = Pose(approach_x, approach_y, 0, angle_z=Angle(radians=heading))
+        # Step 2: 80mm away (same line, closer)
+        step2_x = cube_x - ux * STEP2_DIST
+        step2_y = cube_y - uy * STEP2_DIST
+
+        print(f"📦 Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f})")
 
         def _nav_thread():
             try:
-                self.cli.go_to_pose(target_pose, relative_to_robot=False)
+                # Step 1: Drive to 120mm
+                pose1 = Pose(step1_x, step1_y, 0, angle_z=Angle(radians=heading))
+                print(f"📦 Step 1: driving to 120mm ({step1_x:.0f}, {step1_y:.0f})")
+                self.cli.go_to_pose(pose1, relative_to_robot=False)
+
+                # Small pause to settle
+                _time.sleep(0.3)
+
+                # Step 2: Drive to 80mm (re-check heading in case robot shifted)
+                robot_pose2 = self.cli.pose
+                dx2 = cube_x - robot_pose2.position.x
+                dy2 = cube_y - robot_pose2.position.y
+                heading2 = math.atan2(dy2, dx2)
+
+                pose2 = Pose(step2_x, step2_y, 0, angle_z=Angle(radians=heading2))
+                print(f"📦 Step 2: aligning to 80mm ({step2_x:.0f}, {step2_y:.0f})")
+                self.cli.go_to_pose(pose2, relative_to_robot=False)
+
                 print(f"📦 Aligned with cube {cube_idx + 1}")
             except Exception as e:
                 print(f"📦 Approach error: {e}")
