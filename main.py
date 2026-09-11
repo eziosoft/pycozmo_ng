@@ -816,6 +816,20 @@ class VisionDisplay:
         # Approach direction: along face normal (from cube toward robot)
         ux, uy = best_face[0], best_face[1]
 
+        # Ensure approach point is BETWEEN robot and cube, not behind cube
+        # Check if the face normal points toward the robot or away
+        approach_x = cube_x + ux * STEP1_DIST
+        approach_y = cube_y + uy * STEP1_DIST
+        dist_robot_to_approach = math.sqrt(
+            (approach_x - robot_x) ** 2 + (approach_y - robot_y) ** 2
+        )
+        dist_robot_to_cube = math.sqrt(
+            (cube_x - robot_x) ** 2 + (cube_y - robot_y) ** 2
+        )
+        if dist_robot_to_approach > dist_robot_to_cube:
+            # Face normal points away from robot — flip it
+            ux, uy = -ux, -uy
+
         # Heading: face the cube (opposite of approach direction)
         heading = math.atan2(-uy, -ux)
 
@@ -869,12 +883,25 @@ class VisionDisplay:
                                 best_dot2 = d
                                 best2 = n2d
                         if best2 is not None:
-                            ux, uy = best2[0], best2[1]
-                            step2_x = cube_x2 + ux * STEP2_DIST
-                            step2_y = cube_y2 + uy * STEP2_DIST
-                            heading2 = math.atan2(-uy, -ux)
+                            ux2, uy2 = best2[0], best2[1]
+                            # Ensure approach point is between robot and cube
+                            app2_x = cube_x2 + ux2 * STEP2_DIST
+                            app2_y = cube_y2 + uy2 * STEP2_DIST
+                            d_app = math.sqrt(
+                                (app2_x - rp.position.x) ** 2
+                                + (app2_y - rp.position.y) ** 2
+                            )
+                            d_cube = math.sqrt(
+                                (cube_x2 - rp.position.x) ** 2
+                                + (cube_y2 - rp.position.y) ** 2
+                            )
+                            if d_app > d_cube:
+                                ux2, uy2 = -ux2, -uy2
+                            step2_x = cube_x2 + ux2 * STEP2_DIST
+                            step2_y = cube_y2 + uy2 * STEP2_DIST
+                            heading2 = math.atan2(-uy2, -ux2)
                             print(
-                                f"📦 Updated: cube at ({cube_x2:.0f}, {cube_y2:.0f}) face=({ux:.2f}, {uy:.2f})"
+                                f"📦 Updated: cube at ({cube_x2:.0f}, {cube_y2:.0f}) face=({ux2:.2f}, {uy2:.2f})"
                             )
 
                 # Step 2: Drive to 80mm with updated data
