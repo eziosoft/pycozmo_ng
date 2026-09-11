@@ -852,7 +852,7 @@ class VisionDisplay:
         from pycozmo.util import Angle, Pose
 
         STEP1_DIST = 120.0  # mm from cube center (first approach)
-        STEP2_DIST = 80.0  # mm from cube center (final alignment)
+        STEP2_DIST = 100.0  # mm from cube center (final alignment)
         BACK_AWAY_DIST = 150.0  # mm from cube center (back away if too close)
         TOO_CLOSE = 100.0  # mm - if closer than this, back away first
 
