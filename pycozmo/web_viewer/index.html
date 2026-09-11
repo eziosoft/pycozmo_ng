@@ -147,6 +147,39 @@
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
+
+      // First: check if a cube was clicked
+      const cubeMeshes = [];
+      for (const [id, g] of Object.entries(cubeGroups)) {
+        g.traverse(child => {
+          if (child.isMesh) cubeMeshes.push(child);
+        });
+      }
+      const cubeHits = raycaster.intersectObjects(cubeMeshes);
+      if (cubeHits.length > 0) {
+        // Find which cube group was hit
+        let hitObj = cubeHits[0].object;
+        for (const [id, g] of Object.entries(cubeGroups)) {
+          if (g.children.includes(hitObj) || g === hitObj.parent) {
+            sendApproachCube(id);
+            return;
+          }
+        }
+        // Fallback: walk up to find cube group
+        let parent = hitObj.parent;
+        while (parent && !Object.values(cubeGroups).includes(parent)) {
+          parent = parent.parent;
+        }
+        if (parent) {
+          const cubeId = Object.keys(cubeGroups).find(k => cubeGroups[k] === parent);
+          if (cubeId) {
+            sendApproachCube(cubeId);
+            return;
+          }
+        }
+      }
+
+      // Second: ground plane click — navigate to point
       const hit = new THREE.Vector3();
       const intersected = raycaster.ray.intersectPlane(groundPlane, hit);
 
@@ -180,6 +213,15 @@
         ws.send(JSON.stringify({ type: 'navigate_to', x: sceneX, z: sceneZ }));
       } catch (e) {
         console.warn('navigate_to send failed', e);
+      }
+    }
+
+    function sendApproachCube(cubeId) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'approach_cube', cube_id: cubeId }));
+      } catch (e) {
+        console.warn('approach_cube send failed', e);
       }
     }
 

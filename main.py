@@ -676,8 +676,10 @@ class VisionDisplay:
         self._remote_control.start()
         self.web_viewer.set_control_listener(self._remote_control.update_keys)
         self.web_viewer.set_navigate_listener(self._on_navigate_to)
+        self.web_viewer.set_approach_listener(self._on_approach_cube)
         print("🎮 Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
         print("📍 Click-to-navigate enabled: click ground to drive there")
+        print("📦 Click cube to approach and align")
 
     def stop_remote_control(self) -> None:
         if hasattr(self, "_remote_control") and self._remote_control is not None:
@@ -732,6 +734,65 @@ class VisionDisplay:
                 print("📍 Arrived at target")
             except Exception as e:
                 print(f"📍 Navigation error: {e}")
+
+        t = threading.Thread(target=_nav_thread, daemon=True)
+        t.start()
+
+    def _on_approach_cube(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
+        """Handle cube click from browser — drive to cube and align with its face.
+
+        cube_idx = 0-based cube index, cube_x/cube_y = world position (Anki frame).
+        Approaches from 80mm away, facing the cube. (COZMO-28)
+        """
+        if not self.cli:
+            print("📦 Approach: no robot connected")
+            return
+
+        import math
+        import threading
+        from pycozmo.util import Pose, Angle
+
+        APPROACH_DIST = 80.0  # mm from cube center
+
+        # Current robot pose
+        robot_pose = self.cli.pose
+        robot_x = robot_pose.position.x
+        robot_y = robot_pose.position.y
+
+        # Direction from robot to cube
+        dx = cube_x - robot_x
+        dy = cube_y - robot_y
+        dist_to_cube = math.sqrt(dx * dx + dy * dy)
+
+        if dist_to_cube < 1:
+            print("📦 Already at cube")
+            return
+
+        # Unit vector from robot to cube
+        ux = dx / dist_to_cube
+        uy = dy / dist_to_cube
+
+        # Approach point: 80mm in front of cube (along robot-to-cube line)
+        approach_x = cube_x - ux * APPROACH_DIST
+        approach_y = cube_y - uy * APPROACH_DIST
+
+        # Heading: face the cube from the approach point
+        heading = math.atan2(uy, ux)
+
+        print(
+            f"📦 Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f}) — "
+            f"approach from ({approach_x:.0f}, {approach_y:.0f}), "
+            f"heading={math.degrees(heading):.0f}°"
+        )
+
+        target_pose = Pose(approach_x, approach_y, 0, angle_z=Angle(radians=heading))
+
+        def _nav_thread():
+            try:
+                self.cli.go_to_pose(target_pose, relative_to_robot=False)
+                print(f"📦 Aligned with cube {cube_idx + 1}")
+            except Exception as e:
+                print(f"📦 Approach error: {e}")
 
         t = threading.Thread(target=_nav_thread, daemon=True)
         t.start()

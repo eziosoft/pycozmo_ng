@@ -130,6 +130,12 @@ class WebViewerServer:
         # main.py) receives world-frame coordinates. (COZMO-28)
         self._navigate_listener = None
 
+        # Cube approach listener. The browser sends a
+        # ``{"type": "approach_cube", "cube_id": "cube_1"}`` message on
+        # cube click; the listener receives (cube_id_int, cube_pos_world).
+        # (COZMO-28)
+        self._approach_listener = None
+
         # Validate that at least websockets is available
         if not HAS_WEBSOCKETS:
             raise ImportError(
@@ -285,6 +291,16 @@ class WebViewerServer:
         """
         self._navigate_listener = callback
 
+    def set_approach_listener(self, callback) -> None:
+        """Subscribe to browser cube-click events.
+
+        ``callback(cube_id_int, cube_pos_world_x, cube_pos_world_y)``
+        is invoked whenever a ``{"type": "approach_cube", "cube_id": ...}``
+        message arrives. Looks up the cube's current world position from
+        the world map. Pass ``None`` to unsubscribe. (COZMO-28)
+        """
+        self._approach_listener = callback
+
     # -- internal -----------------------------------------------------------
 
     def _build_state_json(self) -> str:
@@ -412,6 +428,26 @@ class WebViewerServer:
                             listener(None)
                         except Exception as e:  # noqa: BLE001
                             print(f"⚠️  navigate cancel failed: {e}")
+                elif mtype == "approach_cube":
+                    # Cube click from browser — look up cube position and
+                    # forward to listener. (COZMO-28)
+                    listener = self._approach_listener
+                    if listener is not None:
+                        try:
+                            cube_id_str = msg.get("cube_id", "")
+                            # "cube_1" -> 0 (0-indexed for world map)
+                            cube_idx = int(cube_id_str.replace("cube_", "")) - 1
+                            world = self.world_map.get_world_state()
+                            cubes = world.get("cubes", {})
+                            if cube_idx in cubes:
+                                pos = cubes[cube_idx]["position"]
+                                listener(cube_idx, float(pos[0]), float(pos[1]))
+                            else:
+                                print(
+                                    f"⚠️  approach_cube: {cube_id_str} not in world map"
+                                )
+                        except Exception as e:  # noqa: BLE001
+                            print(f"⚠️  approach listener failed: {e}")
         finally:
             self._clients.discard(websocket)
             self._fire_active_clients_change()
