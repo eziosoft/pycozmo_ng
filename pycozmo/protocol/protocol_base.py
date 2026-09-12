@@ -23,7 +23,6 @@ __all__ = [
 
 
 class Struct(ABC):
-
     @abstractmethod
     def __len__(self):
         raise NotImplementedError
@@ -52,7 +51,6 @@ class Struct(ABC):
 
 
 class Packet(Struct, ABC):
-
     __slots__ = (
         "_type",
         "_id",
@@ -83,14 +81,16 @@ class Packet(Struct, ABC):
         self._id = value
 
     def is_oob(self) -> bool:
-        res = self.type.value >= PacketType.EVENT.value     # type: bool
+        res = self.type.value >= PacketType.EVENT.value  # type: bool
         return res
 
     def is_from_robot(self) -> bool:
         if self.id is not None:
             res = self.id >= FIRST_ROBOT_PACKET_ID
         else:
-            res = self.type == PacketType.CONNECT or (self.type == PacketType.PING and self.seq > 0)
+            res = self.type == PacketType.CONNECT or (
+                self.type == PacketType.PING and self.seq > 0
+            )
         return res
 
     def is_from_engine(self) -> bool:
@@ -98,12 +98,11 @@ class Packet(Struct, ABC):
 
 
 class UnknownPacket(Packet):
+    __slots__ = ("_data",)
 
-    __slots__ = (
-        "_data",
-    )
-
-    def __init__(self, packet_type: PacketType, data: bytes, packet_id: Optional[int] = None):
+    def __init__(
+        self, packet_type: PacketType, data: bytes, packet_id: Optional[int] = None
+    ):
         super().__init__(packet_type, packet_id)
         self.data = data
 
@@ -120,7 +119,10 @@ class UnknownPacket(Packet):
 
     def __repr__(self):
         return "{type_name}({type:02x}, {data})".format(
-            type=self.type.value, type_name=type(self).__name__, data=hex_dump(data=self._data))
+            type=self.type.value,
+            type_name=type(self).__name__,
+            data=hex_dump(data=self._data),
+        )
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -142,7 +144,6 @@ class UnknownPacket(Packet):
 
 
 class UnknownCommand(UnknownPacket):
-
     def __init__(self, packet_id: int, data: bytes = b""):
         super().__init__(PacketType.COMMAND, data, packet_id=packet_id)
 
@@ -158,11 +159,11 @@ class UnknownCommand(UnknownPacket):
 
     def __repr__(self):
         return "{type}({id:02x}, {data})".format(
-            id=self.id, type=type(self).__name__, data=hex_dump(data=self._data))
+            id=self.id, type=type(self).__name__, data=hex_dump(data=self._data)
+        )
 
 
 class UnknownEvent(UnknownPacket):
-
     def __init__(self, packet_id: int, data: bytes = b""):
         super().__init__(PacketType.EVENT, data, packet_id=packet_id)
 
@@ -178,4 +179,5 @@ class UnknownEvent(UnknownPacket):
 
     def __repr__(self):
         return "{type}({id:02x}, {data})".format(
-            id=self.id, type=type(self).__name__, data=hex_dump(data=self._data))
+            id=self.id, type=type(self).__name__, data=hex_dump(data=self._data)
+        )

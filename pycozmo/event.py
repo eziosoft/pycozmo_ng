@@ -14,7 +14,6 @@ from . import robot
 
 __all__ = [
     "Event",
-
     "EvtRobotFound",
     "EvtRobotReady",
     "EvtPacketReceived",
@@ -47,39 +46,38 @@ __all__ = [
     "EvtCubeDetected",
     "EvtCubeObserved",
     "EvtCubeLost",
-
     "STATUS_EVENTS",
-
     "Handler",
     "Dispatcher",
 ]
 
 
 class Event(object):
-    """ Base class for events. """
+    """Base class for events."""
 
 
 class Handler(object):
-    """ Event handler class. """
+    """Event handler class."""
+
     def __init__(self, f: Callable, one_shot: bool):
         self.f = f
         self.one_shot = one_shot
 
 
 class EvtRobotFound(Event):
-    """ Triggered when the robot has been first connected. """
+    """Triggered when the robot has been first connected."""
 
 
 class EvtRobotReady(Event):
-    """ Triggered when the robot has been initialized and is ready for commands. """
+    """Triggered when the robot has been initialized and is ready for commands."""
 
 
 class EvtPacketReceived(Event):
-    """ Triggered when a new packet has been received from the robot. """
+    """Triggered when a new packet has been received from the robot."""
 
 
 class EvtNewRawCameraImage(Event):
-    """ Triggered when a new raw image is received from the robot's camera. """
+    """Triggered when a new raw image is received from the robot's camera."""
 
 
 class EvtAnnotatedCameraImage(Event):
@@ -192,11 +190,11 @@ STATUS_EVENTS = {
 
 
 class EvtRobotStateUpdated(Event):
-    """ Triggered when a new robot state is received. """
+    """Triggered when a new robot state is received."""
 
 
 class EvtRobotOrientationChange(Event):
-    """ Triggered when the robot orientation changes. """
+    """Triggered when the robot orientation changes."""
 
 
 class EvtAudioCompleted(Event):
@@ -222,6 +220,7 @@ class EvtCubeDetected(Event):
     Attributes:
         detections: List of CubeDetection objects
     """
+
     pass
 
 
@@ -232,6 +231,7 @@ class EvtCubeObserved(Event):
     Attributes:
         detections: List of CubeDetection objects
     """
+
     pass
 
 
@@ -242,11 +242,12 @@ class EvtCubeLost(Event):
     Attributes:
         cube_id: ID of the lost cube
     """
+
     pass
 
 
 class Dispatcher(object):
-    """ Event dispatcher class. """
+    """Event dispatcher class."""
 
     def __init__(self):
         super().__init__()

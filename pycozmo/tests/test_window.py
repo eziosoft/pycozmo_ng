@@ -1,4 +1,3 @@
-
 import unittest
 
 from pycozmo.window import BaseWindow, ReceiveWindow, SendWindow
@@ -6,7 +5,6 @@ from pycozmo.exception import NoSpace
 
 
 class TestBaseWindowCreate(unittest.TestCase):
-
     def test_create_1(self):
         w = BaseWindow(1)
         self.assertEqual(w.size, 1)
@@ -43,7 +41,6 @@ class TestBaseWindowCreate(unittest.TestCase):
 
 
 class TestBaseWindowIsValidSeq1(unittest.TestCase):
-
     def setUp(self):
         self.w = BaseWindow(1)
 
@@ -64,7 +61,6 @@ class TestBaseWindowIsValidSeq1(unittest.TestCase):
 
 
 class TestBaseWindowIsValidSeq4(unittest.TestCase):
-
     def setUp(self):
         self.w = BaseWindow(4)
 
@@ -85,7 +81,6 @@ class TestBaseWindowIsValidSeq4(unittest.TestCase):
 
 
 class TestBaseWindowIsValidSeq16(unittest.TestCase):
-
     def setUp(self):
         self.w = BaseWindow(16)
 
@@ -106,7 +101,6 @@ class TestBaseWindowIsValidSeq16(unittest.TestCase):
 
 
 class TestReceiveWindow(unittest.TestCase):
-
     def setUp(self):
         self.w = ReceiveWindow(3, size=4)
 
@@ -179,7 +173,6 @@ class TestReceiveWindow(unittest.TestCase):
 
 
 class TestSendWindow(unittest.TestCase):
-
     def setUp(self):
         self.w = SendWindow(3, size=4)
 

@@ -1,5 +1,6 @@
 """Minimal chunk module shim for Python 3.13+ (stdlib chunk was removed)."""
 
+
 class Chunk:
     def __init__(self, file, align=True, bigendian=True, inclheader=False):
         self.closed = False
@@ -9,7 +10,7 @@ class Chunk:
         self._chunk_name = file.read(4)
         if not inclheader:
             data_size = file.read(4)
-            self._size = int.from_bytes(data_size, 'big' if bigendian else 'little')
+            self._size = int.from_bytes(data_size, "big" if bigendian else "little")
         else:
             self._size = 0
             self._size -= 8

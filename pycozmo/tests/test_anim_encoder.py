@@ -1,4 +1,3 @@
-
 import json
 import io
 import unittest
@@ -7,7 +6,6 @@ from pycozmo.anim_encoder import AnimClips
 
 
 class TestClips(unittest.TestCase):
-
     def test_no_clips(self):
         data = json.loads("""
 {
@@ -33,7 +31,6 @@ class TestClips(unittest.TestCase):
 
 
 class TestClip(unittest.TestCase):
-
     def test_empty_clip(self):
         data = json.loads("""
 {
@@ -75,7 +72,6 @@ class TestClip(unittest.TestCase):
 
 
 class TestHeadAngle(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {
@@ -130,7 +126,6 @@ class TestHeadAngle(unittest.TestCase):
 
 
 class TestLiftHeight(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {
@@ -185,7 +180,6 @@ class TestLiftHeight(unittest.TestCase):
 
 
 class TestRecordHeading(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {
@@ -231,7 +225,6 @@ class TestRecordHeading(unittest.TestCase):
 
 
 class TestBodyMotion(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {
@@ -286,7 +279,6 @@ class TestBodyMotion(unittest.TestCase):
 
 
 class TestBackpackLights(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {
@@ -349,7 +341,13 @@ class TestBackpackLights(unittest.TestCase):
         keyframe = clips.clips[0].keyframes[0]
         self.assertEqual(keyframe.trigger_time_ms, 1)
         self.assertEqual(keyframe.duration_ms, 2)
-        for led in (keyframe.left, keyframe.front, keyframe.middle, keyframe.back, keyframe.right):
+        for led in (
+            keyframe.left,
+            keyframe.front,
+            keyframe.middle,
+            keyframe.back,
+            keyframe.right,
+        ):
             self.assertEqual(led.red, 1)
             self.assertEqual(led.green, 2)
             self.assertEqual(led.blue, 3)
@@ -364,7 +362,13 @@ class TestBackpackLights(unittest.TestCase):
         keyframe = clips.clips[0].keyframes[0]
         self.assertEqual(keyframe.trigger_time_ms, 1)
         self.assertEqual(keyframe.duration_ms, 2)
-        for led in (keyframe.left, keyframe.front, keyframe.middle, keyframe.back, keyframe.right):
+        for led in (
+            keyframe.left,
+            keyframe.front,
+            keyframe.middle,
+            keyframe.back,
+            keyframe.right,
+        ):
             self.assertEqual(led.red, 1)
             self.assertEqual(led.green, 2)
             self.assertEqual(led.blue, 3)
@@ -375,7 +379,6 @@ class TestBackpackLights(unittest.TestCase):
 
 
 class TestTurnToRecordedHeading(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {
@@ -445,7 +448,6 @@ class TestTurnToRecordedHeading(unittest.TestCase):
 
 
 class TestFaceAnimation(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {
@@ -494,7 +496,6 @@ class TestFaceAnimation(unittest.TestCase):
 
 
 class TestProceduralFace(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {
@@ -603,7 +604,6 @@ class TestProceduralFace(unittest.TestCase):
 
 
 class TestRobotAudio(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {
@@ -665,7 +665,6 @@ class TestRobotAudio(unittest.TestCase):
 
 
 class TestEvent(unittest.TestCase):
-
     def test_single(self):
         data = json.loads("""
 {

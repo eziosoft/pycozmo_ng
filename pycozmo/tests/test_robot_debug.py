@@ -1,4 +1,3 @@
-
 import unittest
 import logging
 
@@ -6,7 +5,6 @@ from pycozmo.robot_debug import get_log_level, get_debug_message
 
 
 class TestLogLevel(unittest.TestCase):
-
     def test_invalid(self):
         level = get_log_level(-1)
         self.assertEqual(level, logging.DEBUG)
@@ -33,7 +31,6 @@ class TestLogLevel(unittest.TestCase):
 
 
 class TestDebugMessage(unittest.TestCase):
-
     def test_no_name_no_format(self):
         msg = get_debug_message(-1, -1, [])
         self.assertEqual(msg, "")

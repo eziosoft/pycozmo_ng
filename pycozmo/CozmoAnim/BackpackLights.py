@@ -4,8 +4,9 @@
 
 import flatbuffers
 
+
 class BackpackLights(object):
-    __slots__ = ['_tab']
+    __slots__ = ["_tab"]
 
     @classmethod
     def GetRootAsBackpackLights(cls, buf, offset):
@@ -22,14 +23,18 @@ class BackpackLights(object):
     def TriggerTimeMs(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Uint32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Uint32Flags, o + self._tab.Pos
+            )
         return 0
 
     # BackpackLights
     def DurationTimeMs(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Uint32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Uint32Flags, o + self._tab.Pos
+            )
         return 0
 
     # BackpackLights
@@ -37,7 +42,10 @@ class BackpackLights(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
         if o != 0:
             a = self._tab.Vector(o)
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags,
+                a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4),
+            )
         return 0
 
     # BackpackLights
@@ -59,7 +67,10 @@ class BackpackLights(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             a = self._tab.Vector(o)
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags,
+                a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4),
+            )
         return 0
 
     # BackpackLights
@@ -81,7 +92,10 @@ class BackpackLights(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             a = self._tab.Vector(o)
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags,
+                a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4),
+            )
         return 0
 
     # BackpackLights
@@ -103,7 +117,10 @@ class BackpackLights(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
         if o != 0:
             a = self._tab.Vector(o)
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags,
+                a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4),
+            )
         return 0
 
     # BackpackLights
@@ -125,7 +142,10 @@ class BackpackLights(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(16))
         if o != 0:
             a = self._tab.Vector(o)
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags,
+                a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4),
+            )
         return 0
 
     # BackpackLights
@@ -142,17 +162,68 @@ class BackpackLights(object):
             return self._tab.VectorLen(o)
         return 0
 
-def BackpackLightsStart(builder): builder.StartObject(7)
-def BackpackLightsAddTriggerTimeMs(builder, triggerTimeMs): builder.PrependUint32Slot(0, triggerTimeMs, 0)
-def BackpackLightsAddDurationTimeMs(builder, durationTimeMs): builder.PrependUint32Slot(1, durationTimeMs, 0)
-def BackpackLightsAddLeft(builder, Left): builder.PrependUOffsetTRelativeSlot(2, flatbuffers.number_types.UOffsetTFlags.py_type(Left), 0)
-def BackpackLightsStartLeftVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def BackpackLightsAddRight(builder, Right): builder.PrependUOffsetTRelativeSlot(3, flatbuffers.number_types.UOffsetTFlags.py_type(Right), 0)
-def BackpackLightsStartRightVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def BackpackLightsAddFront(builder, Front): builder.PrependUOffsetTRelativeSlot(4, flatbuffers.number_types.UOffsetTFlags.py_type(Front), 0)
-def BackpackLightsStartFrontVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def BackpackLightsAddMiddle(builder, Middle): builder.PrependUOffsetTRelativeSlot(5, flatbuffers.number_types.UOffsetTFlags.py_type(Middle), 0)
-def BackpackLightsStartMiddleVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def BackpackLightsAddBack(builder, Back): builder.PrependUOffsetTRelativeSlot(6, flatbuffers.number_types.UOffsetTFlags.py_type(Back), 0)
-def BackpackLightsStartBackVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def BackpackLightsEnd(builder): return builder.EndObject()
+
+def BackpackLightsStart(builder):
+    builder.StartObject(7)
+
+
+def BackpackLightsAddTriggerTimeMs(builder, triggerTimeMs):
+    builder.PrependUint32Slot(0, triggerTimeMs, 0)
+
+
+def BackpackLightsAddDurationTimeMs(builder, durationTimeMs):
+    builder.PrependUint32Slot(1, durationTimeMs, 0)
+
+
+def BackpackLightsAddLeft(builder, Left):
+    builder.PrependUOffsetTRelativeSlot(
+        2, flatbuffers.number_types.UOffsetTFlags.py_type(Left), 0
+    )
+
+
+def BackpackLightsStartLeftVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def BackpackLightsAddRight(builder, Right):
+    builder.PrependUOffsetTRelativeSlot(
+        3, flatbuffers.number_types.UOffsetTFlags.py_type(Right), 0
+    )
+
+
+def BackpackLightsStartRightVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def BackpackLightsAddFront(builder, Front):
+    builder.PrependUOffsetTRelativeSlot(
+        4, flatbuffers.number_types.UOffsetTFlags.py_type(Front), 0
+    )
+
+
+def BackpackLightsStartFrontVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def BackpackLightsAddMiddle(builder, Middle):
+    builder.PrependUOffsetTRelativeSlot(
+        5, flatbuffers.number_types.UOffsetTFlags.py_type(Middle), 0
+    )
+
+
+def BackpackLightsStartMiddleVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def BackpackLightsAddBack(builder, Back):
+    builder.PrependUOffsetTRelativeSlot(
+        6, flatbuffers.number_types.UOffsetTFlags.py_type(Back), 0
+    )
+
+
+def BackpackLightsStartBackVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def BackpackLightsEnd(builder):
+    return builder.EndObject()

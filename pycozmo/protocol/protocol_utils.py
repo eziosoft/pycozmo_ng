@@ -16,14 +16,12 @@ __all__ = [
     "validate_farray",
     "validate_varray",
     "validate_string",
-
     "get_size",
     "get_farray_size",
     "get_varray_size",
     "get_string_size",
     "get_object_size",
     "get_object_farray_size",
-
     "BinaryReader",
     "BinaryWriter",
 ]
@@ -46,7 +44,11 @@ def validate_float(name, value):
     try:
         value = float(value)
     except ValueError:
-        raise ValueError("{name} must be float. Got {type}.".format(name=name, type=type(value).__name__))
+        raise ValueError(
+            "{name} must be float. Got {type}.".format(
+                name=name, type=type(value).__name__
+            )
+        )
     return value
 
 
@@ -54,7 +56,11 @@ def validate_bool(name, value):
     try:
         value = bool(value)
     except ValueError:
-        raise ValueError("{name} must be bool. Got {type}.".format(name=name, type=type(value).__name__))
+        raise ValueError(
+            "{name} must be bool. Got {type}.".format(
+                name=name, type=type(value).__name__
+            )
+        )
     return value
 
 
@@ -62,17 +68,29 @@ def validate_integer(name, value, minimum, maximum):
     try:
         value = int(value)
     except ValueError:
-        raise ValueError("{name} must be an integer. Got a {type}.".format(name=name, type=type(value).__name__))
+        raise ValueError(
+            "{name} must be an integer. Got a {type}.".format(
+                name=name, type=type(value).__name__
+            )
+        )
     if value < minimum or value > maximum:
-        raise ValueError("{name} must be between {minimum} and {maximum}. Got {value}.".format(
-            name=name, minimum=minimum, maximum=maximum, value=value))
+        raise ValueError(
+            "{name} must be between {minimum} and {maximum}. Got {value}.".format(
+                name=name, minimum=minimum, maximum=maximum, value=value
+            )
+        )
     return value
 
 
 def validate_object(name, value, expected_type):
     if not isinstance(value, expected_type):
-        raise ValueError("{name} must be a {expected_type}. Got a {value_type}.".format(
-            name=name, expected_type=expected_type.__name__, value_type=type(value).__name__))
+        raise ValueError(
+            "{name} must be a {expected_type}. Got a {value_type}.".format(
+                name=name,
+                expected_type=expected_type.__name__,
+                value_type=type(value).__name__,
+            )
+        )
     return value
 
 
@@ -81,16 +99,25 @@ def validate_farray(name, value, length, element_validation):
         try:
             value = tuple(value)
         except ValueError:
-            raise ValueError("{name} must be a sequence. Got a {type}.".format(name=name, type=type(value).__name__))
+            raise ValueError(
+                "{name} must be a sequence. Got a {type}.".format(
+                    name=name, type=type(value).__name__
+                )
+            )
     if len(value) != length:
-        raise ValueError(("{name} must be a sequence of length {expected_length}. "
-                          "Got a sequence of length {value_length}.").format(
-            name=name, expected_length=length, value_length=len(value)))
+        raise ValueError(
+            (
+                "{name} must be a sequence of length {expected_length}. "
+                "Got a sequence of length {value_length}."
+            ).format(name=name, expected_length=length, value_length=len(value))
+        )
     if isinstance(value, (bytes, bytearray)):
         # Do not validate byte arrays.
         res = value
     else:
-        res = [element_validation((name, i), element) for i, element in enumerate(value)]
+        res = [
+            element_validation((name, i), element) for i, element in enumerate(value)
+        ]
     return res
 
 
@@ -99,55 +126,69 @@ def validate_varray(name, value, maximum_length, element_validation):
         try:
             value = tuple(value)
         except ValueError:
-            raise ValueError("{name} must be a sequence. Got a {type}.".format(name=name, type=type(value).__name__))
+            raise ValueError(
+                "{name} must be a sequence. Got a {type}.".format(
+                    name=name, type=type(value).__name__
+                )
+            )
     if len(value) > maximum_length:
-        raise ValueError(("{name} must be a sequence with length less than or equal to {maximum_length}. "
-                          "Got a sequence of length {value_length}.").format(
-            name=name, maximum_length=maximum_length, value_length=len(value)))
+        raise ValueError(
+            (
+                "{name} must be a sequence with length less than or equal to {maximum_length}. "
+                "Got a sequence of length {value_length}."
+            ).format(name=name, maximum_length=maximum_length, value_length=len(value))
+        )
     if isinstance(value, (bytes, bytearray)):
         # Do not validate byte arrays.
         res = value
     else:
-        res = [element_validation((name, i), element) for i, element in enumerate(value)]
+        res = [
+            element_validation((name, i), element) for i, element in enumerate(value)
+        ]
     return res
 
 
 def validate_string(name, value, maximum_length):
     if len(value) > maximum_length:
-        raise ValueError(("{name} must be a string with less than or equal to {maximum_length}. "
-                          "Got a string of length {value_length}.").format(
-            name=name, maximum_length=maximum_length, value_length=len(value)))
+        raise ValueError(
+            (
+                "{name} must be a string with less than or equal to {maximum_length}. "
+                "Got a string of length {value_length}."
+            ).format(name=name, maximum_length=maximum_length, value_length=len(value))
+        )
     return value
 
 
 def get_size(fmt):
-    """ Figures out the size of a value with the given format. """
+    """Figures out the size of a value with the given format."""
     return _get_struct(fmt, 1).size
 
 
 def get_farray_size(fmt, length):
-    """ Figures out the size of a fixed array with given format. """
+    """Figures out the size of a fixed array with given format."""
     return _get_struct(fmt, length).size
 
 
 def get_varray_size(value, length_format, data_format):
-    """ Figures out the size of a variable-length array with given format. """
-    return _get_struct(length_format, 1).size + _get_struct(data_format, len(value)).size
+    """Figures out the size of a variable-length array with given format."""
+    return (
+        _get_struct(length_format, 1).size + _get_struct(data_format, len(value)).size
+    )
 
 
 def get_string_size(value, length_format):
-    """ Figures out the size of a string with given length format. """
-    buf = value.encode('utf_8')
-    return _get_struct(length_format, 1).size + _get_struct('s', len(buf)).size
+    """Figures out the size of a string with given length format."""
+    buf = value.encode("utf_8")
+    return _get_struct(length_format, 1).size + _get_struct("s", len(buf)).size
 
 
 def get_object_size(value):
-    """ Figures out the size of a given object. """
+    """Figures out the size of a given object."""
     return len(value)
 
 
 def get_object_farray_size(value, length):
-    """ Figures out the size of a given fixed-length object sequence. """
+    """Figures out the size of a given fixed-length object sequence."""
     if len(value) != length:
         raise ValueError("The given fixed-length sequence has the wrong length.")
     if not value:
@@ -157,7 +198,7 @@ def get_object_farray_size(value, length):
 
 
 class BinaryReader(object):
-    """ Used to read in a stream of binary data, keeping track of the current position. """
+    """Used to read in a stream of binary data, keeping track of the current position."""
 
     def __init__(self, buffer: bytes, offset: int = 0):
         self._buffer = buffer
@@ -182,66 +223,72 @@ class BinaryReader(object):
         self._index = offset
 
     def tell(self):
-        """ Returns the current stream position as an offset within the buffer. """
+        """Returns the current stream position as an offset within the buffer."""
         return self._index
 
     def read(self, fmt):
-        """ Reads in a single value of the given format. """
+        """Reads in a single value of the given format."""
         return self.read_farray(fmt, 1)[0]
 
     def read_farray(self, fmt, length):
-        """ Reads in a fixed-length array of the given format and length. """
+        """Reads in a fixed-length array of the given format and length."""
         if fmt == "B" and length > 1:
             if self._index + length > len(self._buffer):
-                raise IndexError('Buffer not large enough to read serialized message. Received {0} bytes.'.format(
-                    len(self._buffer)))
-            result = self._buffer[self._index:self._index+length]
+                raise IndexError(
+                    "Buffer not large enough to read serialized message. Received {0} bytes.".format(
+                        len(self._buffer)
+                    )
+                )
+            result = self._buffer[self._index : self._index + length]
             self._index += length
         else:
             reader = _get_struct(fmt, length)
             if self._index + reader.size > len(self._buffer):
-                raise IndexError('Buffer not large enough to read serialized message. Received {0} bytes.'.format(
-                    len(self._buffer)))
+                raise IndexError(
+                    "Buffer not large enough to read serialized message. Received {0} bytes.".format(
+                        len(self._buffer)
+                    )
+                )
             result = reader.unpack_from(self._buffer, self._index)
             self._index += reader.size
         return result
 
     def read_varray(self, data_format, length_format):
-        """ Reads in a variable-length array with the given length format and data format. """
+        """Reads in a variable-length array with the given length format and data format."""
         length = self.read(length_format)
         return self.read_farray(data_format, length)
 
     def read_string(self, length_format):
-        """ Reads in a variable-length string with the given length format. """
+        """Reads in a variable-length string with the given length format."""
         length = self.read(length_format)
-        bs = self.read_farray('s', length)[0]
-        return bs.decode('utf_8')
+        bs = self.read_farray("s", length)[0]
+        return bs.decode("utf_8")
 
     def read_string_farray(self, string_length_format, array_length):
-        """ Reads in a fixed-length array of variable-length strings with the given length format. """
+        """Reads in a fixed-length array of variable-length strings with the given length format."""
         return [self.read_string(string_length_format) for _ in range(array_length)]
 
     def read_string_varray(self, string_length_format, array_length_format):
-        """ Reads in a variable-length array of variable-length strings with the given length format. """
+        """Reads in a variable-length array of variable-length strings with the given length format."""
         array_length = self.read(array_length_format)
         return [self.read_string(string_length_format) for _ in range(array_length)]
 
     def read_object(self, from__reader_method):
-        """ Reads in an object according to the given method. """
+        """Reads in an object according to the given method."""
         return from__reader_method(self)
 
     def read_object_farray(self, from__reader_method, length):
-        """ Reads in a fixed-length object sequence according to the given method. """
+        """Reads in a fixed-length object sequence according to the given method."""
         return [from__reader_method(self) for _ in range(length)]
 
     def read_object_varray(self, from__reader_method, length_format):
-        """ Reads in a variable-length object sequence according to the given method. """
+        """Reads in a variable-length object sequence according to the given method."""
         length = self.read(length_format)
         return [from__reader_method(self) for _ in range(length)]
 
 
 class BinaryWriter(object):
-    """ Used to write out a stream of binary data. """
+    """Used to write out a stream of binary data."""
 
     def __init__(self):
         self._buffer = []
@@ -256,60 +303,60 @@ class BinaryWriter(object):
         return b"".join(self._buffer)
 
     def write_bytes(self, value: bytes) -> None:
-        """ Writes out a byte sequence. """
+        """Writes out a byte sequence."""
         self._buffer.append(value)
 
     def write(self, value, fmt):
-        """ Writes out a single value of the given format. """
+        """Writes out a single value of the given format."""
         self.write_farray((value,), fmt, 1)
 
     def write_farray(self, value, fmt, length):
-        """ Writes out a fixed-length array of the given format and length. """
+        """Writes out a fixed-length array of the given format and length."""
         if fmt == "B" and isinstance(value, (bytes, bytearray)):
             if len(value) != length:
-                raise ValueError('The given byte sequence has the wrong length.')
+                raise ValueError("The given byte sequence has the wrong length.")
             self._buffer.append(value)
         else:
             writer = _get_struct(fmt, length)
             self._buffer.append(writer.pack(*value))
 
     def write_varray(self, value, data_format, length_format):
-        """ Writes out a variable-length array with the given length format and data format. """
+        """Writes out a variable-length array with the given length format and data format."""
         self.write(len(value), length_format)
         self.write_farray(value, data_format, len(value))
 
     def write_string(self, value, length_format):
-        """ Writes out a variable-length string with the given length format. """
-        bs = value.encode('utf_8')
+        """Writes out a variable-length string with the given length format."""
+        bs = value.encode("utf_8")
         self.write(len(bs), length_format)
-        self.write_farray((bs,), 's', len(bs))
+        self.write_farray((bs,), "s", len(bs))
 
     def write_string_farray(self, value, string_length_format, array_length):
-        """ Writes out a fixed-length array of variable-length strings with the given length format. """
+        """Writes out a fixed-length array of variable-length strings with the given length format."""
         if len(value) != array_length:
-            raise ValueError('The given fixed-length sequence has the wrong length.')
+            raise ValueError("The given fixed-length sequence has the wrong length.")
         for element in value:
             self.write_string(element, string_length_format)
 
     def write_string_varray(self, value, string_length_format, array_length_format):
-        """ Writes out a variable-length array of variable-length strings with the given length format. """
+        """Writes out a variable-length array of variable-length strings with the given length format."""
         self.write(len(value), array_length_format)
         for element in value:
             self.write_string(element, string_length_format)
 
     def write_object(self, value):
-        """ Writes out an object that supports a to_writer() method. """
+        """Writes out an object that supports a to_writer() method."""
         value.to_writer(self)
 
     def write_object_farray(self, value, length):
-        """ Writes out a fixed-length object sequence that supports a to_writer() method. """
+        """Writes out a fixed-length object sequence that supports a to_writer() method."""
         if len(value) != length:
-            raise ValueError('The given fixed-length sequence has the wrong length.')
+            raise ValueError("The given fixed-length sequence has the wrong length.")
         for element in value:
             element.to_writer(self)
 
     def write_object_varray(self, value, length_format):
-        """ Writes out a variable-length object sequence that supports a to_writer() method. """
+        """Writes out a variable-length object sequence that supports a to_writer() method."""
         self.write(len(value), length_format)
         for element in value:
             element.to_writer(self)

@@ -4,8 +4,9 @@
 
 import flatbuffers
 
+
 class ProceduralFace(object):
-    __slots__ = ['_tab']
+    __slots__ = ["_tab"]
 
     @classmethod
     def GetRootAsProceduralFace(cls, buf, offset):
@@ -22,42 +23,54 @@ class ProceduralFace(object):
     def TriggerTimeMs(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Uint32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Uint32Flags, o + self._tab.Pos
+            )
         return 0
 
     # ProceduralFace
     def FaceAngle(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags, o + self._tab.Pos
+            )
         return 0.0
 
     # ProceduralFace
     def FaceCenterX(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags, o + self._tab.Pos
+            )
         return 0.0
 
     # ProceduralFace
     def FaceCenterY(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags, o + self._tab.Pos
+            )
         return 0.0
 
     # ProceduralFace
     def FaceScaleX(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags, o + self._tab.Pos
+            )
         return 1.0
 
     # ProceduralFace
     def FaceScaleY(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags, o + self._tab.Pos
+            )
         return 1.0
 
     # ProceduralFace
@@ -65,7 +78,10 @@ class ProceduralFace(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(16))
         if o != 0:
             a = self._tab.Vector(o)
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags,
+                a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4),
+            )
         return 0
 
     # ProceduralFace
@@ -87,7 +103,10 @@ class ProceduralFace(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(18))
         if o != 0:
             a = self._tab.Vector(o)
-            return self._tab.Get(flatbuffers.number_types.Float32Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4))
+            return self._tab.Get(
+                flatbuffers.number_types.Float32Flags,
+                a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 4),
+            )
         return 0
 
     # ProceduralFace
@@ -104,15 +123,54 @@ class ProceduralFace(object):
             return self._tab.VectorLen(o)
         return 0
 
-def ProceduralFaceStart(builder): builder.StartObject(8)
-def ProceduralFaceAddTriggerTimeMs(builder, triggerTimeMs): builder.PrependUint32Slot(0, triggerTimeMs, 0)
-def ProceduralFaceAddFaceAngle(builder, faceAngle): builder.PrependFloat32Slot(1, faceAngle, 0.0)
-def ProceduralFaceAddFaceCenterX(builder, faceCenterX): builder.PrependFloat32Slot(2, faceCenterX, 0.0)
-def ProceduralFaceAddFaceCenterY(builder, faceCenterY): builder.PrependFloat32Slot(3, faceCenterY, 0.0)
-def ProceduralFaceAddFaceScaleX(builder, faceScaleX): builder.PrependFloat32Slot(4, faceScaleX, 1.0)
-def ProceduralFaceAddFaceScaleY(builder, faceScaleY): builder.PrependFloat32Slot(5, faceScaleY, 1.0)
-def ProceduralFaceAddLeftEye(builder, leftEye): builder.PrependUOffsetTRelativeSlot(6, flatbuffers.number_types.UOffsetTFlags.py_type(leftEye), 0)
-def ProceduralFaceStartLeftEyeVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def ProceduralFaceAddRightEye(builder, rightEye): builder.PrependUOffsetTRelativeSlot(7, flatbuffers.number_types.UOffsetTFlags.py_type(rightEye), 0)
-def ProceduralFaceStartRightEyeVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def ProceduralFaceEnd(builder): return builder.EndObject()
+
+def ProceduralFaceStart(builder):
+    builder.StartObject(8)
+
+
+def ProceduralFaceAddTriggerTimeMs(builder, triggerTimeMs):
+    builder.PrependUint32Slot(0, triggerTimeMs, 0)
+
+
+def ProceduralFaceAddFaceAngle(builder, faceAngle):
+    builder.PrependFloat32Slot(1, faceAngle, 0.0)
+
+
+def ProceduralFaceAddFaceCenterX(builder, faceCenterX):
+    builder.PrependFloat32Slot(2, faceCenterX, 0.0)
+
+
+def ProceduralFaceAddFaceCenterY(builder, faceCenterY):
+    builder.PrependFloat32Slot(3, faceCenterY, 0.0)
+
+
+def ProceduralFaceAddFaceScaleX(builder, faceScaleX):
+    builder.PrependFloat32Slot(4, faceScaleX, 1.0)
+
+
+def ProceduralFaceAddFaceScaleY(builder, faceScaleY):
+    builder.PrependFloat32Slot(5, faceScaleY, 1.0)
+
+
+def ProceduralFaceAddLeftEye(builder, leftEye):
+    builder.PrependUOffsetTRelativeSlot(
+        6, flatbuffers.number_types.UOffsetTFlags.py_type(leftEye), 0
+    )
+
+
+def ProceduralFaceStartLeftEyeVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def ProceduralFaceAddRightEye(builder, rightEye):
+    builder.PrependUOffsetTRelativeSlot(
+        7, flatbuffers.number_types.UOffsetTFlags.py_type(rightEye), 0
+    )
+
+
+def ProceduralFaceStartRightEyeVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def ProceduralFaceEnd(builder):
+    return builder.EndObject()

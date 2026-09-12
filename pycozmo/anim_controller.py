@@ -18,9 +18,9 @@ from . import image_encoder
 
 
 class AnimationQueue:
-    """ Synchronized animation queue class. """
+    """Synchronized animation queue class."""
 
-    MAXLEN = 4500   # ~2.5 min of frames
+    MAXLEN = 4500  # ~2.5 min of frames
 
     def __init__(self):
         self.lock = Lock()
@@ -30,9 +30,11 @@ class AnimationQueue:
 
     def is_empty(self):
         with self.lock:
-            return not len(self.audio_queue) and \
-                   not len(self.image_queue) and \
-                   not len(self.pkt_queue)
+            return (
+                not len(self.audio_queue)
+                and not len(self.image_queue)
+                and not len(self.pkt_queue)
+            )
 
     def put_audio(self, pkts: List[protocol_encoder.OutputAudio]) -> None:
         with self.lock:
@@ -43,10 +45,11 @@ class AnimationQueue:
             self.image_queue.append(pkt)
 
     def put_anim_frame(
-            self,
-            audio_pkt: Optional[protocol_encoder.OutputAudio],
-            image_pkt: Optional[protocol_encoder.DisplayImage],
-            pkts: Optional[Iterable[protocol_encoder.Packet]]) -> None:
+        self,
+        audio_pkt: Optional[protocol_encoder.OutputAudio],
+        image_pkt: Optional[protocol_encoder.DisplayImage],
+        pkts: Optional[Iterable[protocol_encoder.Packet]],
+    ) -> None:
         with self.lock:
             self.audio_queue.append(audio_pkt)
             self.image_queue.append(image_pkt)
@@ -80,7 +83,7 @@ class AnimationQueue:
 
 
 class AnimationController:
-    """ Animation controller class. """
+    """Animation controller class."""
 
     def __init__(self, cli):
         self.cli = cli
@@ -104,11 +107,17 @@ class AnimationController:
         self.thread.start()
         self.cli.add_handler(protocol_encoder.AnimationState, self._on_animation_state)
         self.cli.add_handler(protocol_encoder.Keyframe, self._on_keyframe)
-        self.cli.add_handler(protocol_encoder.AnimationStarted, self._on_animation_started)
+        self.cli.add_handler(
+            protocol_encoder.AnimationStarted, self._on_animation_started
+        )
         self.cli.add_handler(protocol_encoder.AnimationEnded, self._on_animation_ended)
         self.cli.add_handler(event.EvtRobotAnimatingChange, self._on_animating_change)
-        self.cli.add_handler(event.EvtRobotAnimBufferFullChange, self._on_anim_buffer_full_change)
-        self.cli.add_handler(event.EvtRobotAnimatingIdleChange, self._on_amimating_idle_change)
+        self.cli.add_handler(
+            event.EvtRobotAnimBufferFullChange, self._on_anim_buffer_full_change
+        )
+        self.cli.add_handler(
+            event.EvtRobotAnimatingIdleChange, self._on_amimating_idle_change
+        )
 
     def stop(self):
         self.stop_flag = True
@@ -159,7 +168,6 @@ class AnimationController:
 
         timer = util.FPSTimer(robot.FRAME_RATE)
         while not self.stop_flag:
-
             audio_pkt, image_pkt, pkts = self.queue.get()
 
             if self.animations_enabled:
@@ -173,7 +181,11 @@ class AnimationController:
                         self.cli.conn.post_event(event.EvtAudioCompleted, self.cli)
                 self.cli.conn.send(audio_pkt)
 
-                if not image_pkt and self.procedural_face_enabled and not self.playing_animation:
+                if (
+                    not image_pkt
+                    and self.procedural_face_enabled
+                    and not self.playing_animation
+                ):
                     image_pkt = self._get_face_image()
 
                 if image_pkt:
@@ -200,10 +212,11 @@ class AnimationController:
         self.queue.put_image(pkt)
 
     def play_anim_frame(
-            self,
-            audio_pkt: Optional[protocol_encoder.OutputAudio],
-            image_pkt: Optional[protocol_encoder.DisplayImage],
-            pkts: Optional[Iterable[protocol_encoder.Packet]]) -> None:
+        self,
+        audio_pkt: Optional[protocol_encoder.OutputAudio],
+        image_pkt: Optional[protocol_encoder.DisplayImage],
+        pkts: Optional[Iterable[protocol_encoder.Packet]],
+    ) -> None:
         self.queue.put_anim_frame(audio_pkt, image_pkt, pkts)
 
     def cancel_anim(self):

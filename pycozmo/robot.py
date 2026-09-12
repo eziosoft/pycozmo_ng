@@ -22,10 +22,8 @@ __all__ = [
     "MAX_WHEEL_SPEED",
     "TRACK_WIDTH",
     "FRAME_RATE",
-
     "RobotStatusFlag",
     "RobotStatusFlagNames",
-
     "LiftPosition",
 ]
 
@@ -46,9 +44,13 @@ LIFT_ARM_LENGTH = util.Distance(mm=66.0)
 LIFT_PIVOT_HEIGHT = util.Distance(mm=45.0)
 
 #: Minimum lift arm angle.
-MIN_LIFT_ANGLE = util.Angle(radians=math.asin((MIN_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm))
+MIN_LIFT_ANGLE = util.Angle(
+    radians=math.asin((MIN_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm)
+)
 #: Maximum lift arm angle.
-MAX_LIFT_ANGLE = util.Angle(radians=math.asin((MAX_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm))
+MAX_LIFT_ANGLE = util.Angle(
+    radians=math.asin((MAX_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm)
+)
 
 #: Maximum wheel speed.
 MAX_WHEEL_SPEED = util.Speed(mmps=200.0)
@@ -104,7 +106,8 @@ RobotStatusFlagNames = {
 
 
 class RobotOrientation(enum.Enum):
-    """ Robot orientation enumeration. """
+    """Robot orientation enumeration."""
+
     ON_THREADS = 0
     ON_BACK = 1
     ON_FACE = 2
@@ -126,46 +129,62 @@ class LiftPosition(object):
         angle (:class:`cozmo.util.Angle`): The angle of the lift arm relative to the ground.
     """
 
-    __slots__ = ('_height', )
+    __slots__ = ("_height",)
 
     def __init__(self, height=None, ratio=None, angle=None):
         def _count_arg(arg):
             # return 1 if argument is set (not None), 0 otherwise
             return 0 if (arg is None) else 1
+
         num_provided_args = _count_arg(height) + _count_arg(ratio) + _count_arg(angle)
         if num_provided_args != 1:
-            raise ValueError("Expected one, and only one, of the distance, ratio or angle keyword arguments")
+            raise ValueError(
+                "Expected one, and only one, of the distance, ratio or angle keyword arguments"
+            )
 
         if height is not None:
             if not isinstance(height, util.Distance):
-                raise TypeError("Unsupported type for distance - expected util.Distance")
+                raise TypeError(
+                    "Unsupported type for distance - expected util.Distance"
+                )
             self._height = height
         elif ratio is not None:
-            height_mm = MIN_LIFT_HEIGHT.mm + (ratio * (MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm))
+            height_mm = MIN_LIFT_HEIGHT.mm + (
+                ratio * (MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm)
+            )
             self._height = util.Distance(mm=height_mm)
         elif angle is not None:
             if not isinstance(angle, util.Angle):
                 raise TypeError("Unsupported type for angle - expected util.Angle")
-            height_mm = (math.sin(angle.radians) * LIFT_ARM_LENGTH.mm) + LIFT_PIVOT_HEIGHT.mm
+            height_mm = (
+                math.sin(angle.radians) * LIFT_ARM_LENGTH.mm
+            ) + LIFT_PIVOT_HEIGHT.mm
             self._height = util.Distance(mm=height_mm)
 
     def __repr__(self):
-        return "<%s height=%s ratio=%s angle=%s>" % (self.__class__.__name__, self._height, self.ratio, self.angle)
+        return "<%s height=%s ratio=%s angle=%s>" % (
+            self.__class__.__name__,
+            self._height,
+            self.ratio,
+            self.angle,
+        )
 
     @property
     def height(self) -> util.Distance:
-        """ Height above the ground. """
+        """Height above the ground."""
         return self._height
 
     @property
     def ratio(self) -> float:
-        """ The ratio from 0 to 1 that the lift is raised, 0 at the bottom, 1 at the top. """
-        ratio = ((self._height.mm - MIN_LIFT_HEIGHT.mm) / (MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm))
+        """The ratio from 0 to 1 that the lift is raised, 0 at the bottom, 1 at the top."""
+        ratio = (self._height.mm - MIN_LIFT_HEIGHT.mm) / (
+            MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm
+        )
         return ratio
 
     @property
     def angle(self) -> util.Angle:
-        """ The angle of the lift arm relative to the ground. """
+        """The angle of the lift arm relative to the ground."""
         sin_angle = (self._height.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm
         angle = math.asin(sin_angle)
         return util.Angle(radians=angle)

@@ -27,7 +27,7 @@ MULAW_BIAS = 132
 
 
 def load_wav(filename: str) -> List[protocol_encoder.OutputAudio]:
-    """ Load a WAVE file into a list of OutputAudio packets. """
+    """Load a WAVE file into a list of OutputAudio packets."""
 
     start_time = time.perf_counter()
 
@@ -35,8 +35,10 @@ def load_wav(filename: str) -> List[protocol_encoder.OutputAudio]:
         sampwidth = w.getsampwidth()
         framerate = w.getframerate()
         if sampwidth != 2 or (framerate != 22050 and framerate != 48000):
-            raise ValueError('Invalid audio format, only 16 bit samples are supported, ' +
-                             'with 22050Hz or 48000Hz frame rates.')
+            raise ValueError(
+                "Invalid audio format, only 16 bit samples are supported, "
+                + "with 22050Hz or 48000Hz frame rates."
+            )
 
         ratediv = 2 if framerate == 48000 else 1
         channels = w.getnchannels()
@@ -50,23 +52,27 @@ def load_wav(filename: str) -> List[protocol_encoder.OutputAudio]:
             pkt = protocol_encoder.OutputAudio(samples=frame_out)
             pkts.append(pkt)
 
-    logger.debug("Loaded WAVE file in {:.02f} s.".format(time.perf_counter() - start_time))
+    logger.debug(
+        "Loaded WAVE file in {:.02f} s.".format(time.perf_counter() - start_time)
+    )
 
     return pkts
 
 
-def bytes_to_cozmo(byte_string: bytes, rate_correction: int, channels: int) -> bytearray:
-    """ Convert a 744 sample, 16-bit audio frame into a U-law encoded frame. """
+def bytes_to_cozmo(
+    byte_string: bytes, rate_correction: int, channels: int
+) -> bytearray:
+    """Convert a 744 sample, 16-bit audio frame into a U-law encoded frame."""
     out = bytearray(744)
     n = channels * rate_correction
-    bs = struct.unpack('{}h'.format(int(len(byte_string) / 2)), byte_string)[0::n]
+    bs = struct.unpack("{}h".format(int(len(byte_string) / 2)), byte_string)[0::n]
     for i, s in enumerate(bs):
         out[i] = u_law_encoding(s)
     return out
 
 
 def u_law_encoding(sample: int) -> int:
-    """ U-law encode a 16-bit PCM sample. """
+    """U-law encode a 16-bit PCM sample."""
     mask = 0x4000
     position = 14
     sign = 0
@@ -81,5 +87,5 @@ def u_law_encoding(sample: int) -> int:
         mask >>= 1
         position -= 1
 
-    lsb = (sample >> (position - 4)) & 0x0f
+    lsb = (sample >> (position - 4)) & 0x0F
     return -(~(sign | ((position - 7) << 4) | lsb))

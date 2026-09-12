@@ -4,8 +4,9 @@
 
 import flatbuffers
 
+
 class AnimClip(object):
-    __slots__ = ['_tab']
+    __slots__ = ["_tab"]
 
     @classmethod
     def GetRootAsAnimClip(cls, buf, offset):
@@ -31,12 +32,28 @@ class AnimClip(object):
         if o != 0:
             x = self._tab.Indirect(o + self._tab.Pos)
             from .Keyframes import Keyframes
+
             obj = Keyframes()
             obj.Init(self._tab.Bytes, x)
             return obj
         return None
 
-def AnimClipStart(builder): builder.StartObject(2)
-def AnimClipAddName(builder, Name): builder.PrependUOffsetTRelativeSlot(0, flatbuffers.number_types.UOffsetTFlags.py_type(Name), 0)
-def AnimClipAddKeyframes(builder, keyframes): builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(keyframes), 0)
-def AnimClipEnd(builder): return builder.EndObject()
+
+def AnimClipStart(builder):
+    builder.StartObject(2)
+
+
+def AnimClipAddName(builder, Name):
+    builder.PrependUOffsetTRelativeSlot(
+        0, flatbuffers.number_types.UOffsetTFlags.py_type(Name), 0
+    )
+
+
+def AnimClipAddKeyframes(builder, keyframes):
+    builder.PrependUOffsetTRelativeSlot(
+        1, flatbuffers.number_types.UOffsetTFlags.py_type(keyframes), 0
+    )
+
+
+def AnimClipEnd(builder):
+    return builder.EndObject()

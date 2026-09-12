@@ -10,34 +10,43 @@ import os
 import logging
 from contextlib import contextmanager
 
-from . import logger, logger_protocol, logger_robot, logger_reaction, logger_behavior, logger_animation
+from . import (
+    logger,
+    logger_protocol,
+    logger_robot,
+    logger_reaction,
+    logger_behavior,
+    logger_animation,
+)
 from . import client
 from . import exception
 
 
 __all__ = [
-    'setup_basic_logging',
-    'connect',
+    "setup_basic_logging",
+    "connect",
 ]
 
 
 def setup_basic_logging(
-        log_level: Optional[str] = None,
-        protocol_log_level: Optional[str] = None,
-        robot_log_level: Optional[str] = None,
-        target=sys.stderr) -> None:
+    log_level: Optional[str] = None,
+    protocol_log_level: Optional[str] = None,
+    robot_log_level: Optional[str] = None,
+    target=sys.stderr,
+) -> None:
 
     if log_level is None:
-        log_level = os.environ.get('PYCOZMO_LOG_LEVEL', logging.INFO)
+        log_level = os.environ.get("PYCOZMO_LOG_LEVEL", logging.INFO)
     if protocol_log_level is None:
-        protocol_log_level = os.environ.get('PYCOZMO_PROTOCOL_LOG_LEVEL', logging.INFO)
+        protocol_log_level = os.environ.get("PYCOZMO_PROTOCOL_LOG_LEVEL", logging.INFO)
     if robot_log_level is None:
         # Keeping the default to WARNING due to "AnimationController.IsReadyToPlay.BufferStarved" messages.
-        robot_log_level = os.environ.get('PYCOZMO_ROBOT_LOG_LEVEL', logging.WARNING)
+        robot_log_level = os.environ.get("PYCOZMO_ROBOT_LOG_LEVEL", logging.WARNING)
     handler = logging.StreamHandler(stream=target)
     formatter = logging.Formatter(
         fmt="%(asctime)s.%(msecs)03d %(name)-20s %(levelname)-8s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S")
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     logger.setLevel(log_level)
@@ -55,22 +64,28 @@ def setup_basic_logging(
 
 @contextmanager
 def connect(
-        log_level: Optional[str] = None,
-        protocol_log_level: Optional[str] = None,
-        protocol_log_messages: Optional[list] = None,
-        robot_log_level: Optional[str] = None,
-        auto_initialize: bool = True,
-        enable_animations: bool = True,
-        enable_procedural_face: bool = True) -> client.Client:
+    log_level: Optional[str] = None,
+    protocol_log_level: Optional[str] = None,
+    protocol_log_messages: Optional[list] = None,
+    robot_log_level: Optional[str] = None,
+    auto_initialize: bool = True,
+    enable_animations: bool = True,
+    enable_procedural_face: bool = True,
+) -> client.Client:
 
-    setup_basic_logging(log_level=log_level, protocol_log_level=protocol_log_level, robot_log_level=robot_log_level)
+    setup_basic_logging(
+        log_level=log_level,
+        protocol_log_level=protocol_log_level,
+        robot_log_level=robot_log_level,
+    )
 
     try:
         cli = client.Client(
             protocol_log_messages=protocol_log_messages,
             auto_initialize=auto_initialize,
             enable_animations=enable_animations,
-            enable_procedural_face=enable_procedural_face)
+            enable_procedural_face=enable_procedural_face,
+        )
         cli.start()
         cli.connect()
         cli.wait_for_robot()

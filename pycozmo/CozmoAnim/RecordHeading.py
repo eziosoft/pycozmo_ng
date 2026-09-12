@@ -4,8 +4,9 @@
 
 import flatbuffers
 
+
 class RecordHeading(object):
-    __slots__ = ['_tab']
+    __slots__ = ["_tab"]
 
     @classmethod
     def GetRootAsRecordHeading(cls, buf, offset):
@@ -22,9 +23,19 @@ class RecordHeading(object):
     def TriggerTimeMs(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Uint32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Uint32Flags, o + self._tab.Pos
+            )
         return 0
 
-def RecordHeadingStart(builder): builder.StartObject(1)
-def RecordHeadingAddTriggerTimeMs(builder, triggerTimeMs): builder.PrependUint32Slot(0, triggerTimeMs, 0)
-def RecordHeadingEnd(builder): return builder.EndObject()
+
+def RecordHeadingStart(builder):
+    builder.StartObject(1)
+
+
+def RecordHeadingAddTriggerTimeMs(builder, triggerTimeMs):
+    builder.PrependUint32Slot(0, triggerTimeMs, 0)
+
+
+def RecordHeadingEnd(builder):
+    return builder.EndObject()

@@ -4,8 +4,9 @@
 
 import flatbuffers
 
+
 class FaceAnimation(object):
-    __slots__ = ['_tab']
+    __slots__ = ["_tab"]
 
     @classmethod
     def GetRootAsFaceAnimation(cls, buf, offset):
@@ -22,7 +23,9 @@ class FaceAnimation(object):
     def TriggerTimeMs(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Uint32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Uint32Flags, o + self._tab.Pos
+            )
         return 0
 
     # FaceAnimation
@@ -32,7 +35,20 @@ class FaceAnimation(object):
             return self._tab.String(o + self._tab.Pos)
         return None
 
-def FaceAnimationStart(builder): builder.StartObject(2)
-def FaceAnimationAddTriggerTimeMs(builder, triggerTimeMs): builder.PrependUint32Slot(0, triggerTimeMs, 0)
-def FaceAnimationAddAnimName(builder, animName): builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(animName), 0)
-def FaceAnimationEnd(builder): return builder.EndObject()
+
+def FaceAnimationStart(builder):
+    builder.StartObject(2)
+
+
+def FaceAnimationAddTriggerTimeMs(builder, triggerTimeMs):
+    builder.PrependUint32Slot(0, triggerTimeMs, 0)
+
+
+def FaceAnimationAddAnimName(builder, animName):
+    builder.PrependUOffsetTRelativeSlot(
+        1, flatbuffers.number_types.UOffsetTFlags.py_type(animName), 0
+    )
+
+
+def FaceAnimationEnd(builder):
+    return builder.EndObject()

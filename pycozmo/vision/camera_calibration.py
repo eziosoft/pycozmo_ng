@@ -65,11 +65,10 @@ class CameraCalibration:
     @property
     def camera_matrix(self) -> np.ndarray:
         """Get the camera intrinsic matrix K."""
-        return np.array([
-            [self.fx, 0.0, self.cx],
-            [0.0, self.fy, self.cy],
-            [0.0, 0.0, 1.0]
-        ], dtype=np.float64)
+        return np.array(
+            [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
 
     @property
     def distortion_coefficients(self) -> np.ndarray:
@@ -93,14 +92,16 @@ class CameraCalibrationRetriever:
         self._event.clear()
         self._success = False
 
-        self.client.add_handler(protocol_encoder.NvStorageOpResult,
-                                 self._on_nv_storage_op_result)
+        self.client.add_handler(
+            protocol_encoder.NvStorageOpResult, self._on_nv_storage_op_result
+        )
 
         try:
             pkt = protocol_encoder.NvStorageOp(
                 tag=protocol_encoder.NvEntryTag.NVEntry_CameraCalib,
                 length=1,
-                op=protocol_encoder.NvOperation.NVOP_READ)
+                op=protocol_encoder.NvOperation.NVOP_READ,
+            )
             self.client.conn.send(pkt)
 
             if self._event.wait(timeout=timeout):
@@ -122,7 +123,7 @@ class CameraCalibrationRetriever:
             if pkt.data:
                 self._calib_data.extend(pkt.data)
             if pkt.result != protocol_encoder.NvResult.NV_MORE:
-                self._success = (pkt.result == protocol_encoder.NvResult.NV_OKAY)
+                self._success = pkt.result == protocol_encoder.NvResult.NV_OKAY
                 self._event.set()
 
     def _parse_calibration_data(self, data: list) -> Optional[CameraCalibration]:
@@ -134,36 +135,46 @@ class CameraCalibrationRetriever:
         # Try float32 format (9 values = 36 bytes)
         if len(data_bytes) >= 36:
             try:
-                vals = struct.unpack('<9f', data_bytes[:36])
+                vals = struct.unpack("<9f", data_bytes[:36])
                 fx, fy, cx, cy, v1, v2, v3, v4, v5 = vals
                 if 100 < fx < 1000 and 100 < fy < 1000:
                     # For Cozmo, the stored distortion coefficients are unreliable
                     # and often contain garbage values. Use zero distortion for better results.
-                    logger.info(f"Cozmo calibration data parsed: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}")
-                    logger.info(f"Raw distortion values: {v1}, {v2}, {v3}, {v4}, {v5} (using zeros for reliability)")
+                    logger.info(
+                        f"Cozmo calibration data parsed: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}"
+                    )
+                    logger.info(
+                        f"Raw distortion values: {v1}, {v2}, {v3}, {v4}, {v5} (using zeros for reliability)"
+                    )
 
                     # Use zero distortion coefficients for Cozmo
                     k1 = k2 = k3 = p1 = p2 = 0.0
 
-                    return CameraCalibration(fx=fx, fy=fy, cx=cx, cy=cy,
-                                            k1=k1, k2=k2, k3=k3, p1=p1, p2=p2)
+                    return CameraCalibration(
+                        fx=fx, fy=fy, cx=cx, cy=cy, k1=k1, k2=k2, k3=k3, p1=p1, p2=p2
+                    )
             except:
                 pass
 
         # Try float64 format (9 values = 72 bytes)
         if len(data_bytes) >= 72:
             try:
-                vals = struct.unpack('<9d', data_bytes[:72])
+                vals = struct.unpack("<9d", data_bytes[:72])
                 fx, fy, cx, cy, k1, k2, p1, p2, k3 = vals
                 if 100 < fx < 1000 and 100 < fy < 1000:
                     # For Cozmo, use zero distortion coefficients
-                    logger.info(f"Cozmo calibration data parsed (float64): fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}")
-                    logger.info("Using zero distortion coefficients for Cozmo reliability")
+                    logger.info(
+                        f"Cozmo calibration data parsed (float64): fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}"
+                    )
+                    logger.info(
+                        "Using zero distortion coefficients for Cozmo reliability"
+                    )
 
                     k1 = k2 = k3 = p1 = p2 = 0.0
 
-                    return CameraCalibration(fx=fx, fy=fy, cx=cx, cy=cy,
-                                            k1=k1, k2=k2, k3=k3, p1=p1, p2=p2)
+                    return CameraCalibration(
+                        fx=fx, fy=fy, cx=cx, cy=cy, k1=k1, k2=k2, k3=k3, p1=p1, p2=p2
+                    )
             except:
                 pass
 

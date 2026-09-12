@@ -90,12 +90,14 @@ class VisionProcessor:
 
         # Load marker templates
         target_markers = []
-        marker_dir = os.path.join(os.path.dirname(__file__), 'cubeDetector', 'cube_faces')
+        marker_dir = os.path.join(
+            os.path.dirname(__file__), "cubeDetector", "cube_faces"
+        )
 
         if not os.path.exists(marker_dir):
             raise FileNotFoundError(f"Marker directory not found: {marker_dir}")
 
-        template_files = sorted(glob.glob(os.path.join(marker_dir, '*.jpg')))
+        template_files = sorted(glob.glob(os.path.join(marker_dir, "*.jpg")))
         if not template_files:
             raise FileNotFoundError(f"No marker templates found in {marker_dir}")
 
@@ -108,9 +110,11 @@ class VisionProcessor:
             # Process template: crop, resize, add border
             h, w = img.shape
             offset = 18
-            img = img[offset:h - offset, offset:w - offset]
+            img = img[offset : h - offset, offset : w - offset]
             img = cv2.resize(img, (26, 26), interpolation=cv2.INTER_AREA)
-            img_with_border = cv2.copyMakeBorder(img, 3, 3, 3, 3, cv2.BORDER_CONSTANT, value=255)
+            img_with_border = cv2.copyMakeBorder(
+                img, 3, 3, 3, 3, cv2.BORDER_CONSTANT, value=255
+            )
             target_markers.append(img_with_border)
 
         if not target_markers:
@@ -123,7 +127,7 @@ class VisionProcessor:
             target_markers,
             use_clahe=True,
             max_detections=3,  # Cozmo has 3 cubes
-            denoise_strength=0  # 0 disables noise reduction (denoise is off)
+            denoise_strength=0,  # 0 disables noise reduction (denoise is off)
         )
 
         # self.cube_detector.set_debug(True)
@@ -133,9 +137,7 @@ class VisionProcessor:
         # known position indefinitely after detection, rather than
         # vanishing when temporarily out of view. (COZMO-27)
         self.cube_tracker = CubeFusionTracker(
-            cube_size_mm=44.0,
-            smoothing_alpha=0.3,
-            max_age_frames=999999
+            cube_size_mm=44.0, smoothing_alpha=0.3, max_age_frames=999999
         )
 
         logger.info("Cube detector initialized successfully")
@@ -185,7 +187,9 @@ class VisionProcessor:
         """
         self.cube_tracker.forget_cube(cube_id)
 
-    def detect_cubes(self, image: Image.Image, head_angle_rad: float = 0.0) -> list[CubeDetection]:
+    def detect_cubes(
+        self, image: Image.Image, head_angle_rad: float = 0.0
+    ) -> list[CubeDetection]:
         """
         Detect cubes in the given camera image.
 
@@ -207,7 +211,9 @@ class VisionProcessor:
 
         return detections
 
-    def _detect_cubes(self, img_array: np.ndarray, head_angle_rad: float = 0.0) -> list[CubeDetection]:
+    def _detect_cubes(
+        self, img_array: np.ndarray, head_angle_rad: float = 0.0
+    ) -> list[CubeDetection]:
         """
         Detect cubes using CozmoCubeDetector with 3D tracking.
 
@@ -224,10 +230,9 @@ class VisionProcessor:
             # Convert RGB to BGR for OpenCV
             img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
-
             # Save raw frame for debug
             if self.cube_detector.debug:
-                self.cube_detector.debug_images['original'] = img_bgr.copy()
+                self.cube_detector.debug_images["original"] = img_bgr.copy()
 
             # Detect marker faces
             results = self.cube_detector.detect(img_bgr)
@@ -238,15 +243,15 @@ class VisionProcessor:
             # Convert to CubeDetection format
             detections = []
             for cube_id, cube_state in self.fused_cubes.items():
-                pos = cube_state['position']
+                pos = cube_state["position"]
                 distance = np.linalg.norm(pos) / 1000.0  # Convert mm to meters
 
                 # Get bounding box from detections
-                cube_results = [r for r in results if r['cube_id'] == cube_id]
+                cube_results = [r for r in results if r["cube_id"] == cube_id]
                 if cube_results:
                     corner_list = []
                     for r in cube_results:
-                        corners = r['corners']
+                        corners = r["corners"]
                         if corners.ndim == 3:  # Handle OpenCV contour format (n, 1, 2)
                             corners = corners.reshape(-1, 2)
                         corner_list.append(corners)
@@ -263,9 +268,9 @@ class VisionProcessor:
                             y=y_min,
                             width=max(1, x_max - x_min),
                             height=max(1, y_max - y_min),
-                            confidence=cube_state['confidence'],
+                            confidence=cube_state["confidence"],
                             distance=distance,
-                            cube_id=cube_id + 1  # 1-indexed for display
+                            cube_id=cube_id + 1,  # 1-indexed for display
                         )
                         detections.append(det)
 
@@ -293,7 +298,9 @@ class VisionProcessor:
     show_confidence = True
     show_distance = True
 
-    def draw_detections(self, image: Image.Image, detections: list[CubeDetection]) -> Image.Image:
+    def draw_detections(
+        self, image: Image.Image, detections: list[CubeDetection]
+    ) -> Image.Image:
         """
         Draw detection bounding boxes and labels on an image.
 
@@ -320,7 +327,9 @@ class VisionProcessor:
         for i, det in enumerate(detections):
             # Choose color based on cube ID or cycle through colors
             if det.cube_id is not None:
-                color = self.annotation_colors[det.cube_id % len(self.annotation_colors)]
+                color = self.annotation_colors[
+                    det.cube_id % len(self.annotation_colors)
+                ]
             else:
                 color = self.annotation_colors[i % len(self.annotation_colors)]
 
@@ -365,7 +374,7 @@ class VisionProcessor:
                 # Draw background rectangle for text
                 draw.rectangle(
                     [(bbox[0] - 2, bbox[1] - 2), (bbox[2] + 2, bbox[3] + 2)],
-                    fill=(0, 0, 0, 180)
+                    fill=(0, 0, 0, 180),
                 )
 
                 # Draw text
@@ -373,8 +382,9 @@ class VisionProcessor:
 
         return annotated_image
 
-    def detect_and_annotate(self, image: Image.Image, head_angle_rad: float = 0.0) -> tuple[
-        list[CubeDetection], Image.Image]:
+    def detect_and_annotate(
+        self, image: Image.Image, head_angle_rad: float = 0.0
+    ) -> tuple[list[CubeDetection], Image.Image]:
         """
         Detect cubes and return both detections and an annotated image.
 
@@ -410,8 +420,13 @@ class AnnotatedVisionProcessor(VisionProcessor):
         cli.add_handler(pycozmo.event.EvtAnnotatedCameraImage, on_annotated_image)
     """
 
-    def __init__(self, client, camera_calibration: CameraCalibration,
-                 process_every_n_frames: int = 1, undistort: bool = False):
+    def __init__(
+        self,
+        client,
+        camera_calibration: CameraCalibration,
+        process_every_n_frames: int = 1,
+        undistort: bool = False,
+    ):
         """
         Initialize the annotated vision processor.
 
@@ -436,8 +451,10 @@ class AnnotatedVisionProcessor(VisionProcessor):
         # Register camera image handler
         self.client.add_handler(event.EvtNewRawCameraImage, self._on_camera_image)
 
-        logger.info(f"Annotated vision processor initialized (processing every "
-                    f"{process_every_n_frames} frame{'s' if process_every_n_frames > 1 else ''})")
+        logger.info(
+            f"Annotated vision processor initialized (processing every "
+            f"{process_every_n_frames} frame{'s' if process_every_n_frames > 1 else ''})"
+        )
 
     def _on_camera_image(self, cli, image: Image.Image):
         """
@@ -466,27 +483,39 @@ class AnnotatedVisionProcessor(VisionProcessor):
             from pycozmo import event
 
             # Get current head angle from robot state
-            head_angle_rad = cli.head_angle.radians if hasattr(cli, 'head_angle') else 0.0
+            head_angle_rad = (
+                cli.head_angle.radians if hasattr(cli, "head_angle") else 0.0
+            )
 
             # Undistort the image using camera calibration (if enabled)
             if self.undistort:
                 img_array = np.array(image)  # RGB
                 img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-                undistorted_bgr = cv2.undistort(img_bgr, self.camera_calibration.camera_matrix, self.camera_calibration.distortion_coefficients)
+                undistorted_bgr = cv2.undistort(
+                    img_bgr,
+                    self.camera_calibration.camera_matrix,
+                    self.camera_calibration.distortion_coefficients,
+                )
                 undistorted_rgb = cv2.cvtColor(undistorted_bgr, cv2.COLOR_BGR2RGB)
                 undistorted_image = Image.fromarray(undistorted_rgb)
             else:
                 undistorted_image = image  # Use original image without undistortion
 
             # Detect cubes and annotate
-            detections, annotated_image = self.detect_and_annotate(undistorted_image, head_angle_rad)
+            detections, annotated_image = self.detect_and_annotate(
+                undistorted_image, head_angle_rad
+            )
 
             # Dispatch annotated image event
-            self.client.dispatch(event.EvtAnnotatedCameraImage, cli, annotated_image, detections)
+            self.client.dispatch(
+                event.EvtAnnotatedCameraImage, cli, annotated_image, detections
+            )
 
             # Dispatch debug images event
             debug_images = self.cube_detector.get_debug_images()
-            self.client.dispatch(event.EvtCubeDetectorDebugImages, cli, debug_images, detections)
+            self.client.dispatch(
+                event.EvtCubeDetectorDebugImages, cli, debug_images, detections
+            )
 
             # Also handle cube detection events
             self._dispatch_cube_events(cli, detections)
@@ -518,7 +547,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         from pycozmo import event
 
         # Track which cubes we've seen
-        if not hasattr(self, '_last_cube_ids'):
+        if not hasattr(self, "_last_cube_ids"):
             self._last_cube_ids = set()
 
         current_ids = {det.cube_id for det in detections if det.cube_id is not None}

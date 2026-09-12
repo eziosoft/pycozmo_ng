@@ -101,8 +101,8 @@ main.py            # Vision system test (connects to Cozmo)
 ## Branch: cube_detection
 
 This branch adds:
-- Cube detection using marker-based vision (`pycozmo/vision.py`)
-- Camera calibration retrieval (`pycozmo/camera_calibration.py`)
+- Cube detection using marker-based vision (`pycozmo/vision/processor.py`)
+- Camera calibration retrieval (`pycozmo/vision/camera_calibration.py`)
 - 3D cube tracking and visualization
 - Head tilt compensation for accurate positioning
 
@@ -138,7 +138,7 @@ PyCozmo is a **library**, not a script collection. New functionality must be add
 
 ## Architecture & Organization
 
-The application layer — everything `main.py` drives — lives in **`pycozmo/app/`**. `main.py` is only an entrypoint (argparse + wiring); no logic lives in `main.py`.
+The application layer — everything `main.py` drives — lives in **`pycozmo/`** subpackages. `main.py` is only an entrypoint (argparse + wiring); no logic lives in `main.py`.
 
 - **One class per file.** If a feature doesn't fit an existing class's stated job, create a *new file* — never grow an existing class.
 - **Files are grouped in folders by function.** `vision/`, `navigation/`, `web/`, `cubes/`. New functionality goes in the matching folder.
@@ -150,7 +150,7 @@ Tests are in `pycozmo/tests/` and `pycozmo/audiokinetic/tests/`. No conftest.py 
 
 ## Constraints
 
-- Requires Python 3.6.0+
+- Requires Python 3.10+
 - Requires live Cozmo robot connection for vision tests
 - No automated tests for vision/cube detection modules
 

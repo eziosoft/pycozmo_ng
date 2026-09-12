@@ -4,8 +4,9 @@
 
 import flatbuffers
 
+
 class AnimClips(object):
-    __slots__ = ['_tab']
+    __slots__ = ["_tab"]
 
     @classmethod
     def GetRootAsAnimClips(cls, buf, offset):
@@ -26,6 +27,7 @@ class AnimClips(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .AnimClip import AnimClip
+
             obj = AnimClip()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -38,7 +40,20 @@ class AnimClips(object):
             return self._tab.VectorLen(o)
         return 0
 
-def AnimClipsStart(builder): builder.StartObject(1)
-def AnimClipsAddClips(builder, clips): builder.PrependUOffsetTRelativeSlot(0, flatbuffers.number_types.UOffsetTFlags.py_type(clips), 0)
-def AnimClipsStartClipsVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def AnimClipsEnd(builder): return builder.EndObject()
+
+def AnimClipsStart(builder):
+    builder.StartObject(1)
+
+
+def AnimClipsAddClips(builder, clips):
+    builder.PrependUOffsetTRelativeSlot(
+        0, flatbuffers.number_types.UOffsetTFlags.py_type(clips), 0
+    )
+
+
+def AnimClipsStartClipsVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def AnimClipsEnd(builder):
+    return builder.EndObject()

@@ -13,7 +13,6 @@ __all__ = [
 
 
 class Filter(object):
-
     def __init__(self):
         self.allowed_ids = set()
         self.denied_ids = set()

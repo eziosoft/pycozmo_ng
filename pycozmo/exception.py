@@ -4,7 +4,6 @@ Exception declarations.
 
 """
 
-
 __all__ = [
     "PyCozmoException",
     "PyCozmoConnectionError",
@@ -15,28 +14,28 @@ __all__ = [
 
 
 class PyCozmoException(Exception):
-    """ Base class for all PyCozmo exceptions. """
+    """Base class for all PyCozmo exceptions."""
 
 
 class PyCozmoConnectionError(PyCozmoException):
-    """ Base class for all PyCozmo connection exceptions. """
+    """Base class for all PyCozmo connection exceptions."""
 
 
 class ConnectionTimeout(PyCozmoConnectionError):
-    """ Connection timeout. """
+    """Connection timeout."""
 
 
 class Timeout(PyCozmoException):
-    """ Operation timed out. """
+    """Operation timed out."""
 
 
 class NoSpace(PyCozmoException):
-    """ Out of space. """
+    """Out of space."""
 
 
 class InvalidOperation(PyCozmoException):
-    """ Invalid operation. """
+    """Invalid operation."""
 
 
 class ResourcesNotFound(PyCozmoException):
-    """ Cozmo resources not found. """
+    """Cozmo resources not found."""

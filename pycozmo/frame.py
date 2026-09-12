@@ -8,10 +8,21 @@ from typing import List
 
 from .logger import logger_protocol
 from pycozmo.protocol.protocol_ast import FrameType, PacketType
-from pycozmo.protocol.protocol_declaration import FRAME_ID, MIN_FRAME_SIZE, MAX_SEQ, OOB_SEQ
+from pycozmo.protocol.protocol_declaration import (
+    FRAME_ID,
+    MIN_FRAME_SIZE,
+    MAX_SEQ,
+    OOB_SEQ,
+)
 from pycozmo.protocol.protocol_base import Packet, UnknownCommand, UnknownEvent
 from pycozmo.protocol.protocol_utils import BinaryReader, BinaryWriter
-from pycozmo.protocol.protocol_encoder import Connect, Disconnect, Ping, Keyframe, PACKETS_BY_ID
+from pycozmo.protocol.protocol_encoder import (
+    Connect,
+    Disconnect,
+    Ping,
+    Keyframe,
+    PACKETS_BY_ID,
+)
 
 
 __all__ = [
@@ -20,17 +31,19 @@ __all__ = [
 
 
 class Frame(object):
-    """ Cozmo protocol frame. """
+    """Cozmo protocol frame."""
 
     __slots__ = [
-        'type',
-        'first_seq',
-        'seq',
-        'ack',
-        'pkts',
+        "type",
+        "first_seq",
+        "seq",
+        "ack",
+        "pkts",
     ]
 
-    def __init__(self, type_id: FrameType, first_seq: int, seq: int, ack: int, pkts: List[Packet]) -> None:
+    def __init__(
+        self, type_id: FrameType, first_seq: int, seq: int, ack: int, pkts: List[Packet]
+    ) -> None:
         self.type = type_id
         self.first_seq = first_seq
         self.seq = seq
@@ -91,7 +104,7 @@ class Frame(object):
     def _decode_packet(cls, pkt_type, pkt_len, reader):
         if pkt_type == PacketType.COMMAND or pkt_type == PacketType.EVENT:
             pkt_id = reader.read("B")
-            pkt_class = PACKETS_BY_ID.get(pkt_id)   # type: Packet  # type: ignore
+            pkt_class = PACKETS_BY_ID.get(pkt_id)  # type: Packet  # type: ignore
             if pkt_class:
                 res = pkt_class.from_reader(reader)
             elif pkt_type == PacketType.COMMAND:
@@ -142,7 +155,9 @@ class Frame(object):
                         pkt_seq = (pkt_seq + 1) % MAX_SEQ
                     pkts.append(pkt)
                 except (ValueError, IndexError) as e:
-                    logger_protocol.debug("Failed to decode packet. Ignoring. {}".format(e))
+                    logger_protocol.debug(
+                        "Failed to decode packet. Ignoring. {}".format(e)
+                    )
                     reader.seek_set(expected_offset)
             assert seq == OOB_SEQ or seq + 1 == pkt_seq or pkt.type == PacketType.PING
         elif frame_type == FrameType.PING:

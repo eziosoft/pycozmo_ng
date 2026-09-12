@@ -14,23 +14,22 @@ from . import exception
 
 
 __all__ = [
-    'Angle',
-    'Distance',
-    'Speed',
-    'Vector3',
-    'angle_z_to_quaternion',
-    'Matrix44',
-    'Quaternion',
-    'Pose',
-    'FPSTimer',
-
-    'hex_dump',
-    'hex_load',
-    'frange',
-    'get_pycozmo_dir',
-    'get_cozmo_asset_dir',
-    'check_assets',
-    'get_cozmo_anim_dir',
+    "Angle",
+    "Distance",
+    "Speed",
+    "Vector3",
+    "angle_z_to_quaternion",
+    "Matrix44",
+    "Quaternion",
+    "Pose",
+    "FPSTimer",
+    "hex_dump",
+    "hex_load",
+    "frange",
+    "get_pycozmo_dir",
+    "get_cozmo_asset_dir",
+    "check_assets",
+    "get_cozmo_anim_dir",
 ]
 
 
@@ -45,20 +44,28 @@ class Angle:
             (cannot be combined with ``radians``)
     """
 
-    __slots__ = '_radians'
+    __slots__ = "_radians"
 
-    def __init__(self, radians: Optional[float] = None, degrees: Optional[float] = None):
+    def __init__(
+        self, radians: Optional[float] = None, degrees: Optional[float] = None
+    ):
         if radians is None and degrees is None:
             raise ValueError("Expected either the degrees or radians keyword argument")
         if radians and degrees:
-            raise ValueError("Expected either the degrees or radians keyword argument, not both")
+            raise ValueError(
+                "Expected either the degrees or radians keyword argument, not both"
+            )
 
         if degrees is not None:
             radians = degrees * math.pi / 180
         self._radians = float(radians)  # type: ignore
 
     def __repr__(self):
-        return "<%s %.2f radians (%.2f degrees)>" % (self.__class__.__name__, self.radians, self.degrees)
+        return "<%s %.2f radians (%.2f degrees)>" % (
+            self.__class__.__name__,
+            self.radians,
+            self.degrees,
+        )
 
     def __add__(self, other):
         if not isinstance(other, Angle):
@@ -105,12 +112,12 @@ class Angle:
 
     @property
     def radians(self) -> float:
-        """ Returns the angle in radians. """
+        """Returns the angle in radians."""
         return self._radians
 
     @property
     def degrees(self) -> float:
-        """ Returns the angle in degrees. """
+        """Returns the angle in degrees."""
         return self._radians / math.pi * 180
 
     @property
@@ -135,20 +142,26 @@ class Distance:
             represent (cannot be combined with ``distance_mm``).
     """
 
-    __slots__ = '_mm'
+    __slots__ = "_mm"
 
     def __init__(self, mm: Optional[float] = None, inches: Optional[float] = None):
         if mm is None and inches is None:
             raise ValueError("Expected either the mm or inches keyword argument")
         if mm and inches:
-            raise ValueError("Expected either the mm or inches keyword argument, not both")
+            raise ValueError(
+                "Expected either the mm or inches keyword argument, not both"
+            )
 
         if inches is not None:
             mm = inches * 25.4
-        self._mm = mm   # type: float   # type: ignore
+        self._mm = mm  # type: float   # type: ignore
 
     def __repr__(self):
-        return "<%s %.2f mm (%.2f inches)>" % (self.__class__.__name__, self.mm, self.inches)
+        return "<%s %.2f mm (%.2f inches)>" % (
+            self.__class__.__name__,
+            self.mm,
+            self.inches,
+        )
 
     def __add__(self, other):
         if not isinstance(other, Distance):
@@ -172,12 +185,12 @@ class Distance:
 
     @property
     def mm(self) -> float:
-        """ The distance in millimeters. """
+        """The distance in millimeters."""
         return self._mm
 
     @property
     def inches(self) -> float:
-        """ The distance in inches. """
+        """The distance in inches."""
         return self._mm / 25.4
 
 
@@ -189,7 +202,7 @@ class Speed:
         mmps (float): The number of millimeters per second the speed should represent.
     """
 
-    __slots__ = '_mmps'
+    __slots__ = "_mmps"
 
     def __init__(self, mmps: float):
         self._mmps = mmps
@@ -219,7 +232,7 @@ class Speed:
 
     @property
     def mmps(self) -> float:
-        """ Returns the speed in millimeters per second (mmps). """
+        """Returns the speed in millimeters per second (mmps)."""
         return self._mmps
 
 
@@ -233,7 +246,7 @@ class Vector3:
         z (float): Z component
     """
 
-    __slots__ = ('_x', '_y', '_z')
+    __slots__ = ("_x", "_y", "_z")
 
     def __init__(self, x: float, y: float, z: float):
         self._x = x
@@ -254,26 +267,31 @@ class Vector3:
 
     @property
     def x(self) -> float:
-        """ The x component. """
+        """The x component."""
         return self._x
 
     @property
     def y(self) -> float:
-        """ The y component. """
+        """The y component."""
         return self._y
 
     @property
     def z(self) -> float:
-        """ The z component. """
+        """The z component."""
         return self._z
 
     @property
     def x_y_z(self) -> Tuple[float, float, float]:
-        """ The X, Y, Z elements of the Vector3 (x,y,z). """
+        """The X, Y, Z elements of the Vector3 (x,y,z)."""
         return self._x, self._y, self._z
 
     def __repr__(self):
-        return "<%s x: %.2f y: %.2f z: %.2f>" % (self.__class__.__name__, self.x, self.y, self.z)
+        return "<%s x: %.2f y: %.2f z: %.2f>" % (
+            self.__class__.__name__,
+            self.x,
+            self.y,
+            self.z,
+        )
 
     def __add__(self, other):
         if not isinstance(other, Vector3):
@@ -320,16 +338,45 @@ class Matrix44:
     Can be generated from a Quaternion for a pure rotation matrix, or
     combined with a position for a full translation matrix, as done by Pose.to_matrix().
     """
-    __slots__ = ('m00', 'm10', 'm20', 'm30',
-                 'm01', 'm11', 'm21', 'm31',
-                 'm02', 'm12', 'm22', 'm32',
-                 'm03', 'm13', 'm23', 'm33')
 
-    def __init__(self,
-                 m00, m10, m20, m30,
-                 m01, m11, m21, m31,
-                 m02, m12, m22, m32,
-                 m03, m13, m23, m33):
+    __slots__ = (
+        "m00",
+        "m10",
+        "m20",
+        "m30",
+        "m01",
+        "m11",
+        "m21",
+        "m31",
+        "m02",
+        "m12",
+        "m22",
+        "m32",
+        "m03",
+        "m13",
+        "m23",
+        "m33",
+    )
+
+    def __init__(
+        self,
+        m00,
+        m10,
+        m20,
+        m30,
+        m01,
+        m11,
+        m21,
+        m31,
+        m02,
+        m12,
+        m22,
+        m32,
+        m03,
+        m13,
+        m23,
+        m33,
+    ):
         self.m00 = m00
         self.m10 = m10
         self.m20 = m20
@@ -351,43 +398,108 @@ class Matrix44:
         self.m33 = m33
 
     def __repr__(self):
-        return ("<%s: "
-                "%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f "
-                "%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f>" % (self.__class__.__name__, *self.in_row_order))
+        return (
+            "<%s: "
+            "%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f "
+            "%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f>"
+            % (self.__class__.__name__, *self.in_row_order)
+        )
 
     @property
     def tabulated_string(self):
         """str: A multi-line string formatted with tabs to show the matrix contents."""
-        return ("%.1f\t%.1f\t%.1f\t%.1f\n"
-                "%.1f\t%.1f\t%.1f\t%.1f\n"
-                "%.1f\t%.1f\t%.1f\t%.1f\n"
-                "%.1f\t%.1f\t%.1f\t%.1f" % self.in_row_order)
+        return (
+            "%.1f\t%.1f\t%.1f\t%.1f\n"
+            "%.1f\t%.1f\t%.1f\t%.1f\n"
+            "%.1f\t%.1f\t%.1f\t%.1f\n"
+            "%.1f\t%.1f\t%.1f\t%.1f" % self.in_row_order
+        )
 
     @property
-    def in_row_order(self) -> Tuple[float, float, float, float,
-                                    float, float, float, float,
-                                    float, float, float, float,
-                                    float, float, float, float]:
+    def in_row_order(
+        self,
+    ) -> Tuple[
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+    ]:
         """
         Returns the contents of the matrix in row order.
         """
-        return self.m00, self.m01, self.m02, self.m03, \
-            self.m10, self.m11, self.m12, self.m13, \
-            self.m20, self.m21, self.m22, self.m23, \
-            self.m30, self.m31, self.m32, self.m33
+        return (
+            self.m00,
+            self.m01,
+            self.m02,
+            self.m03,
+            self.m10,
+            self.m11,
+            self.m12,
+            self.m13,
+            self.m20,
+            self.m21,
+            self.m22,
+            self.m23,
+            self.m30,
+            self.m31,
+            self.m32,
+            self.m33,
+        )
 
     @property
-    def in_column_order(self) -> Tuple[float, float, float, float,
-                                       float, float, float, float,
-                                       float, float, float, float,
-                                       float, float, float, float]:
+    def in_column_order(
+        self,
+    ) -> Tuple[
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+    ]:
         """
         Returns the contents of the matrix in column order.
         """
-        return self.m00, self.m10, self.m20, self.m30, \
-            self.m01, self.m11, self.m21, self.m31, \
-            self.m02, self.m12, self.m22, self.m32, \
-            self.m03, self.m13, self.m23, self.m33
+        return (
+            self.m00,
+            self.m10,
+            self.m20,
+            self.m30,
+            self.m01,
+            self.m11,
+            self.m21,
+            self.m31,
+            self.m02,
+            self.m12,
+            self.m22,
+            self.m32,
+            self.m03,
+            self.m13,
+            self.m23,
+            self.m33,
+        )
 
     @property
     def forward_xyz(self) -> Tuple[float, float, float]:
@@ -455,36 +567,55 @@ class Quaternion:
     Represents rotation.
     """
 
-    __slots__ = ('_q0', '_q1', '_q2', '_q3')
+    __slots__ = ("_q0", "_q1", "_q2", "_q3")
 
-    def __init__(self,
-                 q0: Optional[float] = None,
-                 q1: Optional[float] = None,
-                 q2: Optional[float] = None,
-                 q3: Optional[float] = None,
-                 angle_z: Optional[Angle] = None):
+    def __init__(
+        self,
+        q0: Optional[float] = None,
+        q1: Optional[float] = None,
+        q2: Optional[float] = None,
+        q3: Optional[float] = None,
+        angle_z: Optional[Angle] = None,
+    ):
 
-        is_quaternion = (q0 is not None) and (q1 is not None) and (q2 is not None) and (q3 is not None)
+        is_quaternion = (
+            (q0 is not None)
+            and (q1 is not None)
+            and (q2 is not None)
+            and (q3 is not None)
+        )
 
         if not is_quaternion and angle_z is None:
-            raise ValueError("Expected either the q0 q1 q2 and q3 or angle_z keyword arguments")
+            raise ValueError(
+                "Expected either the q0 q1 q2 and q3 or angle_z keyword arguments"
+            )
         if is_quaternion and angle_z:
-            raise ValueError("Expected either the q0 q1 q2 and q3 or angle_z keyword argument, not both")
+            raise ValueError(
+                "Expected either the q0 q1 q2 and q3 or angle_z keyword argument, not both"
+            )
         if angle_z is not None:
             if not isinstance(angle_z, Angle):
                 raise TypeError("Unsupported type for angle_z expected Angle")
             q0, q1, q2, q3 = angle_z_to_quaternion(angle_z)
 
-        self._q0 = q0   # type: float   # type: ignore
-        self._q1 = q1   # type: float   # type: ignore
-        self._q2 = q2   # type: float   # type: ignore
-        self._q3 = q3   # type: float   # type: ignore
+        self._q0 = q0  # type: float   # type: ignore
+        self._q1 = q1  # type: float   # type: ignore
+        self._q2 = q2  # type: float   # type: ignore
+        self._q3 = q3  # type: float   # type: ignore
 
     def __repr__(self):
-        return ("<%s q0: %.2f q1: %.2f q2: %.2f q3: %.2f (angle_z: %s)>" %
-                (self.__class__.__name__, self.q0, self.q1, self.q2, self.q3, self.angle_z))
+        return "<%s q0: %.2f q1: %.2f q2: %.2f q3: %.2f (angle_z: %s)>" % (
+            self.__class__.__name__,
+            self.q0,
+            self.q1,
+            self.q2,
+            self.q3,
+            self.angle_z,
+        )
 
-    def to_matrix(self, pos_x: float = 0.0, pos_y: float = 0.0, pos_z: float = 0.0) -> Matrix44:
+    def to_matrix(
+        self, pos_x: float = 0.0, pos_y: float = 0.0, pos_z: float = 0.0
+    ) -> Matrix44:
         """
         Convert the Quaternion to a 4x4 matrix representing this rotation.
 
@@ -506,22 +637,36 @@ class Quaternion:
         q1q3x2 = q1x2 * self.q3
         q2q3x2 = 2.0 * self.q2 * self.q3
 
-        m00 = (q0q0 + q1q1 - q2q2 - q3q3)
-        m01 = (q1q2x2 + q0q3x2)
-        m02 = (q1q3x2 - q0q2x2)
+        m00 = q0q0 + q1q1 - q2q2 - q3q3
+        m01 = q1q2x2 + q0q3x2
+        m02 = q1q3x2 - q0q2x2
 
-        m10 = (q1q2x2 - q0q3x2)
-        m11 = (q0q0 - q1q1 + q2q2 - q3q3)
-        m12 = (q0q1x2 + q2q3x2)
+        m10 = q1q2x2 - q0q3x2
+        m11 = q0q0 - q1q1 + q2q2 - q3q3
+        m12 = q0q1x2 + q2q3x2
 
-        m20 = (q0q2x2 + q1q3x2)
-        m21 = (q2q3x2 - q0q1x2)
-        m22 = (q0q0 - q1q1 - q2q2 + q3q3)
+        m20 = q0q2x2 + q1q3x2
+        m21 = q2q3x2 - q0q1x2
+        m22 = q0q0 - q1q1 - q2q2 + q3q3
 
-        return Matrix44(m00, m10, m20, pos_x,
-                        m01, m11, m21, pos_y,
-                        m02, m12, m22, pos_z,
-                        0.0, 0.0, 0.0, 1.0)
+        return Matrix44(
+            m00,
+            m10,
+            m20,
+            pos_x,
+            m01,
+            m11,
+            m21,
+            pos_y,
+            m02,
+            m12,
+            m22,
+            pos_z,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        )
 
     # These are only for angle_z because quaternion addition/subtraction is not relevant here
     def __add__(self, other):
@@ -570,8 +715,10 @@ class Quaternion:
 
     @property
     def angle_z(self) -> Angle:
-        radians = math.atan2(2 * (self.q1 * self.q2 + self.q0 * self.q3),
-                             1 - 2 * (self.q2 ** 2 + self.q3 ** 2))
+        radians = math.atan2(
+            2 * (self.q1 * self.q2 + self.q0 * self.q3),
+            1 - 2 * (self.q2**2 + self.q3**2),
+        )
         return Angle(radians=radians)
 
     @property
@@ -616,13 +763,21 @@ class Pose:
     A combination of position (vector) and rotation (quaternion).
     """
 
-    __slots__ = ('_position', '_rotation', '_origin_id', '_is_accurate')
+    __slots__ = ("_position", "_rotation", "_origin_id", "_is_accurate")
 
-    def __init__(self,
-                 x: float, y: float, z: float,
-                 q0: Optional[float] = None, q1: Optional[float] = None,
-                 q2: Optional[float] = None, q3: Optional[float] = None,
-                 angle_z: Optional[Angle] = None, origin_id: int = -1, is_accurate: bool = True):
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        z: float,
+        q0: Optional[float] = None,
+        q1: Optional[float] = None,
+        q2: Optional[float] = None,
+        q3: Optional[float] = None,
+        angle_z: Optional[Angle] = None,
+        origin_id: int = -1,
+        is_accurate: bool = True,
+    ):
         self._position = Vector3(x, y, z)
         self._rotation = Quaternion(q0, q1, q2, q3, angle_z)
         self._origin_id = origin_id
@@ -630,18 +785,28 @@ class Pose:
 
     @classmethod
     def _create_from_clad(cls, pose):
-        return cls(pose.x, pose.y, pose.z,
-                   q0=pose.q0, q1=pose.q1, q2=pose.q2, q3=pose.q3,
-                   origin_id=pose.originID)
+        return cls(
+            pose.x,
+            pose.y,
+            pose.z,
+            q0=pose.q0,
+            q1=pose.q1,
+            q2=pose.q2,
+            q3=pose.q3,
+            origin_id=pose.originID,
+        )
 
     @classmethod
     def _create_default(cls):
-        return cls(0.0, 0.0, 0.0,
-                   q0=1.0, q1=0.0, q2=0.0, q3=0.0,
-                   origin_id=-1)
+        return cls(0.0, 0.0, 0.0, q0=1.0, q1=0.0, q2=0.0, q3=0.0, origin_id=-1)
 
     def __repr__(self):
-        return "<%s %s %s origin_id=%d>" % (self.__class__.__name__, self.position, self.rotation, self.origin_id)
+        return "<%s %s %s origin_id=%d>" % (
+            self.__class__.__name__,
+            self.position,
+            self.rotation,
+            self.origin_id,
+        )
 
     def __add__(self, other):
         if not isinstance(other, Pose):
@@ -703,8 +868,11 @@ class Pose:
 
         Poses are comparable if they're valid and having matching origin IDs.
         """
-        return (self.is_valid and other_pose.is_valid and
-                (self.origin_id == other_pose.origin_id))
+        return (
+            self.is_valid
+            and other_pose.is_valid
+            and (self.origin_id == other_pose.origin_id)
+        )
 
     @property
     def is_valid(self) -> bool:
@@ -779,35 +947,36 @@ def frange(start, stop, step):
 
 
 def get_pycozmo_dir() -> pathlib.Path:
-    """ Get PyCozmo directory. """
+    """Get PyCozmo directory."""
     pycozmo_dir = ".pycozmo" if os.name != "nt" else "pycozmo"
     default_dir = pathlib.Path.home() / pycozmo_dir
-    path = pathlib.Path(os.environ.get('PYCOZMO_DIR', str(default_dir)))
+    path = pathlib.Path(os.environ.get("PYCOZMO_DIR", str(default_dir)))
     return path
 
 
 def get_cozmo_asset_dir() -> pathlib.Path:
-    """ Get Cozmo asset directory. """
+    """Get Cozmo asset directory."""
     path = get_pycozmo_dir() / "assets"
     return path
 
 
 def check_assets() -> None:
-    """ Check whether Cozmo assets are available. """
+    """Check whether Cozmo assets are available."""
     asset_dir = get_cozmo_asset_dir()
     if not os.path.exists(asset_dir / "resources.txt"):
         raise exception.ResourcesNotFound(
-            f"Resources not found in {asset_dir} . Try running 'pycozmo_resources.py download'.")
+            f"Resources not found in {asset_dir} . Try running 'pycozmo_resources.py download'."
+        )
 
 
 def get_cozmo_anim_dir() -> pathlib.Path:
-    """ Get Cozmo animation asset directory. """
+    """Get Cozmo animation asset directory."""
     path = get_cozmo_asset_dir() / "cozmo_resources" / "assets" / "animations"
     return path
 
 
 class FPSTimer:
-    """ A timer that maintains frame rate by sleeping for a variable amount of time. """
+    """A timer that maintains frame rate by sleeping for a variable amount of time."""
 
     def __init__(self, fps: int) -> None:
         if fps <= 0:
@@ -820,7 +989,7 @@ class FPSTimer:
         self._frames = 1
 
     def sleep(self):
-        """ Sleep to maintain the framerate. Should be called at the end of a frame. """
+        """Sleep to maintain the framerate. Should be called at the end of a frame."""
         now = time.perf_counter()
         if not self._start:
             # First call.

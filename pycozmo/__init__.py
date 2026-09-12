@@ -49,11 +49,9 @@ __all__ = [
     "logger",
     "logger_protocol",
     "logger_robot",
-
     "Frame",
     "ROBOT_ADDR",
     "Client",
-
     "setup_basic_logging",
     "connect",
 ]

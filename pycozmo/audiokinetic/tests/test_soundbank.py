@@ -1,4 +1,3 @@
-
 import unittest
 import io
 
@@ -6,7 +5,6 @@ import pycozmo
 
 
 class TestLoadSoundBank(unittest.TestCase):
-
     def test_invalid(self):
         f = io.BytesIO(b"")
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
@@ -20,7 +18,9 @@ class TestLoadSoundBank(unittest.TestCase):
             reader.load_file(f, "test")
 
     def test_empty(self):
-        f = io.BytesIO(b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0")
+        f = io.BytesIO(
+            b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         soundbank = reader.load_file(f, "test")
         self.assertEqual(soundbank.fspec, "test")
@@ -33,7 +33,8 @@ class TestLoadSoundBank(unittest.TestCase):
     def test_data_section(self):
         f = io.BytesIO(
             b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-            b"DATA\0\0\0\0")
+            b"DATA\0\0\0\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         soundbank = reader.load_file(f, "test")
         self.assertEqual(soundbank.data_offset, f.tell())
@@ -41,7 +42,8 @@ class TestLoadSoundBank(unittest.TestCase):
     def test_data_index_empty(self):
         f = io.BytesIO(
             b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-            b"DIDX\0\0\0\0")
+            b"DIDX\0\0\0\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         soundbank = reader.load_file(f, "test")
         self.assertEqual(len(soundbank.objs), 0)
@@ -49,7 +51,8 @@ class TestLoadSoundBank(unittest.TestCase):
     def test_data_index_invalid(self):
         f = io.BytesIO(
             b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-            b"DIDX\xff\0\0\0")
+            b"DIDX\xff\0\0\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         with self.assertRaises(pycozmo.audiokinetic.exception.AudioKineticIOError):
             reader.load_file(f, "test")
@@ -57,7 +60,8 @@ class TestLoadSoundBank(unittest.TestCase):
     def test_data_index(self):
         f = io.BytesIO(
             b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-            b"DIDX\x0c\0\0\0\x01\0\0\0\x02\0\0\0\x03\0\0\0")
+            b"DIDX\x0c\0\0\0\x01\0\0\0\x02\0\0\0\x03\0\0\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         soundbank = reader.load_file(f, "test")
         self.assertEqual(len(soundbank.objs), 1)
@@ -71,7 +75,8 @@ class TestLoadSoundBank(unittest.TestCase):
     def test_hirc_empty(self):
         f = io.BytesIO(
             b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-            b"HIRC\x04\0\0\0\0\0\0\0")
+            b"HIRC\x04\0\0\0\0\0\0\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         soundbank = reader.load_file(f, "test")
         self.assertEqual(len(soundbank.objs), 0)
@@ -79,7 +84,8 @@ class TestLoadSoundBank(unittest.TestCase):
     def test_hirc_invalid(self):
         f = io.BytesIO(
             b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-            b"HIRC\xff\0\0\0\xff\0\0\0")
+            b"HIRC\xff\0\0\0\xff\0\0\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         with self.assertRaises(pycozmo.audiokinetic.exception.AudioKineticIOError):
             reader.load_file(f, "test")
@@ -87,7 +93,8 @@ class TestLoadSoundBank(unittest.TestCase):
     def test_event(self):
         f = io.BytesIO(
             b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-            b"HIRC\x15\0\0\0\x01\0\0\0\x04\x0c\0\0\0\x01\0\0\0\x01\0\0\0\x02\0\0\0")
+            b"HIRC\x15\0\0\0\x01\0\0\0\x04\x0c\0\0\0\x01\0\0\0\x01\0\0\0\x02\0\0\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         soundbank = reader.load_file(f, "test")
         self.assertEqual(len(soundbank.objs), 1)
@@ -102,7 +109,8 @@ class TestLoadSoundBank(unittest.TestCase):
     def test_event_action(self):
         f = io.BytesIO(
             b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-            b"HIRC\x14\0\0\0\x01\0\0\0\x03\x0b\0\0\0\x01\0\0\0\x03\x04\xdd\xcc\xbb\xaa\0")
+            b"HIRC\x14\0\0\0\x01\0\0\0\x03\x0b\0\0\0\x01\0\0\0\x03\x04\xdd\xcc\xbb\xaa\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         soundbank = reader.load_file(f, "test")
         self.assertEqual(len(soundbank.objs), 1)
@@ -112,12 +120,13 @@ class TestLoadSoundBank(unittest.TestCase):
         self.assertEqual(event_action.id, 1)
         self.assertEqual(event_action.scope, 3)
         self.assertEqual(event_action.type, 4)
-        self.assertEqual(event_action.reference_id, 0xaabbccdd)
+        self.assertEqual(event_action.reference_id, 0xAABBCCDD)
 
     def test_sfx(self):
         f = io.BytesIO(
             b"BKHD\x20\0\0\0\x78\0\0\0\x11\x22\x33\x44\0\0\0\0\0\0\0\0\x6b\x0a\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-            b"HIRC\x1e\0\0\0\x01\0\0\0\x02\x15\0\0\0\x01\0\0\0\x01\0\0\0\x02\x03\0\0\0\x04\0\0\0\x01\0\0\0")
+            b"HIRC\x1e\0\0\0\x01\0\0\0\x02\x15\0\0\0\x01\0\0\0\x01\0\0\0\x02\x03\0\0\0\x04\0\0\0\x01\0\0\0"
+        )
         reader = pycozmo.audiokinetic.soundbank.SoundBankReader({})
         soundbank = reader.load_file(f, "test")
         self.assertEqual(len(soundbank.objs), 1)

@@ -1,4 +1,3 @@
-
 import unittest
 import io
 
@@ -6,7 +5,6 @@ import pycozmo
 
 
 class TestLoadSoundbanksInfo(unittest.TestCase):
-
     def test_invalid(self):
         f = io.StringIO("")
         with self.assertRaises(pycozmo.audiokinetic.exception.AudioKineticFormatError):
@@ -39,7 +37,9 @@ class TestLoadSoundbanksInfo(unittest.TestCase):
         objs = pycozmo.audiokinetic.soundbanksinfo.load_soundbanksinfo(f)
         self.assertEqual(len(objs), 1)
         soundbank = objs[393239870]
-        self.assertIsInstance(soundbank, pycozmo.audiokinetic.soundbanksinfo.SoundBankInfo)
+        self.assertIsInstance(
+            soundbank, pycozmo.audiokinetic.soundbanksinfo.SoundBankInfo
+        )
         self.assertEqual(soundbank.id, 393239870)
         self.assertEqual(soundbank.name, "SFX")
         self.assertEqual(soundbank.path, "SFX.bnk")
@@ -70,7 +70,10 @@ class TestLoadSoundbanksInfo(unittest.TestCase):
         self.assertEqual(event.soundbank_id, 393239870)
         self.assertEqual(event.id, 72626837)
         self.assertEqual(event.name, "Play__Codelab__SFX_Alien_Invasion_UFO")
-        self.assertEqual(event.object_path, r"\Events\Gameplay_SFX\Codelab__SFX\Play__Codelab__SFX_Alien_Invasion_UFO")
+        self.assertEqual(
+            event.object_path,
+            r"\Events\Gameplay_SFX\Codelab__SFX\Play__Codelab__SFX_Alien_Invasion_UFO",
+        )
 
     def test_fileinfo_embedded(self):
         dump = r"""

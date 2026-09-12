@@ -4,8 +4,9 @@
 
 import flatbuffers
 
+
 class LiftHeight(object):
-    __slots__ = ['_tab']
+    __slots__ = ["_tab"]
 
     @classmethod
     def GetRootAsLiftHeight(cls, buf, offset):
@@ -22,14 +23,18 @@ class LiftHeight(object):
     def TriggerTimeMs(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Uint32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Uint32Flags, o + self._tab.Pos
+            )
         return 0
 
     # LiftHeight
     def DurationTimeMs(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
-            return self._tab.Get(flatbuffers.number_types.Uint32Flags, o + self._tab.Pos)
+            return self._tab.Get(
+                flatbuffers.number_types.Uint32Flags, o + self._tab.Pos
+            )
         return 0
 
     # LiftHeight
@@ -46,9 +51,26 @@ class LiftHeight(object):
             return self._tab.Get(flatbuffers.number_types.Uint8Flags, o + self._tab.Pos)
         return 0
 
-def LiftHeightStart(builder): builder.StartObject(4)
-def LiftHeightAddTriggerTimeMs(builder, triggerTimeMs): builder.PrependUint32Slot(0, triggerTimeMs, 0)
-def LiftHeightAddDurationTimeMs(builder, durationTimeMs): builder.PrependUint32Slot(1, durationTimeMs, 0)
-def LiftHeightAddHeightMm(builder, heightMm): builder.PrependUint8Slot(2, heightMm, 0)
-def LiftHeightAddHeightVariabilityMm(builder, heightVariabilityMm): builder.PrependUint8Slot(3, heightVariabilityMm, 0)
-def LiftHeightEnd(builder): return builder.EndObject()
+
+def LiftHeightStart(builder):
+    builder.StartObject(4)
+
+
+def LiftHeightAddTriggerTimeMs(builder, triggerTimeMs):
+    builder.PrependUint32Slot(0, triggerTimeMs, 0)
+
+
+def LiftHeightAddDurationTimeMs(builder, durationTimeMs):
+    builder.PrependUint32Slot(1, durationTimeMs, 0)
+
+
+def LiftHeightAddHeightMm(builder, heightMm):
+    builder.PrependUint8Slot(2, heightMm, 0)
+
+
+def LiftHeightAddHeightVariabilityMm(builder, heightVariabilityMm):
+    builder.PrependUint8Slot(3, heightVariabilityMm, 0)
+
+
+def LiftHeightEnd(builder):
+    return builder.EndObject()

@@ -1,4 +1,3 @@
-
 import unittest
 from threading import Event
 
@@ -6,7 +5,6 @@ import pycozmo
 
 
 class TestConnection(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
         pycozmo.setup_basic_logging(log_level="DEBUG", protocol_log_level="DEBUG")
@@ -17,9 +15,13 @@ class TestConnection(unittest.TestCase):
         self.s_e = Event()
         self.c_e = Event()
         self.s = pycozmo.conn.Connection(server=True)
-        self.s.add_handler(pycozmo.protocol_encoder.Connect, lambda cli, pkt: self.s_conn_e.set())
+        self.s.add_handler(
+            pycozmo.protocol_encoder.Connect, lambda cli, pkt: self.s_conn_e.set()
+        )
         self.c = pycozmo.conn.Connection(("127.0.0.1", 5551))
-        self.c.add_handler(pycozmo.protocol_encoder.Connect, lambda cli, pkt: self.c_conn_e.set())
+        self.c.add_handler(
+            pycozmo.protocol_encoder.Connect, lambda cli, pkt: self.c_conn_e.set()
+        )
 
     def start(self):
         self.s.start()
@@ -44,8 +46,12 @@ class TestConnection(unittest.TestCase):
         self.stop()
 
     def test_ping(self):
-        self.s.add_handler(pycozmo.protocol_encoder.Ping, lambda cli, pkt: self.s_e.set())
-        self.c.add_handler(pycozmo.protocol_encoder.Ping, lambda cli, pkt: self.c_e.set())
+        self.s.add_handler(
+            pycozmo.protocol_encoder.Ping, lambda cli, pkt: self.s_e.set()
+        )
+        self.c.add_handler(
+            pycozmo.protocol_encoder.Ping, lambda cli, pkt: self.c_e.set()
+        )
         self.start()
         self.connect()
         self.assertTrue(self.c_e.wait(20000.0))
@@ -56,8 +62,13 @@ class TestConnection(unittest.TestCase):
     def test_send_30(self):
         COUNT = 30
         counts = []
-        self.s.add_handler(pycozmo.protocol_encoder.SetRobotVolume,
-                           lambda cli, pkt: (counts.append(pkt.level), (pkt.level < COUNT - 2) or self.s_e.set()))
+        self.s.add_handler(
+            pycozmo.protocol_encoder.SetRobotVolume,
+            lambda cli, pkt: (
+                counts.append(pkt.level),
+                (pkt.level < COUNT - 2) or self.s_e.set(),
+            ),
+        )
         self.start()
         self.connect()
         for i in range(COUNT):

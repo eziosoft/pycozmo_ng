@@ -16,13 +16,12 @@ __all__ = [
     "EventInfo",
     "FileInfo",
     "SoundBankInfo",
-
     "load_soundbanksinfo",
 ]
 
 
 class EventInfo:
-    """ Event representation in SoundbanksInfo.xml . """
+    """Event representation in SoundbanksInfo.xml ."""
 
     __slots__ = [
         "soundbank_id",
@@ -39,7 +38,7 @@ class EventInfo:
 
 
 class FileInfo:
-    """ File representation in SoundbanksInfo.xml . """
+    """File representation in SoundbanksInfo.xml ."""
 
     __slots__ = [
         "soundbank_id",
@@ -50,7 +49,15 @@ class FileInfo:
         "prefetch_size",
     ]
 
-    def __init__(self, soundbank_id: int, file_id: int, name: str, path: str, embedded: bool, prefetch_size: int):
+    def __init__(
+        self,
+        soundbank_id: int,
+        file_id: int,
+        name: str,
+        path: str,
+        embedded: bool,
+        prefetch_size: int,
+    ):
         self.soundbank_id = int(soundbank_id)
         self.id = int(file_id)
         self.name = str(name)
@@ -70,7 +77,7 @@ class FileInfo:
 
 
 class SoundBankInfo:
-    """ SoundBank representation in SoundbanksInfo.xml . """
+    """SoundBank representation in SoundbanksInfo.xml ."""
 
     __slots__ = [
         "id",
@@ -80,7 +87,9 @@ class SoundBankInfo:
         "object_path",
     ]
 
-    def __init__(self, soundbank_id: int, name: str, path: str, language: str, object_path: str):
+    def __init__(
+        self, soundbank_id: int, name: str, path: str, language: str, object_path: str
+    ):
         self.id = int(soundbank_id)
         self.name = str(name)
         self.path = str(path)
@@ -89,12 +98,14 @@ class SoundBankInfo:
 
 
 def load_soundbanksinfo(fspec: Union[str, TextIO]) -> Dict[int, Any]:
-    """ Load SoundbanksInfo.xml and return a dictionary of parsed Info objects. """
+    """Load SoundbanksInfo.xml and return a dictionary of parsed Info objects."""
 
     try:
         tree = et.parse(fspec)
     except et.ParseError as e:
-        raise exception.AudioKineticFormatError("Failed to parse SoundbanksInfo file.") from e
+        raise exception.AudioKineticFormatError(
+            "Failed to parse SoundbanksInfo file."
+        ) from e
     root = tree.getroot()
 
     # Load StreamedFiles.
@@ -120,7 +131,8 @@ def load_soundbanksinfo(fspec: Union[str, TextIO]) -> Dict[int, Any]:
             soundbank_node.find("ShortName").text,
             soundbank_node.find("Path").text,
             language,
-            soundbank_node.find("ObjectPath").text)
+            soundbank_node.find("ObjectPath").text,
+        )
         assert soundbank_id not in objects
         objects[soundbank_id] = soundbank
 
@@ -132,7 +144,8 @@ def load_soundbanksinfo(fspec: Union[str, TextIO]) -> Dict[int, Any]:
                 soundbank_id,
                 event_id,
                 event_node.get("Name"),
-                event_node.get("ObjectPath"))
+                event_node.get("ObjectPath"),
+            )
             assert event_id not in objects
             objects[event_id] = event
 
@@ -149,7 +162,8 @@ def load_soundbanksinfo(fspec: Union[str, TextIO]) -> Dict[int, Any]:
                 streamed_file["name"],
                 streamed_file["path"],
                 False,
-                -1)
+                -1,
+            )
             assert file_id not in objects
             objects[file_id] = file
 
@@ -160,14 +174,17 @@ def load_soundbanksinfo(fspec: Union[str, TextIO]) -> Dict[int, Any]:
             # The file and SoundBank languages may differ.
             # assert file_node.get("Language") == language
             prefetch_size_node = file_node.find("PrefetchSize")
-            prefetch_size = int(prefetch_size_node.text) if prefetch_size_node is not None else -1
+            prefetch_size = (
+                int(prefetch_size_node.text) if prefetch_size_node is not None else -1
+            )
             file = FileInfo(
                 soundbank_id,
                 file_id,
                 file_node.find("ShortName").text,
                 file_node.find("Path").text,
                 True,
-                prefetch_size)
+                prefetch_size,
+            )
             # assert file_id not in objects
             if file_id in objects:
                 # Many files exist externally and as a "prefetched" embedded file that is truncated.

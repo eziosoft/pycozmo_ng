@@ -1,18 +1,18 @@
-
 import unittest
 
 from pycozmo.display.emotions import DecayGraph, Node
 
 
 class TestDecayGraph(unittest.TestCase):
-
     def setUp(self):
-        self.graph = DecayGraph([
-            Node(x=0, y=1),
-            Node(x=10, y=1),
-            Node(x=60, y=0.6),
-            Node(x=100, y=0.2),
-        ])
+        self.graph = DecayGraph(
+            [
+                Node(x=0, y=1),
+                Node(x=10, y=1),
+                Node(x=60, y=0.6),
+                Node(x=100, y=0.2),
+            ]
+        )
 
     def test_increment_calculation(self):
         # negative values

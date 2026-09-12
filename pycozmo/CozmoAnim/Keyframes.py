@@ -4,8 +4,9 @@
 
 import flatbuffers
 
+
 class Keyframes(object):
-    __slots__ = ['_tab']
+    __slots__ = ["_tab"]
 
     @classmethod
     def GetRootAsKeyframes(cls, buf, offset):
@@ -26,6 +27,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .LiftHeight import LiftHeight
+
             obj = LiftHeight()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -46,6 +48,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .ProceduralFace import ProceduralFace
+
             obj = ProceduralFace()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -66,6 +69,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .HeadAngle import HeadAngle
+
             obj = HeadAngle()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -86,6 +90,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .RobotAudio import RobotAudio
+
             obj = RobotAudio()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -106,6 +111,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .BackpackLights import BackpackLights
+
             obj = BackpackLights()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -126,6 +132,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .FaceAnimation import FaceAnimation
+
             obj = FaceAnimation()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -146,6 +153,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .Event import Event
+
             obj = Event()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -166,6 +174,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .BodyMotion import BodyMotion
+
             obj = BodyMotion()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -186,6 +195,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .RecordHeading import RecordHeading
+
             obj = RecordHeading()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -206,6 +216,7 @@ class Keyframes(object):
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
             from .TurnToRecordedHeading import TurnToRecordedHeading
+
             obj = TurnToRecordedHeading()
             obj.Init(self._tab.Bytes, x)
             return obj
@@ -218,25 +229,112 @@ class Keyframes(object):
             return self._tab.VectorLen(o)
         return 0
 
-def KeyframesStart(builder): builder.StartObject(10)
-def KeyframesAddLiftHeightKeyFrame(builder, LiftHeightKeyFrame): builder.PrependUOffsetTRelativeSlot(0, flatbuffers.number_types.UOffsetTFlags.py_type(LiftHeightKeyFrame), 0)
-def KeyframesStartLiftHeightKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesAddProceduralFaceKeyFrame(builder, ProceduralFaceKeyFrame): builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(ProceduralFaceKeyFrame), 0)
-def KeyframesStartProceduralFaceKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesAddHeadAngleKeyFrame(builder, HeadAngleKeyFrame): builder.PrependUOffsetTRelativeSlot(2, flatbuffers.number_types.UOffsetTFlags.py_type(HeadAngleKeyFrame), 0)
-def KeyframesStartHeadAngleKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesAddRobotAudioKeyFrame(builder, RobotAudioKeyFrame): builder.PrependUOffsetTRelativeSlot(3, flatbuffers.number_types.UOffsetTFlags.py_type(RobotAudioKeyFrame), 0)
-def KeyframesStartRobotAudioKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesAddBackpackLightsKeyFrame(builder, BackpackLightsKeyFrame): builder.PrependUOffsetTRelativeSlot(4, flatbuffers.number_types.UOffsetTFlags.py_type(BackpackLightsKeyFrame), 0)
-def KeyframesStartBackpackLightsKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesAddFaceAnimationKeyFrame(builder, FaceAnimationKeyFrame): builder.PrependUOffsetTRelativeSlot(5, flatbuffers.number_types.UOffsetTFlags.py_type(FaceAnimationKeyFrame), 0)
-def KeyframesStartFaceAnimationKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesAddEventKeyFrame(builder, EventKeyFrame): builder.PrependUOffsetTRelativeSlot(6, flatbuffers.number_types.UOffsetTFlags.py_type(EventKeyFrame), 0)
-def KeyframesStartEventKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesAddBodyMotionKeyFrame(builder, BodyMotionKeyFrame): builder.PrependUOffsetTRelativeSlot(7, flatbuffers.number_types.UOffsetTFlags.py_type(BodyMotionKeyFrame), 0)
-def KeyframesStartBodyMotionKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesAddRecordHeadingKeyFrame(builder, RecordHeadingKeyFrame): builder.PrependUOffsetTRelativeSlot(8, flatbuffers.number_types.UOffsetTFlags.py_type(RecordHeadingKeyFrame), 0)
-def KeyframesStartRecordHeadingKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesAddTurnToRecordedHeadingKeyFrame(builder, TurnToRecordedHeadingKeyFrame): builder.PrependUOffsetTRelativeSlot(9, flatbuffers.number_types.UOffsetTFlags.py_type(TurnToRecordedHeadingKeyFrame), 0)
-def KeyframesStartTurnToRecordedHeadingKeyFrameVector(builder, numElems): return builder.StartVector(4, numElems, 4)
-def KeyframesEnd(builder): return builder.EndObject()
+
+def KeyframesStart(builder):
+    builder.StartObject(10)
+
+
+def KeyframesAddLiftHeightKeyFrame(builder, LiftHeightKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        0, flatbuffers.number_types.UOffsetTFlags.py_type(LiftHeightKeyFrame), 0
+    )
+
+
+def KeyframesStartLiftHeightKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesAddProceduralFaceKeyFrame(builder, ProceduralFaceKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        1, flatbuffers.number_types.UOffsetTFlags.py_type(ProceduralFaceKeyFrame), 0
+    )
+
+
+def KeyframesStartProceduralFaceKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesAddHeadAngleKeyFrame(builder, HeadAngleKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        2, flatbuffers.number_types.UOffsetTFlags.py_type(HeadAngleKeyFrame), 0
+    )
+
+
+def KeyframesStartHeadAngleKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesAddRobotAudioKeyFrame(builder, RobotAudioKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        3, flatbuffers.number_types.UOffsetTFlags.py_type(RobotAudioKeyFrame), 0
+    )
+
+
+def KeyframesStartRobotAudioKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesAddBackpackLightsKeyFrame(builder, BackpackLightsKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        4, flatbuffers.number_types.UOffsetTFlags.py_type(BackpackLightsKeyFrame), 0
+    )
+
+
+def KeyframesStartBackpackLightsKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesAddFaceAnimationKeyFrame(builder, FaceAnimationKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        5, flatbuffers.number_types.UOffsetTFlags.py_type(FaceAnimationKeyFrame), 0
+    )
+
+
+def KeyframesStartFaceAnimationKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesAddEventKeyFrame(builder, EventKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        6, flatbuffers.number_types.UOffsetTFlags.py_type(EventKeyFrame), 0
+    )
+
+
+def KeyframesStartEventKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesAddBodyMotionKeyFrame(builder, BodyMotionKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        7, flatbuffers.number_types.UOffsetTFlags.py_type(BodyMotionKeyFrame), 0
+    )
+
+
+def KeyframesStartBodyMotionKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesAddRecordHeadingKeyFrame(builder, RecordHeadingKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        8, flatbuffers.number_types.UOffsetTFlags.py_type(RecordHeadingKeyFrame), 0
+    )
+
+
+def KeyframesStartRecordHeadingKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesAddTurnToRecordedHeadingKeyFrame(builder, TurnToRecordedHeadingKeyFrame):
+    builder.PrependUOffsetTRelativeSlot(
+        9,
+        flatbuffers.number_types.UOffsetTFlags.py_type(TurnToRecordedHeadingKeyFrame),
+        0,
+    )
+
+
+def KeyframesStartTurnToRecordedHeadingKeyFrameVector(builder, numElems):
+    return builder.StartVector(4, numElems, 4)
+
+
+def KeyframesEnd(builder):
+    return builder.EndObject()

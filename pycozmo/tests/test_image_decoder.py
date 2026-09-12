@@ -1,4 +1,3 @@
-
 import unittest
 
 from pycozmo.image_encoder import ImageDecoder, image_to_str
@@ -7,7 +6,6 @@ from pycozmo.tests.image_encoder_fixtures import FIXTURES
 
 
 class TestImageDecoder(unittest.TestCase):
-
     @staticmethod
     def _decode(seq: str) -> ImageDecoder:
         if isinstance(seq, str):

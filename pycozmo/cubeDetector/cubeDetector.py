@@ -51,7 +51,7 @@ class CubeFusionTracker:
         # Group detections by cube_id
         detections_by_cube = defaultdict(list)
         for det in detections:
-            detections_by_cube[det['cube_id']].append(det)
+            detections_by_cube[det["cube_id"]].append(det)
 
         fused = {}
         for cube_id, cube_detections in detections_by_cube.items():
@@ -73,50 +73,52 @@ class CubeFusionTracker:
             # Single face detected - calculate cube center from face position
             det = detections[0]
             cube_center = self._calculate_cube_center_from_face(
-                det['position'], det['rotation_matrix'], det['face_type']
+                det["position"], det["rotation_matrix"], det["face_type"]
             )
             cube_rotation = self._calculate_cube_rotation_from_face(
-                det['rotation_matrix'], det['face_type'], det['rotation']
+                det["rotation_matrix"], det["face_type"], det["rotation"]
             )
             rotation_source = f"{det['face_type']}_{det['rotation']}deg"
             return {
-                'position': cube_center,
-                'rotation_matrix': cube_rotation,
-                'cube_id': det['cube_id'],
-                'confidence': det['score'],
-                'num_faces': 1,
-                'rotation_source': rotation_source
+                "position": cube_center,
+                "rotation_matrix": cube_rotation,
+                "cube_id": det["cube_id"],
+                "confidence": det["score"],
+                "num_faces": 1,
+                "rotation_source": rotation_source,
             }
         else:
             # Multiple faces detected - use geometric constraints
             # Average positions weighted by confidence
-            total_weight = sum(d['score'] for d in detections)
+            total_weight = sum(d["score"] for d in detections)
 
             # Calculate cube center from each face and average
             centers = []
             weights = []
             for det in detections:
                 center = self._calculate_cube_center_from_face(
-                    det['position'], det['rotation_matrix'], det['face_type']
+                    det["position"], det["rotation_matrix"], det["face_type"]
                 )
-                weight = det['score'] / total_weight
+                weight = det["score"] / total_weight
                 centers.append(center * weight)
-                weights.append(det['score'])
+                weights.append(det["score"])
 
             fused_center = np.sum(centers, axis=0)
 
             # For rotation: use the most confident detection
             # Averaging rotation matrices is mathematically incorrect (they live on SO(3) manifold)
             # The best simple solution is to use the highest confidence detection
-            best_detection = max(detections, key=lambda d: d['score'])
+            best_detection = max(detections, key=lambda d: d["score"])
             fused_rotation = self._calculate_cube_rotation_from_face(
-                best_detection['rotation_matrix'],
-                best_detection['face_type'],
-                best_detection['rotation']
+                best_detection["rotation_matrix"],
+                best_detection["face_type"],
+                best_detection["rotation"],
             )
 
             # Store which face was used for rotation (useful for debugging)
-            best_face_info = f"{best_detection['face_type']}_{best_detection['rotation']}deg"
+            best_face_info = (
+                f"{best_detection['face_type']}_{best_detection['rotation']}deg"
+            )
 
             # Weighted confidence: each face's score is weighted by its own score,
             # which gives the dominant face a quadratic influence and matches
@@ -124,12 +126,12 @@ class CubeFusionTracker:
             avg_confidence = sum(d["score"] ** 2 for d in detections) / total_weight
 
             return {
-                'position': fused_center,
-                'rotation_matrix': fused_rotation,
-                'cube_id': detections[0]['cube_id'],
-                'confidence': avg_confidence,
-                'num_faces': len(detections),
-                'rotation_source': best_face_info  # Which face determined the rotation
+                "position": fused_center,
+                "rotation_matrix": fused_rotation,
+                "cube_id": detections[0]["cube_id"],
+                "confidence": avg_confidence,
+                "num_faces": len(detections),
+                "rotation_source": best_face_info,  # Which face determined the rotation
             }
 
     def _calculate_cube_center_from_face(self, face_position, face_rotation, face_type):
@@ -150,7 +152,9 @@ class CubeFusionTracker:
 
         return face_position + offset
 
-    def _calculate_cube_rotation_from_face(self, face_rotation, face_type, face_rotation_deg):
+    def _calculate_cube_rotation_from_face(
+        self, face_rotation, face_type, face_rotation_deg
+    ):
         """
         Calculate the cube's canonical rotation from a detected face rotation
         :param face_rotation: 3x3 rotation matrix of the detected face
@@ -182,65 +186,51 @@ class CubeFusionTracker:
         # - For face_2 (180°): face is rotated 180° around Y-axis relative to cube
         # - For face_3 (270°): face is rotated 270° around Y-axis relative to cube
 
-        if face_type == 'wall':
+        if face_type == "wall":
             # Wall face: undo the Y-axis rotation from cube canonical (face_0) to this face
             angle_rad = np.deg2rad(-face_rotation_deg)
 
             cos_a = np.cos(angle_rad)
             sin_a = np.sin(angle_rad)
-            R_cube_to_face = np.array([
-                [cos_a, 0, sin_a],
-                [0, 1, 0],
-                [-sin_a, 0, cos_a]
-            ], dtype=np.float32)
+            R_cube_to_face = np.array(
+                [[cos_a, 0, sin_a], [0, 1, 0], [-sin_a, 0, cos_a]], dtype=np.float32
+            )
 
             cube_rotation = face_rotation @ R_cube_to_face.T
 
             # Wall faces need 180° flip around X-axis to correct orientation
-            R_flip = np.array([
-                [1, 0, 0],
-                [0, -1, 0],
-                [0, 0, -1]
-            ], dtype=np.float32)
+            R_flip = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float32)
             cube_rotation = cube_rotation @ R_flip
 
-        elif face_type == 'top':
+        elif face_type == "top":
             # Top face: cube's +Y (up) points toward camera
             # The top marker is rotated 180° relative to cube frame
             # Transform: pitch -90° around X (Y->Z, Z->-Y)
-            R_cube_to_face = np.array([
-                [1, 0, 0],
-                [0, 0, 1],
-                [0, -1, 0]
-            ], dtype=np.float32)
+            R_cube_to_face = np.array(
+                [[1, 0, 0], [0, 0, 1], [0, -1, 0]], dtype=np.float32
+            )
 
             cube_rotation = face_rotation @ R_cube_to_face.T
 
             # Top marker is mounted upside-down: rotate 180° around Z-axis
-            R_flip_marker = np.array([
-                [-1, 0, 0],
-                [0, -1, 0],
-                [0, 0, 1]
-            ], dtype=np.float32)
+            R_flip_marker = np.array(
+                [[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32
+            )
             cube_rotation = cube_rotation @ R_flip_marker
 
-        elif face_type == 'bottom':
+        elif face_type == "bottom":
             # Bottom face: cube's -Y (bottom) points toward camera
             # Transform: pitch +90° around X (Y->-Z, Z->Y)
-            R_cube_to_face = np.array([
-                [1, 0, 0],
-                [0, 0, -1],
-                [0, 1, 0]
-            ], dtype=np.float32)
+            R_cube_to_face = np.array(
+                [[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float32
+            )
 
             cube_rotation = face_rotation @ R_cube_to_face.T
 
             # Bottom marker orientation correction
-            R_flip_marker = np.array([
-                [-1, 0, 0],
-                [0, -1, 0],
-                [0, 0, 1]
-            ], dtype=np.float32)
+            R_flip_marker = np.array(
+                [[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32
+            )
             cube_rotation = cube_rotation @ R_flip_marker
 
         else:
@@ -251,14 +241,19 @@ class CubeFusionTracker:
 
 
 class CozmoCubeDetector:
-    def __init__(self, camera_matrix, dist_coeffs, target_markers,
-                 square_size_mm=20.0,
-                 score_threshold=0.6,
-                 use_clahe=True,
-                 max_detections=None,
-                 min_area=100,
-                 max_area_ratio=0.8,
-                 denoise_strength=7):
+    def __init__(
+        self,
+        camera_matrix,
+        dist_coeffs,
+        target_markers,
+        square_size_mm=20.0,
+        score_threshold=0.6,
+        use_clahe=True,
+        max_detections=None,
+        min_area=100,
+        max_area_ratio=0.8,
+        denoise_strength=7,
+    ):
         """
         :param target_markers: List of 32x32 gray bitmaps (numpy arrays).
         :param square_size_mm: Real life square side length in mm (default 20.0).
@@ -284,14 +279,15 @@ class CozmoCubeDetector:
         self.min_area = min_area
         self.max_area_ratio = max_area_ratio
         self.denoise_strength = denoise_strength
-        self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)) if use_clahe else None
+        self.clahe = (
+            cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)) if use_clahe else None
+        )
 
         # Define 3D object points for Pose Estimation (SolvePnP)
         s = self.square_size / 2.0
-        self.obj_points = np.array([
-            [-s, s, 0], [s, s, 0],
-            [s, -s, 0], [-s, -s, 0]
-        ], dtype=np.float32)
+        self.obj_points = np.array(
+            [[-s, s, 0], [s, s, 0], [s, -s, 0], [-s, -s, 0]], dtype=np.float32
+        )
 
         # Pre-compute all rotations of target markers and normalize them once
         self.rotated_markers = []
@@ -306,7 +302,7 @@ class CozmoCubeDetector:
         self.dst_pts = np.array([[0, 0], [31, 0], [31, 31], [0, 31]], dtype=np.float32)
 
         # Face type and rotation lookup tables
-        self.face_type_lookup = ['wall', 'wall', 'wall', 'wall', 'bottom', 'top']
+        self.face_type_lookup = ["wall", "wall", "wall", "wall", "bottom", "top"]
         self.rotation_lookup = [0, 90, 180, 270, 0, 0]
 
         # Debug mode
@@ -321,23 +317,23 @@ class CozmoCubeDetector:
         """Processes a frame to find cubes."""
         if self.debug:
             self.debug_images = {}
-            self.debug_images['processed'] = frame.copy()
+            self.debug_images["processed"] = frame.copy()
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         if self.debug:
-            self.debug_images['grayscale'] = gray.copy()
+            self.debug_images["grayscale"] = gray.copy()
 
         # Apply noise reduction if enabled
         if self.denoise_strength > 0:
             gray = self._denoise_image(gray)
             if self.debug:
-                self.debug_images['denoised'] = gray.copy()
+                self.debug_images["denoised"] = gray.copy()
 
         # Apply CLAHE if enabled
         enhanced = self.clahe.apply(gray) if self.use_clahe else gray
         if self.debug:
-            self.debug_images['enhanced'] = enhanced.copy()
+            self.debug_images["enhanced"] = enhanced.copy()
 
         return self._run_detection_pass(enhanced)
 
@@ -361,7 +357,7 @@ class CozmoCubeDetector:
             gray_image,
             h=self.denoise_strength,
             templateWindowSize=7,
-            searchWindowSize=21
+            searchWindowSize=21,
         )
         return denoised
 
@@ -369,11 +365,13 @@ class CozmoCubeDetector:
         """Internal detection logic for a single image state (normal or negative)."""
         # Binary threshold with blur
         blurred = cv2.GaussianBlur(img, (5, 5), 0)
-        _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        _, binary = cv2.threshold(
+            blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+        )
 
         if self.debug:
             is_negative = np.mean(img) < 127
-            key = 'binary_negative' if is_negative else 'binary'
+            key = "binary_negative" if is_negative else "binary"
             self.debug_images[key] = binary.copy()
 
         # Find contours
@@ -382,7 +380,9 @@ class CozmoCubeDetector:
         # Filter and sort contours by area
         h, w = img.shape[:2]
         max_area = w * h * self.max_area_ratio
-        contours = [c for c in contours if self.min_area < cv2.contourArea(c) < max_area]
+        contours = [
+            c for c in contours if self.min_area < cv2.contourArea(c) < max_area
+        ]
         contours.sort(key=cv2.contourArea, reverse=True)
 
         results = []
@@ -432,29 +432,36 @@ class CozmoCubeDetector:
                     )
                     if success:
                         # Get cube orientation info
-                        cube_id, face_type, rotation_deg = self._get_cube_orientation(marker_id)
+                        cube_id, face_type, rotation_deg = self._get_cube_orientation(
+                            marker_id
+                        )
 
                         # Convert to position and rotation matrix
                         position = tvec.flatten()
                         rotation_matrix, _ = cv2.Rodrigues(rvec)
 
-                        results.append({
-                            'id': marker_id,
-                            'score': score,
-                            'rvec': rvec,
-                            'tvec': tvec,
-                            'corners': approx,
-                            'ordered_corners': ordered_pts_int,
-                            'marker_rotation': marker_rotation,
-                            'cube_id': cube_id,
-                            'face_type': face_type,
-                            'rotation': rotation_deg,
-                            'position': position,
-                            'rotation_matrix': rotation_matrix
-                        })
+                        results.append(
+                            {
+                                "id": marker_id,
+                                "score": score,
+                                "rvec": rvec,
+                                "tvec": tvec,
+                                "corners": approx,
+                                "ordered_corners": ordered_pts_int,
+                                "marker_rotation": marker_rotation,
+                                "cube_id": cube_id,
+                                "face_type": face_type,
+                                "rotation": rotation_deg,
+                                "position": position,
+                                "rotation_matrix": rotation_matrix,
+                            }
+                        )
 
                         # Early exit if we found enough markers
-                        if self.max_detections is not None and len(results) >= self.max_detections:
+                        if (
+                            self.max_detections is not None
+                            and len(results) >= self.max_detections
+                        ):
                             return results
         return results
 

@@ -15,7 +15,11 @@ from .logger import logger, logger_protocol
 from .frame import Frame
 from pycozmo.protocol.protocol_ast import PacketType
 from pycozmo.protocol.protocol_base import Packet
-from pycozmo.protocol.protocol_declaration import MAX_FRAME_PAYLOAD_SIZE, MAX_SEQ, OOB_SEQ
+from pycozmo.protocol.protocol_declaration import (
+    MAX_FRAME_PAYLOAD_SIZE,
+    MAX_SEQ,
+    OOB_SEQ,
+)
 from .window import ReceiveWindow, SendWindow
 from pycozmo.protocol import protocol_encoder
 from . import event
@@ -26,7 +30,6 @@ from . import exception
 
 __all__ = [
     "ROBOT_ADDR",
-
     "ReceiveThread",
     "SendThread",
     "Connection",
@@ -40,14 +43,14 @@ SERVER_ADDR = ("127.0.0.1", 5551)
 
 
 class SendThread(Thread):
-    """ Cozmo protocol connection send thread. """
+    """Cozmo protocol connection send thread."""
 
-    COLLECT_INTERVAL = 1/30 / 3
-    ACK_TIMEOUT = 3 * 1/30
+    COLLECT_INTERVAL = 1 / 30 / 3
+    ACK_TIMEOUT = 3 * 1 / 30
 
-    def __init__(self,
-                 sock: socket.socket,
-                 receiver_address: Optional[Tuple[str, int]]) -> None:
+    def __init__(
+        self, sock: socket.socket, receiver_address: Optional[Tuple[str, int]]
+    ) -> None:
         super().__init__(daemon=True, name=__class__.__name__)
         self.sock = sock
         self.lock = Lock()
@@ -89,7 +92,11 @@ class SendThread(Thread):
             is_full = self.window.is_full()
         pkts = []
         start = time.perf_counter()
-        while not is_full and not self.disconnected and time.perf_counter() - start < self.COLLECT_INTERVAL:
+        while (
+            not is_full
+            and not self.disconnected
+            and time.perf_counter() - start < self.COLLECT_INTERVAL
+        ):
             try:
                 pkt = self.queue.get(timeout=self.COLLECT_INTERVAL)
             except Empty:
@@ -113,7 +120,11 @@ class SendThread(Thread):
         with self.lock:
             pkts = self.window.get()
             last_ack_time = self.last_ack_time
-        if pkts and last_ack_time and time.perf_counter() - last_ack_time > self.ACK_TIMEOUT:
+        if (
+            pkts
+            and last_ack_time
+            and time.perf_counter() - last_ack_time > self.ACK_TIMEOUT
+        ):
             with self.lock:
                 self.last_ack_time = time.perf_counter()
         else:
@@ -126,7 +137,6 @@ class SendThread(Thread):
         first_seq = None
         seq = None
         for seq, pkt in pkts:
-
             # First packet in a frame?
             if first_seq is None:
                 first_seq = seq
@@ -151,7 +161,9 @@ class SendThread(Thread):
 
     def _send_ping(self, pkt) -> None:
         self.sent_packets += 1
-        raw_frame = Frame(protocol_declaration.FrameType.PING, OOB_SEQ, OOB_SEQ, self.last_ack, [pkt]).to_bytes()
+        raw_frame = Frame(
+            protocol_declaration.FrameType.PING, OOB_SEQ, OOB_SEQ, self.last_ack, [pkt]
+        ).to_bytes()
         self._send_raw_frame(raw_frame)
 
     def _send_frame(self, pkts, first_seq: int, seq: int, ack: int) -> None:
@@ -162,7 +174,9 @@ class SendThread(Thread):
     @staticmethod
     def _build_frame(pkts, first_seq: int, seq: int, ack: int) -> bytes:
         try:
-            frame = Frame(protocol_declaration.FrameType.ENGINE, first_seq, seq, ack, pkts)
+            frame = Frame(
+                protocol_declaration.FrameType.ENGINE, first_seq, seq, ack, pkts
+            )
             return frame.to_bytes()
         except Exception as e:
             logger.error("Failed to serialize frame. {}".format(e))
@@ -201,14 +215,16 @@ class SendThread(Thread):
 
 
 class ReceiveThread(Thread):
-    """ Cozmo protocol connection receive thread. """
+    """Cozmo protocol connection receive thread."""
 
-    def __init__(self,
-                 sock: socket.socket,
-                 send_thread: SendThread,
-                 sender_address: Optional[Tuple[str, int]],
-                 delivery_handler,
-                 buffer_size: int = 2048) -> None:
+    def __init__(
+        self,
+        sock: socket.socket,
+        send_thread: SendThread,
+        sender_address: Optional[Tuple[str, int]],
+        delivery_handler,
+        buffer_size: int = 2048,
+    ) -> None:
         super().__init__(daemon=True, name=__class__.__name__)
         self.sock = sock
         self.sender_address = sender_address
@@ -259,13 +275,19 @@ class ReceiveThread(Thread):
                     self.handle_reset(address)
                 elif self.sender_address:
                     if self.sender_address != address:
-                        logger_protocol.debug("Received a UDP datagram from unexpected address {}.".format(address))
+                        logger_protocol.debug(
+                            "Received a UDP datagram from unexpected address {}.".format(
+                                address
+                            )
+                        )
                     elif frame.type == protocol_declaration.FrameType.FIN:
                         self.handle_fin()
                     else:
                         self.handle_frame(frame)
                 else:
-                    logger_protocol.debug("Got unexpected {} from {}".format(frame.type, address))
+                    logger_protocol.debug(
+                        "Got unexpected {} from {}".format(frame.type, address)
+                    )
             except Exception as e:
                 logger_protocol.error("Failed to handle frame. {}".format(e))
                 continue
@@ -339,7 +361,7 @@ class ReceiveThread(Thread):
 
 
 class Connection(Thread, event.Dispatcher):
-    """ Cozmo protocol low-level connection implementing bot client and server sides. """
+    """Cozmo protocol low-level connection implementing bot client and server sides."""
 
     IDLE = 1
     CONNECTING = 2
@@ -349,10 +371,12 @@ class Connection(Thread, event.Dispatcher):
     PING_INTERVAL = 0.5
     STATS_INTERVAL = 60.0
 
-    def __init__(self,
-                 robot_addr: Optional[Tuple[str, int]] = None,
-                 protocol_log_messages: Optional[list] = None,
-                 server: bool = False) -> None:
+    def __init__(
+        self,
+        robot_addr: Optional[Tuple[str, int]] = None,
+        protocol_log_messages: Optional[list] = None,
+        server: bool = False,
+    ) -> None:
         super().__init__(daemon=True, name=__class__.__name__)
         # Thread is an old-style class and does not propagate initialization.
         event.Dispatcher.__init__(self)
@@ -374,7 +398,11 @@ class Connection(Thread, event.Dispatcher):
         self.sock.setblocking(False)
         self.send_thread = SendThread(self.sock, None if server else self.robot_addr)
         self.recv_thread = ReceiveThread(
-            self.sock, self.send_thread, None if server else self.robot_addr, self._on_packet)
+            self.sock,
+            self.send_thread,
+            None if server else self.robot_addr,
+            self._on_packet,
+        )
         self.stop_flag = False
         self.send_last = 0
         self.ping_last = 0
@@ -430,7 +458,9 @@ class Connection(Thread, event.Dispatcher):
 
     def connect(self) -> None:
         if self.server:
-            raise exception.InvalidOperation("connect() not available on server connections.")
+            raise exception.InvalidOperation(
+                "connect() not available on server connections."
+            )
 
         logger_protocol.debug("Connecting...")
         self.state = self.CONNECTING
@@ -447,7 +477,9 @@ class Connection(Thread, event.Dispatcher):
     def send(self, pkt: Packet) -> None:
         self.send_last = time.perf_counter()
         self.send_thread.send(pkt)
-        if not self.packet_type_filter.filter(pkt.type.value) and not self.packet_id_filter.filter(pkt.id):
+        if not self.packet_type_filter.filter(
+            pkt.type.value
+        ) and not self.packet_id_filter.filter(pkt.id):
             logger_protocol.debug("Sent %s", pkt)
 
     def post_event(self, evt, *args, **kwargs) -> None:
@@ -455,7 +487,9 @@ class Connection(Thread, event.Dispatcher):
 
     def disconnect(self) -> None:
         if self.server:
-            raise exception.InvalidOperation("disconnect() not available on server connections.")
+            raise exception.InvalidOperation(
+                "disconnect() not available on server connections."
+            )
         logger_protocol.debug("Disconnecting...")
         if self.state != self.CONNECTED:
             return
@@ -469,7 +503,9 @@ class Connection(Thread, event.Dispatcher):
         self.ping_counter += 1
 
     def _on_packet_received(self, pkt):
-        if not self.packet_type_filter.filter(pkt.type.value) and not self.packet_id_filter.filter(pkt.id):
+        if not self.packet_type_filter.filter(
+            pkt.type.value
+        ) and not self.packet_id_filter.filter(pkt.id):
             logger_protocol.debug("Got  %s", pkt)
         self.dispatch(pkt.__class__, self, pkt)
 
@@ -492,17 +528,24 @@ class Connection(Thread, event.Dispatcher):
             pass
 
     def log_stats(self):
-        logger_protocol.info("Recv: {}B, {}F (disc.), {}F, {}P, {}P ({:.02f}%); "
-                             "Sent: {}P, {}P ({:.02f}%), {}F, {}F (disc.), {}B;".format(
-                                self.recv_thread.received_bytes,
-                                self.recv_thread.discarded_frames,
-                                self.recv_thread.received_frames,
-                                self.recv_thread.received_packets,
-                                self.recv_thread.delivered_packets,
-                                self.recv_thread.delivered_packets / (self.recv_thread.received_packets or 1) * 100.0,
-                                self.send_thread.outgoing_packets,
-                                self.send_thread.sent_packets,
-                                self.send_thread.outgoing_packets / (self.send_thread.sent_packets or 1) * 100.0,
-                                self.send_thread.sent_frames,
-                                self.send_thread.discarded_frames,
-                                self.send_thread.sent_bytes))
+        logger_protocol.info(
+            "Recv: {}B, {}F (disc.), {}F, {}P, {}P ({:.02f}%); "
+            "Sent: {}P, {}P ({:.02f}%), {}F, {}F (disc.), {}B;".format(
+                self.recv_thread.received_bytes,
+                self.recv_thread.discarded_frames,
+                self.recv_thread.received_frames,
+                self.recv_thread.received_packets,
+                self.recv_thread.delivered_packets,
+                self.recv_thread.delivered_packets
+                / (self.recv_thread.received_packets or 1)
+                * 100.0,
+                self.send_thread.outgoing_packets,
+                self.send_thread.sent_packets,
+                self.send_thread.outgoing_packets
+                / (self.send_thread.sent_packets or 1)
+                * 100.0,
+                self.send_thread.sent_frames,
+                self.send_thread.discarded_frames,
+                self.send_thread.sent_bytes,
+            )
+        )

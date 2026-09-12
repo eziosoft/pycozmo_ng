@@ -19,6 +19,7 @@ class LoadedObjFile:
     Args:
         filename (str): The filename of the OBJ file to load.
     """
+
     def __init__(self, filename):
         # list: The vertices (each vertex stored as list of 3 floats).
         self.vertices = []
@@ -35,11 +36,11 @@ class LoadedObjFile:
         group_name = None
         material = None
 
-        filepath = os.path.join(os.path.dirname(__file__), 'assets', filename)
+        filepath = os.path.join(os.path.dirname(__file__), "assets", filename)
 
-        with open(filepath, 'r') as file_data:
+        with open(filepath, "r") as file_data:
             for line in file_data:
-                if line.startswith('#'):
+                if line.startswith("#"):
                     # ignore comments in the file
                     continue
 
@@ -48,24 +49,24 @@ class LoadedObjFile:
                     # ignore empty lines
                     continue
 
-                if values[0] == 'v':
+                if values[0] == "v":
                     # vertex position
                     v = list(map(float, values[1:4]))
                     self.vertices.append(v)
-                elif values[0] == 'vn':
+                elif values[0] == "vn":
                     # vertex normal
                     v = list(map(float, values[1:4]))
                     self.normals.append(v)
-                elif values[0] == 'vt':
+                elif values[0] == "vt":
                     # texture coordinate
                     self.tex_coords.append(list(map(float, values[1:3])))
-                elif values[0] in ('usemtl', 'usemat'):
+                elif values[0] in ("usemtl", "usemat"):
                     # material
                     material = values[1]
-                elif values[0] == 'mtllib':
+                elif values[0] == "mtllib":
                     # material library (a filename)
                     self.mtl = self._load_mtl_file(values[1])
-                elif values[0] == 'f':
+                elif values[0] == "f":
                     # A face made up of 3 or 4 vertices - e.g. `f v1 v2 v3` or `f v1 v2 v3 v4`
                     # where each vertex definition is multiple indexes seperated by
                     # slashes and can follow the following formats:
@@ -79,19 +80,25 @@ class LoadedObjFile:
                     normals = []
 
                     for vertex in values[1:]:
-                        vertex_components = vertex.split('/')
+                        vertex_components = vertex.split("/")
 
                         positions.append(int(vertex_components[0]))
 
                         # There's only a texture coordinate if there's at least 2 entries and the 2nd entry is non-zero length
-                        if len(vertex_components) >= 2 and len(vertex_components[1]) > 0:
+                        if (
+                            len(vertex_components) >= 2
+                            and len(vertex_components[1]) > 0
+                        ):
                             tex_coords.append(int(vertex_components[1]))
                         else:
                             # OBJ file indexing starts at 1, so use 0 to indicate no entry
                             tex_coords.append(0)
 
                         # There's only a normal if there's at least 2 entries and the 2nd entry is non-zero length
-                        if len(vertex_components) >= 3 and len(vertex_components[2]) > 0:
+                        if (
+                            len(vertex_components) >= 3
+                            and len(vertex_components[2]) > 0
+                        ):
                             normals.append(int(vertex_components[2]))
                         else:
                             # OBJ file indexing starts at 1, so use 0 to indicate no entry
@@ -105,17 +112,19 @@ class LoadedObjFile:
                         mesh_face = self.mesh_faces[group_name]
 
                     mesh_face.append((positions, normals, tex_coords, material))
-                elif values[0] == 'o':
+                elif values[0] == "o":
                     # object name - ignore
                     pass
-                elif values[0] == 'g':
+                elif values[0] == "g":
                     # group name (for a sub-mesh)
                     group_name = values[1]
-                elif values[0] == 's':
+                elif values[0] == "s":
                     # smooth shading (1..20, and 'off') - ignore
                     pass
                 else:
-                    print(f"LoadedObjFile Ignoring unhandled type '{values[0]}' in line {line.strip()}")
+                    print(
+                        f"LoadedObjFile Ignoring unhandled type '{values[0]}' in line {line.strip()}"
+                    )
 
     def _load_mtl_file(self, filename):
         """Load a .mtl material file, and return the contents as a dictionary.
@@ -131,11 +140,11 @@ class LoadedObjFile:
         contents = {}
         current_mtl = None
 
-        filepath = os.path.join(os.path.dirname(__file__), 'assets', filename)
+        filepath = os.path.join(os.path.dirname(__file__), "assets", filename)
 
-        with open(filepath, 'r') as file_data:
+        with open(filepath, "r") as file_data:
             for line in file_data:
-                if line.startswith('#'):
+                if line.startswith("#"):
                     # ignore comments in the file
                     continue
                 values = line.split()
@@ -143,15 +152,17 @@ class LoadedObjFile:
                     # ignore empty lines
                     continue
                 attribute_name = values[0]
-                if attribute_name == 'newmtl':
+                if attribute_name == "newmtl":
                     # Create a new empty material
                     current_mtl = contents[values[1]] = {}
                 elif current_mtl is None:
                     raise ValueError("mtl file must start with newmtl statement")
-                elif attribute_name == 'map_Kd':
+                elif attribute_name == "map_Kd":
                     # Diffuse texture map - load the image into memory
                     image_name = values[1]
-                    image_filepath = os.path.join(os.path.dirname(__file__), 'assets', image_name)
+                    image_filepath = os.path.join(
+                        os.path.dirname(__file__), "assets", image_name
+                    )
 
                     # Load image with PIL and convert to RGBA
                     with Image.open(image_filepath) as image:
@@ -160,13 +171,22 @@ class LoadedObjFile:
 
                     # Bind the image as a texture that can be used for rendering
                     texture_id = glGenTextures(1)
-                    current_mtl['texture_Kd'] = texture_id
+                    current_mtl["texture_Kd"] = texture_id
 
                     glBindTexture(GL_TEXTURE_2D, texture_id)
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height,
-                                 0, GL_RGBA, GL_UNSIGNED_BYTE, image)
+                    glTexImage2D(
+                        GL_TEXTURE_2D,
+                        0,
+                        GL_RGBA,
+                        image_width,
+                        image_height,
+                        0,
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        image,
+                    )
                 else:
                     # Store the values for this attribute as a list of float values
                     current_mtl[attribute_name] = list(map(float, values[1:]))
@@ -179,6 +199,7 @@ class World3DViewer:
     """
     3D visualization of Cozmo's world using OpenGL
     """
+
     # Camera height above the floor in millimetres (Cozmo hardware spec).
     # Used when projecting detections from camera-frame to world-frame.
     CAMERA_HEIGHT_MM = 38.0  # (COZMO-28, user-measured)
@@ -237,14 +258,14 @@ class World3DViewer:
         self.grid_color = (0.3, 0.3, 0.3)
         self.cube_color = (0.0, 0.8, 1.0)
         self.axis_colors = {
-            'x': (1.0, 0.0, 0.0),
-            'y': (0.0, 1.0, 0.0),
-            'z': (0.0, 0.0, 1.0)
+            "x": (1.0, 0.0, 0.0),
+            "y": (0.0, 1.0, 0.0),
+            "z": (0.0, 0.0, 1.0),
         }
 
     def _load_cube_models(self):
         """Load OBJ models for the three cubes"""
-        assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
+        assets_dir = os.path.join(os.path.dirname(__file__), "assets")
 
         if not os.path.exists(assets_dir):
             print(f"Warning: Assets directory not found at {assets_dir}")
@@ -258,7 +279,7 @@ class World3DViewer:
             return
 
         # Read the base OBJ file
-        with open(obj_path, 'r') as f:
+        with open(obj_path, "r") as f:
             obj_content = f.read()
 
         # Try to load models for cube1, cube2, cube3
@@ -276,10 +297,12 @@ class World3DViewer:
 
             try:
                 # Create a temporary OBJ file with the correct MTL reference
-                temp_obj_content = obj_content.replace('mtllib cube1.mtl', f'mtllib {mtl_file}')
-                temp_obj_path = os.path.join(assets_dir, f'cube{cube_id + 1}_temp.obj')
+                temp_obj_content = obj_content.replace(
+                    "mtllib cube1.mtl", f"mtllib {mtl_file}"
+                )
+                temp_obj_path = os.path.join(assets_dir, f"cube{cube_id + 1}_temp.obj")
 
-                with open(temp_obj_path, 'w') as f:
+                with open(temp_obj_path, "w") as f:
                     f.write(temp_obj_content)
 
                 # Load the OBJ file with custom loader
@@ -320,14 +343,26 @@ class World3DViewer:
 
             # Upload texture data
             height, width = img_rgb.shape[:2]
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img_rgb)
+            glTexImage2D(
+                GL_TEXTURE_2D,
+                0,
+                GL_RGB,
+                width,
+                height,
+                0,
+                GL_RGB,
+                GL_UNSIGNED_BYTE,
+                img_rgb,
+            )
 
             return texture_id
         except Exception as e:
             print(f"Failed to load texture {filepath}: {e}")
             return None
 
-    def update_cube(self, cube_id, position, rotation_matrix, cube_size=44, marker_images=None):
+    def update_cube(
+        self, cube_id, position, rotation_matrix, cube_size=44, marker_images=None
+    ):
         """
         Update or add a cube to the world
         :param cube_id: Unique identifier for the cube
@@ -351,18 +386,14 @@ class World3DViewer:
 
         # Transform rotation using similarity transformation: R_gl = T @ R_cv @ T^T
         # where T mirrors over the YZ plane (flips X)
-        T = np.array([
-            [-1,  0, 0],
-            [0, -1, 0],
-            [0,  0, 1]
-        ], dtype=np.float32)
+        T = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32)
 
         rotation_gl = T @ rotation_matrix @ T.T
 
         self.cubes[cube_id] = {
-            'position': position_gl,
-            'rotation': rotation_gl,
-            'size': cube_size
+            "position": position_gl,
+            "rotation": rotation_gl,
+            "size": cube_size,
         }
 
         # Update textures if marker images provided
@@ -420,7 +451,17 @@ class World3DViewer:
 
         # Upload texture data
         height, width = image_rgb.shape[:2]
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image_rgb)
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGB,
+            width,
+            height,
+            0,
+            GL_RGB,
+            GL_UNSIGNED_BYTE,
+            image_rgb,
+        )
 
         return texture_id
 
@@ -445,21 +486,21 @@ class World3DViewer:
         glLineWidth(3)
 
         # X axis (red)
-        glColor3f(*self.axis_colors['x'])
+        glColor3f(*self.axis_colors["x"])
         glBegin(GL_LINES)
         glVertex3f(0, 0, 0)
         glVertex3f(length, 0, 0)
         glEnd()
 
         # Y axis (green)
-        glColor3f(*self.axis_colors['y'])
+        glColor3f(*self.axis_colors["y"])
         glBegin(GL_LINES)
         glVertex3f(0, 0, 0)
         glVertex3f(0, length, 0)
         glEnd()
 
         # Z axis (blue)
-        glColor3f(*self.axis_colors['z'])
+        glColor3f(*self.axis_colors["z"])
         glBegin(GL_LINES)
         glVertex3f(0, 0, 0)
         glVertex3f(0, 0, length)
@@ -488,7 +529,7 @@ class World3DViewer:
 
         # Correct OBJ model orientation to match our coordinate system
         # The OBJ model needs to be reoriented to stand upright with correct facing
-        glRotatef(90, 1, 0, 0)   # Rotate 90° around X to stand upright
+        glRotatef(90, 1, 0, 0)  # Rotate 90° around X to stand upright
         glRotatef(180, 0, 1, 0)  # Rotate 180° around Y to face correct direction
 
         # Extract numeric cube ID from cube_id string (e.g., "cube_1" -> 0)
@@ -504,7 +545,9 @@ class World3DViewer:
         # Scale from cm (OBJ units) to mm (our units)
         # OBJ model is ~4.1cm, we want 44mm = 4.4cm
         scale_factor = 44.0 / 41.12  # Approximate cube size in OBJ
-        glScalef(scale_factor * 10, scale_factor * 10, scale_factor * 10)  # cm to mm conversion
+        glScalef(
+            scale_factor * 10, scale_factor * 10, scale_factor * 10
+        )  # cm to mm conversion
 
         # Try to render the 3D model
         if numeric_id is not None and numeric_id in self.cube_models:
@@ -527,13 +570,15 @@ class World3DViewer:
                 material = scene.mtl.get(material_name, {}) if scene.mtl else {}
 
                 # Bind texture if available
-                if 'texture_Kd' in material:
-                    glBindTexture(GL_TEXTURE_2D, material['texture_Kd'])
+                if "texture_Kd" in material:
+                    glBindTexture(GL_TEXTURE_2D, material["texture_Kd"])
 
                 # Set material properties - force all to white
                 glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, [1.0, 1.0, 1.0, 1.0])
                 glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, [1.0, 1.0, 1.0, 1.0])
-                glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, [0.0, 0.0, 0.0, 1.0])  # No specular highlights
+                glMaterialfv(
+                    GL_FRONT_AND_BACK, GL_SPECULAR, [0.0, 0.0, 0.0, 1.0]
+                )  # No specular highlights
                 glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 0.0)
 
                 # Draw the face
@@ -587,13 +632,13 @@ class World3DViewer:
         # Define vertices of the cube
         vertices = [
             [-half, -half, -half],  # 0
-            [half, -half, -half],   # 1
-            [half, half, -half],    # 2
-            [-half, half, -half],   # 3
-            [-half, -half, half],   # 4
-            [half, -half, half],    # 5
-            [half, half, half],     # 6
-            [-half, half, half]     # 7
+            [half, -half, -half],  # 1
+            [half, half, -half],  # 2
+            [-half, half, -half],  # 3
+            [-half, -half, half],  # 4
+            [half, -half, half],  # 5
+            [half, half, half],  # 6
+            [-half, half, half],  # 7
         ]
 
         # Draw cube edges
@@ -602,9 +647,18 @@ class World3DViewer:
         glLineWidth(2)
         glBegin(GL_LINES)
         edges = [
-            (0, 1), (1, 2), (2, 3), (3, 0),
-            (4, 5), (5, 6), (6, 7), (7, 4),
-            (0, 4), (1, 5), (2, 6), (3, 7)
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 0),
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 4),
+            (0, 4),
+            (1, 5),
+            (2, 6),
+            (3, 7),
         ]
         for edge in edges:
             for vertex in edge:
@@ -618,12 +672,15 @@ class World3DViewer:
             (0, 1, 5, 4),  # Bottom (-Y)
             (2, 3, 7, 6),  # Top (+Y)
             (0, 3, 7, 4),  # Left (-X)  - face_3
-            (1, 2, 6, 5)   # Right (+X) - face_1
+            (1, 2, 6, 5),  # Right (+X) - face_1
         ]
 
         # Texture coordinates for each face (standard square mapping)
         tex_coords = [
-            (0, 0), (1, 0), (1, 1), (0, 1)  # Standard UV mapping
+            (0, 0),
+            (1, 0),
+            (1, 1),
+            (0, 1),  # Standard UV mapping
         ]
 
         # Draw faces with textures or colors
@@ -692,16 +749,16 @@ class World3DViewer:
         glPushMatrix()
 
         # Robot box dimensions: 56x70x90mm (width x height x depth) (COZMO-28)
-        width = 56.0   # X dimension
+        width = 56.0  # X dimension
         height = 70.0  # Y dimension
-        depth = 90.0   # Z dimension
+        depth = 90.0  # Z dimension
 
         # Position the robot box so camera is at origin and bottom is on surface
         # Camera is at (0,0,0) and 38mm above surface, so robot box needs to be offset
         # Robot front face should be at Z=0, bottom at Y=0, and camera at Y=38mm
         robot_x = 0.0
         robot_y = 0.0  # Robot bottom at Y=0 (on ground), camera at Y=38mm
-        robot_z = -depth/2.0  # Position so front face is at Z=0
+        robot_z = -depth / 2.0  # Position so front face is at Z=0
 
         glTranslatef(robot_x, robot_y, robot_z)
 
@@ -712,14 +769,14 @@ class World3DViewer:
 
         # Define vertices of the box (centered at translation point)
         vertices = [
-            [-half_width, 0, -half_depth],          # 0 - back bottom left (bottom at Y=0)
-            [half_width, 0, -half_depth],           # 1 - back bottom right
-            [half_width, height, -half_depth],      # 2 - back top right
-            [-half_width, height, -half_depth],     # 3 - back top left
-            [-half_width, 0, half_depth],           # 4 - front bottom left
-            [half_width, 0, half_depth],            # 5 - front bottom right
-            [half_width, height, half_depth],       # 6 - front top right
-            [-half_width, height, half_depth]       # 7 - front top left
+            [-half_width, 0, -half_depth],  # 0 - back bottom left (bottom at Y=0)
+            [half_width, 0, -half_depth],  # 1 - back bottom right
+            [half_width, height, -half_depth],  # 2 - back top right
+            [-half_width, height, -half_depth],  # 3 - back top left
+            [-half_width, 0, half_depth],  # 4 - front bottom left
+            [half_width, 0, half_depth],  # 5 - front bottom right
+            [half_width, height, half_depth],  # 6 - front top right
+            [-half_width, height, half_depth],  # 7 - front top left
         ]
 
         # Robot color - solid gray
@@ -729,9 +786,18 @@ class World3DViewer:
         # Draw box edges
         glBegin(GL_LINES)
         edges = [
-            (0, 1), (1, 2), (2, 3), (3, 0),  # Back face
-            (4, 5), (5, 6), (6, 7), (7, 4),  # Front face
-            (0, 4), (1, 5), (2, 6), (3, 7)   # Connecting edges
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 0),  # Back face
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 4),  # Front face
+            (0, 4),
+            (1, 5),
+            (2, 6),
+            (3, 7),  # Connecting edges
         ]
         for edge in edges:
             for vertex in edge:
@@ -842,12 +908,8 @@ class World3DViewer:
         cubes_snapshot = dict(self.cubes)
         for cube_id, cube_data in cubes_snapshot.items():
             self._draw_cube(
-                cube_id,
-                cube_data['position'],
-                cube_data['rotation'],
-                cube_data['size']
+                cube_id, cube_data["position"], cube_data["rotation"], cube_data["size"]
             )
-
 
         pygame.display.flip()
         return True

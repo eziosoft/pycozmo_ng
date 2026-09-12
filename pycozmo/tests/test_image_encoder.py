@@ -1,4 +1,3 @@
-
 import unittest
 
 from pycozmo.image_encoder import ImageEncoder, str_to_image, ImageDecoder, image_to_str
@@ -7,7 +6,6 @@ from pycozmo.tests.image_encoder_fixtures import FIXTURES
 
 
 class TestImageEncoder(unittest.TestCase):
-
     @staticmethod
     def _encode(sim: str) -> str:
         im = str_to_image(sim)
