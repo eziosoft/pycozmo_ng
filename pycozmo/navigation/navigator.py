@@ -3,7 +3,6 @@
 import math
 import threading
 import time
-from collections.abc import Callable
 
 import numpy as np
 
@@ -134,29 +133,23 @@ class Navigator:
         speed_mmps: float = 60.0,
         final_heading: float | None = None,
         align_tol_rad: float = 0.06,
-        target_provider: Callable[[], tuple[float, float] | None] | None = None,
     ) -> bool:
         """Closed-loop differential drive toward a point, reversing if needed.
 
-        The heading toward the target is re-aimed at the *current* robot pose
-        every tick, so the robot converges onto the target (the old code
-        steered along the line-of-sight captured at click time and never
-        re-aimed, missing any target not exactly on that ray). With
-        ``target_provider`` the goal is re-read each tick — used by the cube
-        approach to follow the live fused cube pose. Ends by turning in place
+        The bearing to the target is re-aimed at the *current* robot pose every
+        tick, so the robot converges onto the target (the old code steered
+        along the line-of-sight captured at click time and never re-aimed,
+        missing any target not exactly on that ray). Ends by turning in place
         to ``final_heading`` (if given) once close.
 
         Args:
-            tx, ty: Target position (mm, world frame). Ignored while
-                ``target_provider`` is given.
+            tx, ty: Target position (mm, world frame).
             stop_mm: Stop when within this distance of the target.
             timeout_s: Overall drive timeout.
             speed_mmps: Cruise wheel speed.
             final_heading: World heading (rad) to align to after arrival
                 (turning in place).
             align_tol_rad: Heading tolerance for the final alignment.
-            target_provider: Optional ``() -> (tx, ty) | None`` callable
-                re-read each tick; ``None`` keeps the last target.
 
         Returns:
             True if the target was reached (within tolerance), False on
@@ -167,23 +160,12 @@ class Navigator:
             print("Drive: no robot connected")
             return False
 
-        target = (tx, ty)
-
-        def _read_target() -> tuple[float, float]:
-            nonlocal target
-            if target_provider is not None:
-                fresh = target_provider()
-                if fresh is not None:
-                    target = fresh
-            return target
-
         t0 = time.monotonic()
         reached = False
         try:
             while time.monotonic() - t0 <= timeout_s:
-                gx, gy = _read_target()
                 pose = cli.pose
-                ex, ey = gx - pose.position.x, gy - pose.position.y
+                ex, ey = tx - pose.position.x, ty - pose.position.y
                 if math.hypot(ex, ey) <= stop_mm:
                     reached = True
                     break
@@ -191,8 +173,8 @@ class Navigator:
                     pose.position.x,
                     pose.position.y,
                     pose.rotation.angle_z.radians,
-                    gx,
-                    gy,
+                    tx,
+                    ty,
                     speed_mmps=speed_mmps,
                 )
                 cli.drive_wheels(lwheel_speed=vl, rwheel_speed=vr)
@@ -301,12 +283,12 @@ class Navigator:
     def _on_approach_cube(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
         """Handle cube click from browser — two-step approach & align.
 
-        Step 1 drives to a standoff point along the best face normal, far
-        enough that Cozmo sees the marker frontally and the world-map pose
-        sharpens. Step 2 then approaches closer **re-aiming every tick at the
-        live fused cube pose** (not the click-time snapshot), so the target
-        tracks the constant stream of camera measurements instead of
-        dead-reckoning to a stale position.
+        Both steps use Cozmo's onboard path planner (``go_to_pose``): step 1
+        drives to a standoff along the best face normal where Cozmo sees the
+        marker frontally and the world-map pose sharpens; step 2 re-reads the
+        **corrected** fused cube pose and drives to a closer standoff,
+        aligned with the face. The Python closed loop (``_drive_to_point``)
+        is only used to back away when the robot starts too close.
         """
         if not self.brain.cli:
             print("Approach: no robot connected")
@@ -351,27 +333,42 @@ class Navigator:
         )
         print(f"Head tilt {HEAD_TILT_DEG:.0f} deg")
 
-        # The approach face is fixed at step 1 (the robot stays on the same
-        # side); only the cube POSITION is re-read live in step 2.
-        face_xy = (nx, ny)
-
-        def _standoff(dist_mm: float) -> tuple[float, float]:
+        def _standoff(dist_mm: float, n: tuple[float, float]) -> tuple[float, float]:
+            """Cube center + ``n * dist_mm`` from the state snapshot at
+            click time (horizontal plane only)."""
             p = state.position
             if p is None:
                 return (cube_x, cube_y)
             return (
-                float(p[0]) + face_xy[0] * dist_mm,
-                float(p[1]) + face_xy[1] * dist_mm,
+                float(p[0]) + n[0] * dist_mm,
+                float(p[1]) + n[1] * dist_mm,
             )
 
-        def _live_standoff(dist_mm: float):
+        def _corrected_target(dist_mm: float):
+            """Recompute the approach line from the corrected cube pose.
+
+            Called after step 1: re-reads the fresh fused cube position and
+            rotation, re-picks the best face from the robot's new pose, and
+            returns ``(x, y, heading)`` for ``go_to_pose`` — or ``None`` if
+            the cube was lost.
+            """
             s = _cube_state(cube_idx)
+            rp = self.brain.cli.pose
             if s is None:
                 return None
-            p = s.position
+            f = self._pick_face_normal(
+                s.position,
+                s.rotation_matrix,
+                (rp.position.x, rp.position.y),
+                rp.rotation.angle_z.radians,
+            )
+            if f is None:
+                return None
+            nx2, ny2, heading2 = f
             return (
-                float(p[0]) + face_xy[0] * dist_mm,
-                float(p[1]) + face_xy[1] * dist_mm,
+                float(s.position[0]) + nx2 * dist_mm,
+                float(s.position[1]) + ny2 * dist_mm,
+                heading2,
             )
 
         def _wait_for_fresh(timeout_s: float = 3.0) -> None:
@@ -398,21 +395,28 @@ class Navigator:
 
                 time.sleep(0.3)  # let the head settle before the first shot
 
-                s1x, s1y = _standoff(STEP1_DIST)
-                print(f"Step 1: drive to view standoff ({s1x:.0f}, {s1y:.0f})")
-                self._drive_to_point(s1x, s1y, final_heading=heading, timeout_s=20.0)
+                s1x, s1y = _standoff(STEP1_DIST, (nx, ny))
+                print(f"Step 1: go_to_pose to view standoff ({s1x:.0f}, {s1y:.0f})")
+                self.brain.cli.go_to_pose(
+                    Pose(s1x, s1y, 0, angle_z=Angle(radians=heading)),
+                    relative_to_robot=False,
+                )
 
                 _wait_for_fresh()
 
-                s2x, s2y = _live_standoff(STEP2_DIST) or (s1x, s1y)
-                print(f"Step 2: approach & align at ({s2x:.0f}, {s2y:.0f})")
-                self._drive_to_point(
-                    s2x,
-                    s2y,
-                    stop_mm=25.0,
-                    timeout_s=15.0,
-                    final_heading=heading,
-                    target_provider=lambda: _live_standoff(STEP2_DIST),
+                target2 = _corrected_target(STEP2_DIST)
+                if target2 is None:
+                    print("Cube lost after step 1 - keeping last standoff")
+                    s2x, s2y, heading2 = s1x, s1y, heading
+                else:
+                    s2x, s2y, heading2 = target2
+                print(
+                    f"Step 2: go_to_pose to {STEP2_DIST:.0f}mm standoff "
+                    f"({s2x:.0f}, {s2y:.0f})"
+                )
+                self.brain.cli.go_to_pose(
+                    Pose(s2x, s2y, 0, angle_z=Angle(radians=heading2)),
+                    relative_to_robot=False,
                 )
 
                 print(f"Aligned with cube {cube_idx + 1}")
