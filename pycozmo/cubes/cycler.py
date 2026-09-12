@@ -55,7 +55,7 @@ class CubeCycler:
 
     def _loop(self, cli):
         """Main cycling loop."""
-        import pycozmo.protocol_encoder as pe
+        from pycozmo.protocol import protocol_encoder as pe
 
         while not self._stop.is_set():
             with self._lock:
