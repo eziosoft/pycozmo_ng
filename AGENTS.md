@@ -82,7 +82,10 @@ pycozmo/           # Main library
 │   ├── camera.py          # Camera image decoding
 │   ├── processor.py       # AnnotatedVisionProcessor (cube detection pipeline)
 │   ├── display.py         # VisionDisplay — frame handlers, display, overlay
-│   └── camera_calibration.py  # Camera calibration from robot NVRAM
+│   ├── camera_calibration.py  # Camera calibration from robot NVRAM
+│   └── cube_detector/     # Cube detection module
+│       ├── cube_detector.py  # CozmoCubeDetector + CubeFusionTracker
+│       └── cube_faces/       # Marker templates (JPGs)
 ├── navigation/    # Navigation subsystem
 │   ├── navigator.py  # Navigator — navigate, approach, dock
 │   └── world_map.py  # WorldMap — fused robot/cube poses, path trail
@@ -109,9 +112,6 @@ pycozmo/           # Main library
 │   ├── viewer.py      # WebBridge — streaming, telemetry
 │   ├── viewer_server.py  # WebSocket server for browser viewer
 │   └── static/        # Three.js browser viewer (HTML/CSS/JS)
-├── cubeDetector/  # Cube detection module
-│   ├── cubeDetector.py  # CozmoCubeDetector + CubeFusionTracker
-│   └── cube_faces/      # Marker templates (JPGs)
 ├── audiokinetic/  # SoundBank + audio encoding
 ├── CozmoAnim/     # Animation data classes (flatbuffers)
 └── tests/         # Unit tests (pytest)
@@ -133,7 +133,7 @@ This branch adds:
 - Calibration is retrieved from robot NVRAM via `CameraCalibrationRetriever`
 
 ### Cube Detection
-- Marker templates are in `pycozmo/cubeDetector/cube_faces/*.jpg`
+- Marker templates are in `pycozmo/vision/cube_detector/cube_faces/*.jpg`
 - Cozmo has 3 light cubes (IDs 1-3)
 - `CubeFusionTracker` fuses multiple face detections into coherent 3D poses
 - Head tilt compensation required for accurate tracking

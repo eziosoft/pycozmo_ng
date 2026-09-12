@@ -2,7 +2,7 @@
 
 Computer vision module for cube detection and tracking.
 
-This module handles cube detection using the cubeDetector.py implementation
+This module handles cube detection using the cube_detector implementation
 and provides annotated frames for visualization.
 
 """
@@ -19,12 +19,12 @@ from pycozmo.vision.camera_calibration import CameraCalibration
 
 # Import CubeFusionTracker
 try:
-    from pycozmo.cubeDetector.cubeDetector import CozmoCubeDetector, CubeFusionTracker
+    from pycozmo.vision.cube_detector.cube_detector import CozmoCubeDetector, CubeFusionTracker
 
     CUBE_DETECTOR_AVAILABLE = True
 except ImportError:
     CUBE_DETECTOR_AVAILABLE = False
-    logger.error("cubeDetector module is required but not available")
+    logger.error("cube_detector module is required but not available")
     raise
 
 __all__ = [
@@ -61,7 +61,7 @@ class VisionProcessor:
     """
     Computer vision processor for detecting and tracking Cozmo cubes.
 
-    Uses CozmoCubeDetector from cubeDetector.py for marker-based 3D tracking.
+    Uses CozmoCubeDetector from cube_detector for marker-based 3D tracking.
     """
 
     def __init__(self, camera_calibration: CameraCalibration):
@@ -79,7 +79,7 @@ class VisionProcessor:
         # Initialize the detector
         self._init_detector()
 
-        logger.info("Vision processor initialized with cubeDetector.py")
+        logger.info("Vision processor initialized with cube_detector")
 
     def _init_detector(self):
         """Initialize the CozmoCubeDetector with marker templates."""
@@ -91,7 +91,7 @@ class VisionProcessor:
         # Load marker templates
         target_markers = []
         marker_dir = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), "cubeDetector", "cube_faces"
+            os.path.dirname(__file__), "cube_detector", "cube_faces"
         )
 
         if not os.path.exists(marker_dir):

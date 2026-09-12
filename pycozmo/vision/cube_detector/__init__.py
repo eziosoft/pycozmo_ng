@@ -5,7 +5,7 @@ This module provides advanced 3D cube detection and tracking capabilities
 using ArUco-like markers and sensor fusion.
 """
 
-from .cubeDetector import CozmoCubeDetector, CubeFusionTracker
+from .cube_detector import CozmoCubeDetector, CubeFusionTracker
 
 __all__ = [
     "CozmoCubeDetector",
