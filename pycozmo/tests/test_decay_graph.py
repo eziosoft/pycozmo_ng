@@ -1,7 +1,7 @@
 
 import unittest
 
-from pycozmo.emotions import DecayGraph, Node
+from pycozmo.display.emotions import DecayGraph, Node
 
 
 class TestDecayGraph(unittest.TestCase):

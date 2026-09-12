@@ -34,7 +34,7 @@ ruff format --check pycozmo/
 mypy pycozmo/
 
 # Run JS linting (for web_viewer JS)
-npx eslint pycozmo/web_viewer/
+npx eslint pycozmo/web/static/
 
 # Run tests
 pytest pycozmo/tests/ -v
@@ -54,19 +54,44 @@ pytest pycozmo/tests/ -v
 
 ```
 pycozmo/           # Main library
+├── brain.py       # Brain — top-level orchestrator (public API)
 ├── client.py      # Client class (main entrypoint)
-├── vision.py      # Vision processor for cube detection
-├── camera_calibration.py  # Camera calibration from robot NVRAM
+├── protocol/      # Cozmo wire protocol
+│   ├── protocol_ast.py       # Packet type enums, abstract syntax
+│   ├── protocol_base.py      # Struct, Packet base classes
+│   ├── protocol_declaration.py  # Packet declarations, constants
+│   ├── protocol_encoder.py   # Packet encode/decode
+│   ├── protocol_generator.py # Code generation from declarations
+│   └── protocol_utils.py     # BinaryReader, BinaryWriter
+├── display/       # Display subsystem
+│   ├── procedural_face.py  # Procedural face rendering
+│   ├── emotions.py         # Emotion definitions
+│   └── expressions/        # Facial expression definitions
+├── vision/        # Vision subsystem
+│   ├── camera.py          # Camera image decoding
+│   ├── processor.py       # AnnotatedVisionProcessor (cube detection pipeline)
+│   ├── display.py         # VisionDisplay — frame handlers, display, overlay
+│   └── camera_calibration.py  # Camera calibration from robot NVRAM
+├── navigation/    # Navigation subsystem
+│   └── navigator.py  # Navigator — navigate, approach, dock
+├── cubes/         # Cube BLE management
+│   ├── cycler.py      # CubeCycler — rapid BLE cycling
+│   ├── manager.py     # CubeManager — mapping, connection state
+│   └── cube_imu.py    # CubeMoveDetector — accelerometer movement detection
+├── web/           # Web viewer bridge
+│   ├── viewer.py      # WebBridge — streaming, telemetry
+│   ├── viewer_server.py  # WebSocket server for browser viewer
+│   └── static/        # Three.js browser viewer (HTML/CSS/JS)
+├── wifi.py        # WiFi auto-connect helper
 ├── cubeDetector/  # Cube detection module
 │   ├── cubeDetector.py  # CozmoCubeDetector + CubeFusionTracker
 │   ├── cube_faces/      # Marker templates (JPGs)
 │   └── world_3d_viewer.py  # 3D visualization
-├── web_viewer_server.py  # WebSocket server for browser viewer
 ├── web_viewer/     # Three.js browser viewer
 │   ├── index.html
 │   └── style.css
 ├── tests/         # Unit tests (pytest)
-└── audiokinetic/  # SoundBank module (has own tests)
+└── audiokinetic/  # SoundBank + audio encoding
 
 examples/          # Demo scripts (run with python examples/X.py)
 tools/             # CLI utilities (installed as scripts)
@@ -97,19 +122,27 @@ This branch adds:
 ### Dependencies
 - Runtime: opencv-python, numpy, Pillow, scipy, PyOpenGL, pygame, aiohttp, websockets
 - Dev: pytest, ruff, mypy
-- JS: eslint (for web_viewer)
+- JS: eslint (for web/static)
 - No CI/CD workflows configured
 
 ## Code Style
 
 - **Python**: ruff (max line length 120, PEP 8). Every `.py` file must pass `ruff check` and `ruff format --check` before committing.
-- **JS**: eslint (recommended: `@eslint/js` + `eslint-plugin-unicorn`). Web viewer files live in `pycozmo/web_viewer/`.
+- **JS**: eslint (recommended: `@eslint/js` + `eslint-plugin-unicorn`). Web viewer files live in `pycozmo/web/static/`.
 - Type hints encouraged
 - Docstrings encouraged
 
 ## Library-First Approach
 
-PyCozmo is a **library**, not a script collection. New functionality must be added inside `pycozmo/` with a clean public API so others can `import pycozmo` and use it independently. `main.py` is a simple test/demo script that exercises the library — never put core logic there. When adding a feature, ask: "could someone use this without main.py?" If yes, the API is right.
+PyCozmo is a **library**, not a script collection. New functionality must be added inside `pycozmo/` with a clean public API so others can `import pycozmo` and use it independently. `main.py` is only a test/demo program that orchestrates and exercises library functions; it must not own reusable behavior, state, hardware integration, or workflows. When adding a feature, ask: "could someone use this without main.py?" If yes, the API is right.
+
+## Architecture & Organization
+
+The application layer — everything `main.py` drives — lives in **`pycozmo/app/`**. `main.py` is only an entrypoint (argparse + wiring); no logic lives in `main.py`.
+
+- **One class per file.** If a feature doesn't fit an existing class's stated job, create a *new file* — never grow an existing class.
+- **Files are grouped in folders by function.** `vision/`, `navigation/`, `web/`, `cubes/`. New functionality goes in the matching folder.
+- A genuinely new function gets a new folder.
 
 ## Testing
 

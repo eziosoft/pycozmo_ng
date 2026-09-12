@@ -17,8 +17,8 @@ from . import logger
 from . import anim_encoder
 from . import image_encoder
 from . import lights
-from . import procedural_face
-from . import protocol_encoder
+from pycozmo.display import procedural_face
+from pycozmo.protocol import protocol_encoder
 from . import robot
 from .json_loader import find_file, load_json_file
 

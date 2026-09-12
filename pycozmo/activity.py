@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from . import logger
-from .emotions import DecayGraph, Node
+from pycozmo.display.emotions import DecayGraph, Node
 from .json_loader import get_json_files, load_json_file
 
 

@@ -22,8 +22,8 @@ from threading import Event
 
 import numpy as np
 
-from . import logger
-from . import protocol_encoder
+from pycozmo import logger
+from pycozmo import protocol_encoder
 
 
 __all__ = [

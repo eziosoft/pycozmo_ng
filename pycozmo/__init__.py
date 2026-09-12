@@ -7,6 +7,14 @@ PyCozmo - a pure-Python Cozmo robot communication library.
 import sys
 
 from .logger import *
+
+from . import protocol
+from .protocol import protocol_base
+from .protocol import protocol_declaration
+from .protocol import protocol_generator
+from .protocol import protocol_encoder
+from .protocol import protocol_utils
+
 from .run import *
 
 from .frame import Frame
@@ -18,25 +26,20 @@ from .event import *
 from . import exception
 from . import util
 from . import window
-from . import protocol_base
-from . import protocol_declaration
-from . import protocol_generator
-from . import protocol_encoder
-from . import protocol_utils
 from . import lights
-from . import camera
+from .vision import camera
 from . import object
 from . import filter
 from . import anim
 from . import anim_encoder
 from . import image_encoder
-from . import procedural_face
+from .display import procedural_face
 from . import activity
 from . import behavior
-from . import emotions
+from .display import emotions
 from . import brain
 from . import audiokinetic
-from . import expressions
+from .display import expressions
 from . import vision
 
 

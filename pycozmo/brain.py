@@ -1,211 +1,262 @@
+"""Brain — top-level orchestrator for the Cozmo robot.
+
+Holds shared state, the run loop, and lifecycle management. Domain classes
+(VisionDisplay, Navigator, CubeManager, WebBridge) receive a reference to
+a Brain instance and access shared state via ``self.brain``.
+
+Usage::
+
+    brain = Brain()
+    brain.run(cli)
+
 """
 
-Brain class - high level behavior and emotion engine.
-
-"""
-
-from typing import Optional
-from threading import Thread
-from queue import Queue, Empty
+import os
+import threading
 import time
 
-from . import logger, logger_reaction, logger_behavior
-from . import client
-from . import event
-from . import emotions
-from . import behavior
-from . import activity
-from . import util
-from . import robot
+import cv2
 
-
-__all__ = [
-    "Brain"
-]
+import pycozmo
+from pycozmo.cubes.cube_imu import CubeMoveDetector
+from pycozmo.cubes.cycler import CubeCycler
+from pycozmo.cubes.manager import CubeManager
+from pycozmo.logger import logger_cubes
+from pycozmo.navigation.navigator import Navigator
+from pycozmo.vision.display import VisionDisplay
+from pycozmo.web.viewer import WebBridge
+from pycozmo.web.viewer_server import WebViewerServer
 
 
 class Brain:
-    """ Cozmo robot brain class. """
+    """Cozmo robot brain — orchestrates vision, navigation, cubes, and web viewer.
 
-    def __init__(self, cli: client.Client):
-        super().__init__()
+    Domain classes receive a reference to this instance via ``self.brain``
+    and read/write shared state through it.
+    """
 
-        self.cli = cli
+    def __init__(self):
+        # Robot connection
+        self.cli = None
 
-        # TODO: Load configuration. See cozmo_resources/config/features.json
+        # Web viewer
+        self.web_viewer = WebViewerServer()
+        self.web_viewer.start()
 
-        util.check_assets()
+        # Vision processor
+        self.vision_processor = None
 
-        start_time = time.perf_counter()
-        resource_dir = str(util.get_cozmo_asset_dir())
-        self.activities = activity.load_activities(resource_dir)
-        self.behaviors = behavior.load_behaviors(resource_dir, self.cli)
-        self.reaction_trigger_beahvior_map = behavior.load_reaction_trigger_behavior_map(resource_dir)
-        self.emotion_types = emotions.load_emotion_types(resource_dir)
-        self.emotion_events = emotions.load_emotion_events(resource_dir)
-        self.cli.load_anims()
-        logger.info("Loaded resources in {:.02f} s.".format(time.perf_counter() - start_time))
+        # Display state
+        self.running = True
+        self.show_fps = True
+        self.detection_enabled = True
+        self.frame_count = 0
+        self.start_time = time.time()
+        self.fps = 0.0
+        self.headless = not os.environ.get("DISPLAY")
+        if self.headless:
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        self.window_name = "PyCozmo Vision Test - Normal (Left) | Annotated (Right)"
 
-        self.cli.add_handler(event.EvtBehaviorDone, self.on_behavior_done)
-        self.cli.add_handler(event.EvtCliffDetectedChange, self.on_cliff_detected)
-        self.cli.add_handler(event.EvtRobotOrientationChange, self.on_robot_orientation_change)
-        self.cli.add_handler(event.EvtRobotPickedUpChange, self.on_robot_picked_up_change)
-        self.cli.add_handler(event.EvtRobotFallingChange, self.on_robot_falling_change)
-        self.cli.add_handler(event.EvtRobotOnChargerChange, self.on_robot_on_charger_change)
-        # TODO: ...
+        # Camera lifecycle (COZMO-22)
+        self._camera_active = False
+        self._camera_enabled_at: float | None = None
+        self._camera_resolution = None
 
-        # Reaction trigger queue
-        self.reaction_queue = Queue()
+        # Detections lock (COZMO-3)
+        self._detections_lock = threading.Lock()
+        self.latest_raw_frame = None
+        self.latest_annotated_frame = None
+        self.latest_detections: list = []
+        self.latest_debug_images: dict = {}
 
-        self.stop_flag = False
-        self.reaction_thread = Thread(daemon=True, name="ReactionThread", target=self.reaction_thread_run)
-        self.heartbeat_thread = Thread(daemon=True, name="HeartbeatThread", target=self.heartbeat_thread_run)
+        # Cube tracking
+        self.cube_factory_id_map: dict[int, int] = {}
+        self._cube_object_id_map: dict[int, int] = {}
+        self._cube_last_seen_frame: dict[int, int] = {}
+        self._cube_cycler: CubeCycler | None = None
+        self._cube_move_detectors: dict[int, CubeMoveDetector] = {}
+        self._cube_suppress: dict = {
+            "ids": set(),
+            "fresh_frames": {},
+            "fresh_frames_needed": 5,
+        }
 
-        # Current activity
-        self.activity = self.activities["Freeplay"]
-        # Current behavior
-        self.behavior = None    # type: Optional[behavior.Behavior]
+        # Dock / charging state (COZMO-28)
+        self._dock_lock = threading.Lock()
+        self._on_charger = False
+        self._charging = False
+        self._dock_pose = None
+        self._origin_reset_origin_id = None
 
-    def start(self):
-        # Connect to robot
-        self.reaction_thread.start()
-        self.heartbeat_thread.start()
+        # Remote control (COZMO-25)
+        self._remote_control = None
 
-        # TODO: Enable stop on cliff.
-        # TODO: Enable camera.
-        # TODO: Drive off if on charger.
+        # Staleness detection (COZMO-22)
+        self._last_frame_time = time.time()
 
-    def stop(self):
-        # Disconnect from robot
-        self.stop_flag = True
-        if self.heartbeat_thread:
-            self.heartbeat_thread.join()
-            self.heartbeat_thread = None
-        if self.reaction_thread:
-            self.reaction_thread.join()
-            self.reaction_thread = None
+        # Domain sub-components
+        self.vision = VisionDisplay(self)
+        self.navigator = Navigator(self)
+        self.cubes = CubeManager(self)
+        self.web = WebBridge(self)
 
-    def on_behavior_done(self, cli: client.Client) -> None:
-        if self.behavior:
-            logger_reaction.info("Done.")
-            self.deactivate_behavior()
+    # ------------------------------------------------------------------
+    # Camera lifecycle (COZMO-22)
+    # ------------------------------------------------------------------
 
-    def on_cliff_detected(self, cli: client.Client, state: bool) -> None:
-        if state and not cli.robot_picked_up and cli.robot_moving:
-            self.post_reaction("CliffDetected")
+    def install_camera_lifecycle(self, cli, resolution):
+        """Bind the Cozmo camera on/off to WebSocket viewer activity."""
+        self._camera_resolution = resolution
 
-    def on_robot_orientation_change(self, cli: client.Client, orientation: robot.RobotOrientation) -> None:
-        # FIXME: These are not working well at present.
-        # if orientation == robot.RobotOrientation.ON_THREADS:
-        #     self.post_reaction("ReturnedToTreads")
-        # elif orientation == robot.RobotOrientation.ON_BACK:
-        #     self.post_reaction("RobotOnBack")
-        # elif orientation == robot.RobotOrientation.ON_FACE:
-        #     self.post_reaction("RobotOnFace")
-        # elif orientation == robot.RobotOrientation.ON_LEFT_SIDE or \
-        #         orientation == robot.RobotOrientation.ON_RIGHT_SIDE:
-        #     self.post_reaction("RobotOnSide")
-        pass
+        def _on_clients_change(active_count: int) -> None:
+            if active_count > 0 and not self._camera_active:
+                print(f"{active_count} viewer(s) connected - enabling Cozmo camera")
+                cli.enable_camera(
+                    enable=True,
+                    color=False,
+                    resolution=self._camera_resolution,
+                )
+                cli.set_camera_params(
+                    gain=0.0,
+                    exposure_ms=100,
+                    auto_exposure_enabled=True,
+                )
+                self._camera_active = True
+                self._camera_enabled_at = time.time()
+            elif active_count == 0 and self._camera_active:
+                print("No viewers - disabling Cozmo camera")
+                cli.enable_camera(enable=False)
+                self._camera_active = False
+                self._camera_enabled_at = None
 
-    def on_robot_picked_up_change(self, cli: client.Client, state: bool) -> None:
+        self.web_viewer.add_active_clients_listener(_on_clients_change)
+
+    # ------------------------------------------------------------------
+    # Remote control (COZMO-25)
+    # ------------------------------------------------------------------
+
+    def install_remote_control(self, cli) -> None:
+        """Wire browser keyboard input to Cozmo's motors."""
+        from pycozmo.remote_control import RemoteControl
+
+        self._remote_control = RemoteControl(cli)
+        self._remote_control.start()
+        self.web_viewer.set_control_listener(self._remote_control.update_keys)
+        self.web_viewer.set_navigate_listener(self.navigator._on_navigate_to)
+        self.web_viewer.set_approach_listener(self.navigator._on_approach_cube)
+        self.web_viewer.set_dock_listener(self.navigator._on_dock)
+        if self.cli is not None:
+            self._dock_pose = self.cli.pose
+        print("Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
+        print("Click-to-navigate enabled: click ground to drive there")
+        print("Click cube to approach and align")
+        print("Z to dock: drive back to start position")
+
+    def stop_remote_control(self) -> None:
+        if self._remote_control is not None:
+            self._remote_control.stop()
+            self._remote_control = None
+
+    # ------------------------------------------------------------------
+    # Pick-up handler
+    # ------------------------------------------------------------------
+
+    def _on_picked_up(self, c, state):
         if state:
-            self.post_reaction("RobotPickedUp")
+            self.web_viewer.clear_path()
 
-    def on_robot_falling_change(self, cli: client.Client, state: bool):
-        if state:
-            self.post_reaction("RobotFalling")
+    # ------------------------------------------------------------------
+    # Main run loop
+    # ------------------------------------------------------------------
 
-    def on_robot_on_charger_change(self, cli: client.Client, state: bool) -> None:
-        if state:
-            self.post_reaction("PlacedOnCharger")
+    def run(self, cli):
+        """Main display loop."""
+        if not self.headless:
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
 
-    def on_camera_image(self, cli: client.Client, new_im) -> None:
-        """ Process images, coming from the robot camera. """
-        # TODO: See cozmo_resources/config/engine/vision_config.json
-        # TODO: motion detection
-        # self.process_reaction_trigger("UnexpectedMovement")
-        # TODO: face detection
-        # self.process_reaction_trigger("FacePositionUpdate")?
-        # TODO: pet detection
-        # self.process_reaction_trigger("PetInitialDetection")
-        # TODO: laser detection
-        # TODO: cube marker detection
-        # TODO: facial expression estimation
-        # TODO: smile amount detection
-        # TODO: blink amount detection
-        # TODO: gaze detection?
-        # TODO: image quality check
-        pass
+        _CONNECTED = pycozmo.conn.Connection.CONNECTED
 
-    def post_reaction(self, reaction_trigger: str) -> None:
-        """ Post a reaction trigger to the reaction trigger queue. """
-        logger_reaction.debug("Posting {}".format(reaction_trigger))
-        self.reaction_queue.put(reaction_trigger)
+        while self.running:
+            if cli.conn.state != _CONNECTED:
+                logger_cubes.warning(
+                    "Connection state is %s - exiting main loop",
+                    cli.conn.state,
+                )
+                self.running = False
+                break
 
-    def reaction_thread_run(self) -> None:
-        """ Reaction thread loop. Reaction trigger queue processing. """
-        while not self.stop_flag:
-            try:
-                reaction_trigger = self.reaction_queue.get(timeout=0.05)
-            except Empty:
-                continue
-            except Exception as e:
-                logger.error("Failed to get from reaction trigger queue. {}".format(e))
-                continue
+            if (
+                self._camera_active
+                and self._camera_enabled_at is not None
+                and time.time() - self._camera_enabled_at > 5.0
+            ):
+                stale_for = time.time() - self._last_frame_time
+                if stale_for > 5.0:
+                    logger_cubes.warning(
+                        "No camera frames for %.1fs - assuming Wi-Fi drop, "
+                        "exiting main loop",
+                        stale_for,
+                    )
+                    self.running = False
+                    break
 
-            try:
-                self.process_reaction(reaction_trigger)
-            except Exception as e:
-                logger.error("Failed to dispatch reaction trigger '{}'. {}".format(reaction_trigger, e))
+            self.vision.display_frames()
+
+            if self.headless:
+                time.sleep(0.01)
                 continue
 
-    def process_reaction(self, reaction_trigger: str) -> None:
-        logger_reaction.info("Processing {}".format(reaction_trigger))
-        reaction = self.reaction_trigger_beahvior_map.get(reaction_trigger)
-        if reaction:
-            # TODO: Handle should_resume_last.
-            self.activate_behavior(reaction.behavior_id)
-        else:
-            logger_reaction.error("Failed to find reaction for {}.".format(reaction_trigger))
+            key = cv2.waitKey(1) & 0xFF
 
-    def activate_behavior(self, behavior_id: str) -> None:
-        behavior = self.behaviors.get(behavior_id)
-        if behavior:
-            self.deactivate_behavior()
-            logger_behavior.info("Activating {}".format(behavior_id))
-            self.behavior = behavior
-            self.cli.activate_behavior(self.behavior)
-        else:
-            logger_reaction.error("Failed to find behavior {}.".format(behavior_id))
+            if key == ord("q") or key == ord("Q"):
+                pkt = pycozmo.protocol_encoder.StopAllMotors()
+                cli.conn.send(pkt)
+                self.running = False
+                break
+            elif key == ord("s") or key == ord("S"):
+                self.vision.save_frames()
+            elif key == ord("c") or key == ord("C"):
+                self.detection_enabled = not self.detection_enabled
+                if self.vision_processor is not None:
+                    if self.detection_enabled:
+                        self.vision_processor.resume()
+                    else:
+                        self.vision_processor.pause()
+                print(
+                    f"Detection {'ENABLED' if self.detection_enabled else 'DISABLED'}"
+                )
+            elif key == ord("f") or key == ord("F"):
+                self.show_fps = not self.show_fps
+                print(f"FPS overlay {'ON' if self.show_fps else 'OFF'}")
+            elif key == ord("i") or key == ord("I"):
+                pkt = pycozmo.protocol_encoder.DriveWheels(
+                    lwheel_speed_mmps=50, rwheel_speed_mmps=50
+                )
+                cli.conn.send(pkt)
+            elif key == ord("k") or key == ord("K"):
+                pkt = pycozmo.protocol_encoder.DriveWheels(
+                    lwheel_speed_mmps=-50, rwheel_speed_mmps=-50
+                )
+                cli.conn.send(pkt)
+            elif key == ord("j") or key == ord("J"):
+                pkt = pycozmo.protocol_encoder.DriveWheels(
+                    lwheel_speed_mmps=-50, rwheel_speed_mmps=50
+                )
+                cli.conn.send(pkt)
+            elif key == ord("l") or key == ord("L"):
+                pkt = pycozmo.protocol_encoder.DriveWheels(
+                    lwheel_speed_mmps=50, rwheel_speed_mmps=-50
+                )
+                cli.conn.send(pkt)
+            elif key == ord(" "):
+                pkt = pycozmo.protocol_encoder.StopAllMotors()
+                cli.conn.send(pkt)
+            elif key == ord("p") or key == ord("P"):
+                self.web_viewer.clear_path()
+                print("Path trail cleared")
 
-    def deactivate_behavior(self) -> None:
-        if self.behavior:
-            logger_behavior.info("Deactivating {}".format(self.behavior.get_id()))
-            self.cli.deactivate_behavior(self.behavior)
-            self.behavior = None
-            # TODO: Choose behavior from activity?
-
-    def heartbeat_thread_run(self) -> None:
-        """ Heartbeat thread loop. """
-
-        # Raise head.
-        angle = (robot.MAX_HEAD_ANGLE.radians - robot.MIN_HEAD_ANGLE.radians) / 2.0
-        self.cli.set_head_angle(angle)
-
-        cnt = 1
-        timer = util.FPSTimer(robot.FRAME_RATE)
-        while not self.stop_flag:
-
-            self.update_emotion_types()
-            # TODO: Timers
-
-            if cnt % (30 * 60) == 0:
-                self.post_reaction("Hiccup")
-
-            cnt += 1
-            timer.sleep()
-
-    def update_emotion_types(self) -> None:
-        """ Update emotion types from their decay functions. """
-        for emotion_type in self.emotion_types.values():
-            emotion_type.update()
+        if not self.headless:
+            cv2.destroyAllWindows()
+        self.stop_remote_control()
+        self.web_viewer.close()

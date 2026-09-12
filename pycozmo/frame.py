@@ -7,11 +7,11 @@ Cozmo protocol frame representation and encoding and decoding.
 from typing import List
 
 from .logger import logger_protocol
-from .protocol_ast import FrameType, PacketType
-from .protocol_declaration import FRAME_ID, MIN_FRAME_SIZE, MAX_SEQ, OOB_SEQ
-from .protocol_base import Packet, UnknownCommand, UnknownEvent
-from .protocol_utils import BinaryReader, BinaryWriter
-from .protocol_encoder import Connect, Disconnect, Ping, Keyframe, PACKETS_BY_ID
+from pycozmo.protocol.protocol_ast import FrameType, PacketType
+from pycozmo.protocol.protocol_declaration import FRAME_ID, MIN_FRAME_SIZE, MAX_SEQ, OOB_SEQ
+from pycozmo.protocol.protocol_base import Packet, UnknownCommand, UnknownEvent
+from pycozmo.protocol.protocol_utils import BinaryReader, BinaryWriter
+from pycozmo.protocol.protocol_encoder import Connect, Disconnect, Ping, Keyframe, PACKETS_BY_ID
 
 
 __all__ = [

@@ -8,7 +8,7 @@ for rendering. Drop-in replacement for World3DViewer in main.py.
 
 Usage:
     # Standalone (serves HTML + WebSocket on port 8765):
-    python -m pycozmo.web_viewer_server
+    python -m pycozmo.web.viewer_server
 
     # Integrated into main.py:
     server = WebViewerServer(world_map)
@@ -39,8 +39,8 @@ try:
 except ImportError:
     HAS_AIOHTTP = False
 
-from . import coords
-from .world_map import WorldMap
+from pycozmo import coords
+from pycozmo.world_map import WorldMap
 
 # How far (mm) to lift the rendered path trail above the scene ground plane
 # (scene +Y). The trail is a zero-thickness line at ground level, so without a
@@ -529,13 +529,13 @@ class WebViewerServer:
     # -- static file serving (aiohttp) -------------------------------------
 
     async def _serve_index(self, request):
-        """Serve index.html from the web_viewer directory."""
-        viewer_dir = os.path.join(os.path.dirname(__file__), "web_viewer")
+        """Serve index.html from the static directory."""
+        viewer_dir = os.path.join(os.path.dirname(__file__), "static")
         return web.FileResponse(os.path.join(viewer_dir, "index.html"))
 
     async def _serve_static(self, request):
-        """Serve static files from the web_viewer directory."""
-        viewer_dir = os.path.join(os.path.dirname(__file__), "web_viewer")
+        """Serve static files from the static directory."""
+        viewer_dir = os.path.join(os.path.dirname(__file__), "static")
         filename = request.match_info["filename"]
         filepath = os.path.join(viewer_dir, filename)
         if os.path.isfile(filepath):

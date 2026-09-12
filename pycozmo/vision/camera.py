@@ -6,7 +6,7 @@ Camera image decoding.
 
 import numpy as np
 
-from . import protocol_encoder
+from pycozmo.protocol import protocol_encoder
 
 
 __all__ = [

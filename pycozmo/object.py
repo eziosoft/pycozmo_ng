@@ -4,7 +4,7 @@ Cozmo objects (cubes, platforms, etc.).
 
 """
 
-from . import protocol_encoder
+from pycozmo.protocol import protocol_encoder
 
 
 __all__ = [

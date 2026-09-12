@@ -1,4 +1,4 @@
-"""Tests for CubeMoveDetector (pycozmo/cube_imu.py).
+"""Tests for CubeMoveDetector (pycozmo/cubes/cube_imu.py).
 
 Covers the three failure modes that used to drop a *stationary* cube from the
 world map once the cube lights were enabled:
@@ -7,7 +7,7 @@ world map once the cube lights were enabled:
   3. single-sample noise spikes.
 """
 
-from pycozmo.cube_imu import CubeMoveDetector
+from pycozmo.cubes.cube_imu import CubeMoveDetector
 
 REST = 9.8  # m/s² — gravity magnitude while sitting on the floor
 

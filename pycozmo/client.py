@@ -14,21 +14,21 @@ import numpy as np
 from PIL import Image
 
 from . import logger, logger_robot, logger_animation
-from . import protocol_encoder
+from pycozmo.protocol import protocol_encoder
 from . import event
-from . import camera
+from pycozmo.vision import camera
 from . import object
 from . import util
 from . import robot
 from . import exception
 from . import filter
-from . import protocol_declaration
+from pycozmo.protocol import protocol_declaration
 from . import conn
 from . import lights
 from . import image_encoder
 from . import anim
 from . import anim_encoder
-from . import audio
+from pycozmo.audiokinetic import audio
 from . import anim_controller
 from . import robot_debug
 

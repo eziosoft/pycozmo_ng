@@ -6,7 +6,7 @@ Helper routines for working with colors and lights.
 
 from typing import Optional, Tuple
 
-from . import protocol_encoder
+from pycozmo.protocol import protocol_encoder
 
 
 __all__ = [

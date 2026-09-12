@@ -9,7 +9,7 @@ https://git.brl.ac.uk/ca2-chambers/expressive-eyes
 
 from typing import Optional, List
 
-from pycozmo.procedural_face import ProceduralFace, DEFAULT_WIDTH, DEFAULT_HEIGHT
+from pycozmo.display.procedural_face import ProceduralFace, DEFAULT_WIDTH, DEFAULT_HEIGHT
 
 
 __all__ = [

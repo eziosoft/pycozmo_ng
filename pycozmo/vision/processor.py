@@ -14,12 +14,12 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from . import logger
-from .camera_calibration import CameraCalibration
+from pycozmo import logger
+from pycozmo.vision.camera_calibration import CameraCalibration
 
 # Import CubeFusionTracker
 try:
-    from .cubeDetector.cubeDetector import CozmoCubeDetector, CubeFusionTracker
+    from pycozmo.cubeDetector.cubeDetector import CozmoCubeDetector, CubeFusionTracker
 
     CUBE_DETECTOR_AVAILABLE = True
 except ImportError:
@@ -431,7 +431,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         self._frame_counter = 0
 
         # Import here to avoid circular dependency
-        from . import event
+        from pycozmo import event
 
         # Register camera image handler
         self.client.add_handler(event.EvtNewRawCameraImage, self._on_camera_image)
@@ -463,7 +463,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
 
         try:
             # Import here to avoid circular dependency
-            from . import event
+            from pycozmo import event
 
             # Get current head angle from robot state
             head_angle_rad = cli.head_angle.radians if hasattr(cli, 'head_angle') else 0.0
@@ -515,7 +515,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
             detections: List of current detections
         """
         # Import here to avoid circular dependency
-        from . import event
+        from pycozmo import event
 
         # Track which cubes we've seen
         if not hasattr(self, '_last_cube_ids'):

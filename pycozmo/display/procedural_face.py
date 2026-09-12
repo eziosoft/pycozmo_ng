@@ -11,7 +11,7 @@ import random
 from PIL import Image, ImageDraw
 import numpy as np
 
-from . import robot
+from pycozmo import robot
 
 
 __all__ = [

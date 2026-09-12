@@ -13,8 +13,8 @@ import struct
 import wave
 import time
 
-from . import logger
-from . import protocol_encoder
+from pycozmo import logger
+from pycozmo.protocol import protocol_encoder
 
 
 __all__ = [

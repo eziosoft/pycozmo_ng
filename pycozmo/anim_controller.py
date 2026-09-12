@@ -9,11 +9,11 @@ from threading import Thread, Lock
 from collections import deque
 
 from . import logger
-from . import protocol_encoder
+from pycozmo.protocol import protocol_encoder
 from . import util
 from . import robot
 from . import event
-from . import procedural_face
+from pycozmo.display import procedural_face
 from . import image_encoder
 
 
