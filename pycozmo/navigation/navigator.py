@@ -315,6 +315,8 @@ class Navigator:
         BACK_AWAY_DIST = 220.0
         TOO_CLOSE = 120.0
         HEAD_TILT_DEG = -10.0
+        NEAR_TILT_DIST_MM = 100.0
+        NEAR_TILT_DEG = -20.0
 
         world_map = self.brain.web_viewer.world_map
 
@@ -400,6 +402,31 @@ class Navigator:
                 time.sleep(0.05)
             print("Cube not re-detected at standoff - using last known pose")
 
+        def _watch_near_tilt() -> None:
+            """Drop the head to ``NEAR_TILT_DEG`` once within proximity.
+
+            Runs alongside the (blocking) ``go_to_pose`` drives, polling the
+            live fused cube pose so the camera looks down at the cube as we
+            close in below ``NEAR_TILT_DIST_MM``.
+            """
+            while True:
+                s = _cube_state(cube_idx)
+                if s is not None:
+                    rp = self.brain.cli.pose
+                    d = math.hypot(
+                        s.position[0] - rp.position.x,
+                        s.position[1] - rp.position.y,
+                    )
+                    if d < NEAR_TILT_DIST_MM:
+                        self.brain.cli.set_head_angle(
+                            math.radians(NEAR_TILT_DEG),
+                            accel=30.0,
+                            max_speed=30.0,
+                        )
+                        print(f"Head tilt {NEAR_TILT_DEG:.0f} deg (dist {d:.0f}mm)")
+                        return
+                time.sleep(0.05)
+
         def _nav_thread():
             try:
                 dist_to_cube = math.hypot(cube_x - rx, cube_y - ry)
@@ -410,6 +437,8 @@ class Navigator:
                     self._drive_to_point(bx, by, timeout_s=8.0)
 
                 time.sleep(0.3)  # let the head settle before the first shot
+
+                threading.Thread(target=_watch_near_tilt, daemon=True).start()
 
                 s1x, s1y = _standoff(STEP1_DIST, (nx, ny))
                 print(f"Step 1: go_to_pose to view standoff ({s1x:.0f}, {s1y:.0f})")
