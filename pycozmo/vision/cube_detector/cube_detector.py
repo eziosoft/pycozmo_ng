@@ -94,14 +94,12 @@ class CubeFusionTracker:
 
             # Calculate cube center from each face and average
             centers = []
-            weights = []
             for det in detections:
                 center = self._calculate_cube_center_from_face(
                     det["position"], det["rotation_matrix"], det["face_type"]
                 )
                 weight = det["score"] / total_weight
                 centers.append(center * weight)
-                weights.append(det["score"])
 
             fused_center = np.sum(centers, axis=0)
 
@@ -362,7 +360,7 @@ class CozmoCubeDetector:
         return denoised
 
     def _run_detection_pass(self, img):
-        """Internal detection logic for a single image state (normal or negative)."""
+        """Internal detection logic for a single enhanced grayscale image."""
         # Binary threshold with blur
         blurred = cv2.GaussianBlur(img, (5, 5), 0)
         _, binary = cv2.threshold(
@@ -370,9 +368,7 @@ class CozmoCubeDetector:
         )
 
         if self.debug:
-            is_negative = np.mean(img) < 127
-            key = "binary_negative" if is_negative else "binary"
-            self.debug_images[key] = binary.copy()
+            self.debug_images["binary"] = binary.copy()
 
         # Find contours
         contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -392,17 +388,51 @@ class CozmoCubeDetector:
             approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
 
             if len(approx) == 4 and cv2.isContourConvex(approx):
-                x, y, rw, rh = cv2.boundingRect(approx)
+                _x, _y, rw, rh = cv2.boundingRect(approx)
                 aspect = rw / rh if rh != 0 else 0
-                if not (0.5 < aspect < 1.5):
+                # Keep the filter loose: a marker seen at an oblique angle
+                # (say yaw ~60 deg) projects to a bbox aspect of ~2, which the
+                # old 0.5–1.5 window rejected — losing valid side detections.
+                if not (0.3 < aspect < 3.0):
                     continue
 
                 patch = self._extract_patch(img, approx)
                 marker_id, score, marker_rotation = self._match_marker(patch)
 
                 if score > self.score_threshold:
-                    # Order points by angle from center (stable across all rotations)
                     pts = approx.reshape(4, 2).astype(np.float32)
+
+                    # Drop clips: a quad touching the image border is truncated
+                    # and its solvePnP pose is garbage.
+                    px, py = pts[:, 0], pts[:, 1]
+                    if (
+                        px.min() < 2
+                        or py.min() < 2
+                        or px.max() > w - 3
+                        or py.max() > h - 3
+                    ):
+                        continue
+
+                    # Sub-pixel corner refinement: contour corners are integer
+                    # quantized; refining before solvePnP cuts pose jitter a lot.
+                    try:
+                        refined = cv2.cornerSubPix(
+                            img,
+                            pts,
+                            (5, 5),
+                            (-1, -1),
+                            (
+                                cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
+                                30,
+                                0.01,
+                            ),
+                        )
+                        if np.all(np.isfinite(refined)):
+                            pts = refined
+                    except cv2.error:
+                        pass
+
+                    # Order points by angle from center (stable across all rotations)
                     center = pts.mean(axis=0)
 
                     # Calculate angle of each point from center
@@ -426,10 +456,8 @@ class CozmoCubeDetector:
                     ordered_pts = pts
                     ordered_pts_int = ordered_pts.astype(np.int32)
 
-                    # Solve PnP for pose estimation
-                    success, rvec, tvec = cv2.solvePnP(
-                        self.obj_points, ordered_pts, self.camera_matrix, None
-                    )
+                    # Solve PnP for pose estimation.
+                    success, rvec, tvec = self._solve_pose(ordered_pts)
                     if success:
                         # Get cube orientation info
                         cube_id, face_type, rotation_deg = self._get_cube_orientation(
@@ -464,6 +492,69 @@ class CozmoCubeDetector:
                         ):
                             return results
         return results
+
+    def _solve_pose(self, image_points):
+        """Solve the marker pose, returning ``(success, rvec, tvec)``.
+
+        The marker is a planar square, so ``SOLVEPNP_IPPE_SQUARE`` is used —
+        faster and numerically far more stable than the generic ITERATIVE
+        solver (which seeds from a DLT guess and can blow up on near-frontal
+        quads). IPPE returns two solutions that project identically; the one
+        whose face normal points back toward the camera is the visible-face
+        solution. The pose is rejected when it does not reproduce the observed
+        corners (RMS reprojection error > 3 px), which filters noise quads that
+        slipped through the marker matcher.
+        """
+        try:
+            result = cv2.solvePnPGeneric(
+                self.obj_points,
+                image_points,
+                self.camera_matrix,
+                self.dist_coeffs,
+                flags=cv2.SOLVEPNP_IPPE_SQUARE,
+            )
+            # opencv-python >= 5 returns (retval, rvecs, tvecs, reprojErr);
+            # 4.x returned (retval, rvecs, tvecs).
+            retval = result[0]
+            rvecs = result[1]
+            tvecs = result[2]
+            errors = result[3] if len(result) >= 4 else None
+        except (cv2.error, TypeError, ValueError):
+            # Old/limited OpenCV build: fall back to the iterative solver.
+            success, rvec, tvec = cv2.solvePnP(
+                self.obj_points, image_points, self.camera_matrix, self.dist_coeffs
+            )
+            return bool(success), rvec, tvec
+
+        if not retval or not rvecs:
+            return False, None, None
+
+        candidates = []
+        for i, (rvec, tvec) in enumerate(zip(rvecs, tvecs)):
+            if errors is not None:
+                err = float(np.ravel(errors)[i])
+            else:
+                proj, _ = cv2.projectPoints(
+                    self.obj_points, rvec, tvec, self.camera_matrix, self.dist_coeffs
+                )
+                err = float(
+                    np.mean(np.linalg.norm(proj.reshape(4, 2) - image_points, axis=1))
+                )
+            candidates.append((err, rvec, tvec))
+
+        candidates.sort(key=lambda c: c[0])
+        err, rvec, tvec = candidates[0]
+        if err > 3.0:
+            return False, None, None
+
+        # Both IPPE solutions project identically, so disambiguate by the face
+        # direction: the visible marker's +z normal points back at the camera
+        # (normal · tvec < 0); if the lowest-error candidate faces away, take
+        # the other one.
+        normal = cv2.Rodrigues(rvec)[0][:, 2]
+        if np.dot(normal, tvec.flatten()) > 0.0 and len(candidates) > 1:
+            _, rvec, tvec = candidates[1]
+        return True, rvec, tvec
 
     def _extract_patch(self, img, quad):
         """Warps a quad into a 32x32 standard marker patch."""

@@ -126,7 +126,7 @@ class VisionProcessor:
             self.camera_calibration.distortion_coefficients,
             target_markers,
             use_clahe=True,
-            max_detections=3,  # Cozmo has 3 cubes
+            max_detections=9,  # 3 cubes x up to 3 visible faces each (COZMO-36)
             denoise_strength=0,  # 0 disables noise reduction (denoise is off)
         )
 
@@ -174,6 +174,7 @@ class VisionProcessor:
                     "position": cube_state["position"],
                     "rotation_matrix": cube_state["rotation_matrix"],
                     "confidence": cube_state["confidence"],
+                    "num_faces": cube_state.get("num_faces", 1),
                 }
             )
         return measurements

@@ -47,6 +47,7 @@ class WebBridge:
                 m["rotation_matrix"],
                 m["confidence"],
                 head_angle,
+                m.get("num_faces"),
             )
 
         self.brain._cube_suppress["fresh_frames"] = new_fresh_frames

@@ -199,11 +199,22 @@ class WebViewerServer:
         )
 
     def update_cube_measurement(
-        self, cube_id, position_cam, rotation_cam, confidence, head_angle_rad
+        self,
+        cube_id,
+        position_cam,
+        rotation_cam,
+        confidence,
+        head_angle_rad,
+        num_faces=None,
     ):
         """Fuse a camera-frame cube measurement into the world map."""
         self.world_map.update_cube_measurement(
-            cube_id, position_cam, rotation_cam, confidence, head_angle_rad
+            cube_id,
+            position_cam,
+            rotation_cam,
+            confidence,
+            head_angle_rad,
+            num_faces=num_faces,
         )
 
     def forget_cube(self, cube_id):

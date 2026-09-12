@@ -152,6 +152,7 @@ class WorldMap:
         rotation_cam: np.ndarray,
         confidence: float,
         head_angle_rad: float,
+        num_faces: int | None = None,
     ) -> None:
         """Fuse a camera-frame cube measurement into the world map.
 
@@ -165,6 +166,9 @@ class WorldMap:
             rotation_cam: 3x3 cube rotation matrix in camera frame.
             confidence: Detection confidence (0..1).
             head_angle_rad: Head pitch at measurement time (radians).
+            num_faces: How many marker faces produced this measurement; keeps
+                the fused state's ``num_faces`` current instead of forever
+                keeping the first frame's value. (COZMO-36)
         """
         if confidence < self.confidence_floor:
             return
@@ -183,6 +187,7 @@ class WorldMap:
                     position=pos_world,
                     rotation_matrix=rot_world,
                     confidence=confidence,
+                    num_faces=int(num_faces) if num_faces is not None else 1,
                 )
                 return
 
@@ -207,7 +212,7 @@ class WorldMap:
                 position=position,
                 rotation_matrix=rotation,
                 confidence=confidence,
-                num_faces=prev.num_faces,
+                num_faces=int(num_faces) if num_faces is not None else prev.num_faces,
                 age=0,
             )
 
