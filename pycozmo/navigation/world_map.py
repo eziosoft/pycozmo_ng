@@ -12,6 +12,7 @@ dependency on the web stack, so it can be used standalone.
 
 """
 
+import time
 from collections import deque
 from threading import Lock
 
@@ -31,7 +32,14 @@ __all__ = [
 class CubeState:
     """Fused world-frame state of a single cube."""
 
-    __slots__ = ("age", "confidence", "num_faces", "position", "rotation_matrix")
+    __slots__ = (
+        "age",
+        "confidence",
+        "num_faces",
+        "position",
+        "rotation_matrix",
+        "updated_at",
+    )
 
     def __init__(
         self,
@@ -40,12 +48,17 @@ class CubeState:
         confidence: float,
         num_faces: int = 1,
         age: int = 0,
+        updated_at: float = 0.0,
     ):
         self.position = np.asarray(position, dtype=np.float64)
         self.rotation_matrix = np.asarray(rotation_matrix, dtype=np.float64)
         self.confidence = float(confidence)
         self.num_faces = int(num_faces)
         self.age = int(age)
+        # Monotonic time (seconds) of the measurement that produced this
+        # state. Lets callers (e.g. the navigator) detect that a fresh
+        # camera measurement has been fused since a given instant.
+        self.updated_at = float(updated_at)
 
 
 class WorldMap:
@@ -182,12 +195,14 @@ class WorldMap:
                 self._robot_yaw,
             )
             prev = self._cubes.get(cube_id)
+            now = time.monotonic()
             if prev is None:
                 self._cubes[cube_id] = CubeState(
                     position=pos_world,
                     rotation_matrix=rot_world,
                     confidence=confidence,
                     num_faces=int(num_faces) if num_faces is not None else 1,
+                    updated_at=now,
                 )
                 return
 
@@ -214,6 +229,7 @@ class WorldMap:
                 confidence=confidence,
                 num_faces=int(num_faces) if num_faces is not None else prev.num_faces,
                 age=0,
+                updated_at=now,
             )
 
     def forget_cube(self, cube_id: int) -> None:
@@ -242,6 +258,7 @@ class WorldMap:
                     confidence=cube_state.confidence,
                     num_faces=cube_state.num_faces,
                     age=cube_state.age,
+                    updated_at=cube_state.updated_at,
                 )
                 for cube_id, cube_state in self._cubes.items()
             }
