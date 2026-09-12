@@ -56,6 +56,13 @@ pytest pycozmo/tests/ -v
 pycozmo/           # Main library
 ├── brain.py       # Brain — top-level orchestrator (public API)
 ├── client.py      # Client class (main entrypoint)
+├── event.py       # Event dispatcher
+├── exception.py   # Exception classes
+├── logger.py      # Logging setup
+├── run.py         # connect(), setup_basic_logging()
+├── image_encoder.py  # Image encoding utilities
+├── remote_control.py # Keyboard remote control
+├── wifi.py        # WiFi auto-connect helper
 ├── protocol/      # Cozmo wire protocol
 │   ├── protocol_ast.py       # Packet type enums, abstract syntax
 │   ├── protocol_base.py      # Struct, Packet base classes
@@ -63,6 +70,10 @@ pycozmo/           # Main library
 │   ├── protocol_encoder.py   # Packet encode/decode
 │   ├── protocol_generator.py # Code generation from declarations
 │   └── protocol_utils.py     # BinaryReader, BinaryWriter
+├── transport/     # Connection and protocol transport
+│   ├── conn.py      # Client connection (socket, threading)
+│   ├── frame.py     # Frame encode/decode
+│   └── window.py    # Send/receive windowing
 ├── display/       # Display subsystem
 │   ├── procedural_face.py  # Procedural face rendering
 │   ├── emotions.py         # Emotion definitions
@@ -73,7 +84,23 @@ pycozmo/           # Main library
 │   ├── display.py         # VisionDisplay — frame handlers, display, overlay
 │   └── camera_calibration.py  # Camera calibration from robot NVRAM
 ├── navigation/    # Navigation subsystem
-│   └── navigator.py  # Navigator — navigate, approach, dock
+│   ├── navigator.py  # Navigator — navigate, approach, dock
+│   └── world_map.py  # WorldMap — fused robot/cube poses, path trail
+├── anim/          # Animation and behavior system
+│   ├── anim.py          # Anim — animation playback
+│   ├── anim_controller.py  # AnimController — animation scheduling
+│   ├── anim_encoder.py  # AnimEncoder — animation file encoding
+│   ├── activity.py      # Activity system
+│   └── behavior.py      # Behavior system
+├── util/          # Utility modules
+│   ├── util.py      # Angle, Distance, Pose, Vector3, hex_dump, etc.
+│   ├── coords.py    # Coordinate transforms (camera→world)
+│   ├── filter.py    # Signal filtering
+│   ├── robot.py     # Robot, Head, LightCube classes
+│   ├── robot_debug.py  # Debug message tables
+│   └── object.py    # Object tracking
+├── lights/        # LED color and light state
+│   └── lights.py    # Color class, predefined light states
 ├── cubes/         # Cube BLE management
 │   ├── cycler.py      # CubeCycler — rapid BLE cycling
 │   ├── manager.py     # CubeManager — mapping, connection state
@@ -82,20 +109,12 @@ pycozmo/           # Main library
 │   ├── viewer.py      # WebBridge — streaming, telemetry
 │   ├── viewer_server.py  # WebSocket server for browser viewer
 │   └── static/        # Three.js browser viewer (HTML/CSS/JS)
-├── wifi.py        # WiFi auto-connect helper
 ├── cubeDetector/  # Cube detection module
 │   ├── cubeDetector.py  # CozmoCubeDetector + CubeFusionTracker
-│   ├── cube_faces/      # Marker templates (JPGs)
-│   └── world_3d_viewer.py  # 3D visualization
-├── web_viewer/     # Three.js browser viewer
-│   ├── index.html
-│   └── style.css
-├── tests/         # Unit tests (pytest)
-└── audiokinetic/  # SoundBank + audio encoding
-
-examples/          # Demo scripts (run with python examples/X.py)
-tools/             # CLI utilities (installed as scripts)
-main.py            # Vision system test (connects to Cozmo)
+│   └── cube_faces/      # Marker templates (JPGs)
+├── audiokinetic/  # SoundBank + audio encoding
+├── CozmoAnim/     # Animation data classes (flatbuffers)
+└── tests/         # Unit tests (pytest)
 ```
 
 ## Branch: cube_detection
@@ -165,7 +184,7 @@ Live robot code runs on a Raspberry Pi 5, NOT on the dev Mac.
 - **Network split**:
   - `eth0` = wired LAN `192.168.10.0/24` — management path (SSH/rsync). Default route stays here (`ipv4.never-default` unset).
   - `wlan0` = Cozmo AP only. SSID **`Cozmo_7144B4`**, password **`973-37134-7253402`**. Set `ipv4.never-default yes` so robot AP never becomes gateway.
-- **Robot** = `172.31.1.1:5551` (hardcoded in `pycozmo/conn.py`). Pi wlan0 usually gets `172.31.1.57/24` via DHCP.
+- **Robot** = `172.31.1.1:5551` (hardcoded in `pycozmo/transport/conn.py`). Pi wlan0 usually gets `172.31.1.57/24` via DHCP.
 
 ### Syncing code to the Pi
 

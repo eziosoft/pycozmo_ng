@@ -21,7 +21,7 @@ from pycozmo.protocol.protocol_encoder import (
 )
 from pycozmo.protocol.protocol_utils import BinaryReader, BinaryWriter
 
-from .logger import logger_protocol
+from pycozmo.logger import logger_protocol
 
 __all__ = [
     "Frame",

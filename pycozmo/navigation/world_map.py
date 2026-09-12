@@ -20,7 +20,7 @@ from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
 from pycozmo import logger
-from pycozmo.coords import camera_to_world
+from pycozmo.util.coords import camera_to_world
 
 __all__ = [
     "CubeState",

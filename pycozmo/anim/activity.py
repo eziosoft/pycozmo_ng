@@ -11,8 +11,8 @@ import numpy as np
 
 from pycozmo.display.emotions import DecayGraph, Node
 
-from . import logger
-from .json_loader import get_json_files, load_json_file
+from pycozmo import logger
+from pycozmo.json_loader import get_json_files, load_json_file
 
 __all__ = [
     "Activity",

@@ -2,7 +2,7 @@ import io
 import json
 import unittest
 
-from pycozmo.anim_encoder import AnimClips
+from pycozmo.anim.anim_encoder import AnimClips
 
 
 class TestClips(unittest.TestCase):

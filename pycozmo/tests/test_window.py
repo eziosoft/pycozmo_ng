@@ -1,7 +1,7 @@
 import unittest
 
 from pycozmo.exception import NoSpace
-from pycozmo.window import BaseWindow, ReceiveWindow, SendWindow
+from pycozmo.transport.window import BaseWindow, ReceiveWindow, SendWindow
 
 
 class TestBaseWindowCreate(unittest.TestCase):

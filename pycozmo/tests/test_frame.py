@@ -1,6 +1,6 @@
 import unittest
 
-from pycozmo.frame import Frame
+from pycozmo.transport.frame import Frame
 
 
 class TestFrame(unittest.TestCase):

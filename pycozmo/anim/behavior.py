@@ -8,8 +8,8 @@ import os
 import time
 from typing import Any
 
-from . import client, event, logger
-from .json_loader import get_json_files, load_json_file
+from pycozmo import client, event, logger
+from pycozmo.json_loader import get_json_files, load_json_file
 
 __all__ = [
     "Behavior",

@@ -12,7 +12,8 @@ from typing import Any
 from pycozmo.display import procedural_face
 from pycozmo.protocol import protocol_encoder
 
-from . import event, image_encoder, logger, robot, util
+from pycozmo import event, image_encoder, logger, util
+from pycozmo.util import robot
 
 
 class AnimationQueue:

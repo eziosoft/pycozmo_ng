@@ -1,7 +1,7 @@
 import logging
 import unittest
 
-from pycozmo.robot_debug import get_debug_message, get_log_level
+from pycozmo.util.robot_debug import get_debug_message, get_log_level
 
 
 class TestLogLevel(unittest.TestCase):

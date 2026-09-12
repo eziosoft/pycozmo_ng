@@ -7,7 +7,7 @@ Robot constants and helper code.
 import enum
 import math
 
-from . import util
+from pycozmo import util
 
 __all__ = [
     "FRAME_RATE",

@@ -7,7 +7,7 @@ Cozmo protocol sliding window implementation.
 import math
 from typing import Any
 
-from . import exception
+from pycozmo import exception
 
 __all__ = [
     "BaseWindow",
