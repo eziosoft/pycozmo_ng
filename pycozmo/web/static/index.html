@@ -121,7 +121,7 @@
     controls.target.set(0, 0, 0);
 
     // -----------------------------------------------------------------------
-    // Click-to-navigate: raycasting on ground plane (COZMO-28)
+    // Double-click-to-navigate: raycasting on ground plane (COZMO-28)
     // -----------------------------------------------------------------------
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -147,7 +147,22 @@
 
     let navTarget = null; // scene-frame Vector3 of clicked point
 
+    // (COZMO-28) Double-click triggers navigation — a single click is too
+    // easy to register by accident when orbiting/panning the camera.
+    let lastClickTime = 0;
+    const DOUBLE_CLICK_MS = 350;
+
     function onViewerClick(event) {
+      const now = performance.now();
+      if (now - lastClickTime > DOUBLE_CLICK_MS) {
+        lastClickTime = now;
+        return;
+      }
+      lastClickTime = 0;
+      performNavigation(event);
+    }
+
+    function performNavigation(event) {
       // Only handle left click, ignore if orbiting (right-click/middle)
       if (event.button !== 0) return;
 
