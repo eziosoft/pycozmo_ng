@@ -40,7 +40,7 @@ except ImportError:
     HAS_AIOHTTP = False
 
 from pycozmo import coords
-from pycozmo.world_map import WorldMap
+from pycozmo.navigation.world_map import WorldMap
 
 # How far (mm) to lift the rendered path trail above the scene ground plane
 # (scene +Y). The trail is a zero-thickness line at ground level, so without a

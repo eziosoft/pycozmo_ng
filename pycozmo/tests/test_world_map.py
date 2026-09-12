@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from pycozmo import coords
-from pycozmo.world_map import WorldMap
+from pycozmo.navigation.world_map import WorldMap
 
 
 class TestCoords:

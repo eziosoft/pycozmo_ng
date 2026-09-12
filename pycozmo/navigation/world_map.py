@@ -19,8 +19,8 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
-from . import logger
-from .coords import camera_to_world
+from pycozmo import logger
+from pycozmo.coords import camera_to_world
 
 __all__ = [
     "CubeState",
