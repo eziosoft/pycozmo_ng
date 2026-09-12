@@ -8,52 +8,52 @@ import sys
 
 from .logger import *
 
-from . import protocol
-from .protocol import protocol_base
-from .protocol import protocol_declaration
-from .protocol import protocol_generator
-from .protocol import protocol_encoder
-from .protocol import protocol_utils
+from . import protocol  # noqa: I001,F401
+from .protocol import (  # noqa: I001,F401
+    protocol_base,
+    protocol_declaration,
+    protocol_encoder,
+    protocol_generator,
+    protocol_utils,
+)
 
 from .run import *
 
-from .frame import Frame
-from .conn import ROBOT_ADDR
-from .client import Client
-from .robot import *
-from .event import *
-
-from . import exception
-from . import util
-from . import window
-from . import lights
-from .vision import camera
-from . import object
-from . import filter
-from . import anim
-from . import anim_encoder
-from . import image_encoder
-from .display import procedural_face
-from . import activity
-from . import behavior
-from .display import emotions
-from . import brain
-from . import audiokinetic
-from .display import expressions
-from . import vision
-
+from . import (  # noqa: F401
+    activity,
+    anim,
+    anim_encoder,
+    audiokinetic,
+    behavior,
+    brain,
+    exception,
+    filter,
+    image_encoder,
+    lights,
+    object,
+    util,
+    vision,
+    window,
+)
+from .client import Client  # noqa: F401
+from .conn import ROBOT_ADDR  # noqa: F401
+from .display import emotions, expressions, procedural_face  # noqa: F401
+from .event import *  # noqa: F401
+from .frame import Frame  # noqa: F401
+from .robot import *  # noqa: F401
+from .vision import camera  # noqa: F401
 
 __version__ = "0.8.0"
 
 __all__ = [
+    "ROBOT_ADDR",
+    "Client",
+    "Frame",
+    "connect",
     "logger",
     "logger_protocol",
     "logger_robot",
-    "Frame",
-    "ROBOT_ADDR",
-    "Client",
     "setup_basic_logging",
-    "connect",
 ]
 
 if sys.version_info < (3, 6, 0):

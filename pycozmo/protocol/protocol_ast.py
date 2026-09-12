@@ -6,39 +6,38 @@ Cozmo protocol abstract syntax tree (AST) types.
 
 import enum
 from abc import ABC
-from typing import List, Optional, Union, Tuple, Any
-
+from typing import Any
 
 __all__ = [
-    "FrameType",
-    "PacketType",
-    "EnumMember",
-    "Enum",
-    "Struct",
     "Argument",
-    "FloatArgument",
-    "DoubleArgument",
     "BoolArgument",
-    "UIntArgument",
-    "UInt8Argument",
-    "UInt16Argument",
-    "UInt32Argument",
-    "IntArgument",
+    "Command",
+    "Connect",
+    "Disconnect",
+    "DoubleArgument",
+    "Enum",
+    "EnumArgument",
+    "EnumMember",
+    "Event",
+    "FArrayArgument",
+    "FloatArgument",
+    "FrameType",
     "Int8Argument",
     "Int16Argument",
     "Int32Argument",
-    "EnumArgument",
-    "FArrayArgument",
-    "VArrayArgument",
-    "StringArgument",
-    "Packet",
-    "Connect",
-    "Disconnect",
-    "Command",
-    "Event",
-    "Ping",
+    "IntArgument",
     "Keyframe",
+    "Packet",
+    "PacketType",
+    "Ping",
     "Protocol",
+    "StringArgument",
+    "Struct",
+    "UInt8Argument",
+    "UInt16Argument",
+    "UInt32Argument",
+    "UIntArgument",
+    "VArrayArgument",
 ]
 
 
@@ -71,15 +70,15 @@ class Argument(ABC):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: Any = None,
     ):
         self.name = str(name) if name else None
         self.description = str(description) if description else None
         self.default = default
 
-    def type_hint(self) -> Optional[str]:
+    def type_hint(self) -> str | None:
         return None
 
 
@@ -88,8 +87,8 @@ class FloatArgument(Argument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: float = 0.0,
     ):
         super().__init__(name, description, float(default))
@@ -103,8 +102,8 @@ class DoubleArgument(Argument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: float = 0.0,
     ):
         super().__init__(name, description, float(default))
@@ -118,8 +117,8 @@ class BoolArgument(Argument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: bool = False,
     ):
         super().__init__(name, description, bool(default))
@@ -137,8 +136,8 @@ class UInt8Argument(UIntArgument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: int = 0,
     ):
         super().__init__(name, description, int(default))
@@ -152,8 +151,8 @@ class UInt16Argument(UIntArgument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: int = 0,
     ):
         super().__init__(name, description, int(default))
@@ -167,8 +166,8 @@ class UInt32Argument(UIntArgument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: int = 0,
     ):
         super().__init__(name, description, int(default))
@@ -186,8 +185,8 @@ class Int8Argument(IntArgument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: int = 0,
     ):
         super().__init__(name, description, int(default))
@@ -201,8 +200,8 @@ class Int16Argument(IntArgument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: int = 0,
     ):
         super().__init__(name, description, int(default))
@@ -216,8 +215,8 @@ class Int32Argument(IntArgument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         default: int = 0,
     ):
         super().__init__(name, description, int(default))
@@ -226,23 +225,23 @@ class Int32Argument(IntArgument):
         return "int32"
 
 
-class EnumMember(object):
+class EnumMember:
     """Enumeration member."""
 
-    def __init__(self, name: str, value: int, description: Optional[str] = None):
+    def __init__(self, name: str, value: int, description: str | None = None):
         self.name = str(name)
         self.description = str(description) if description else None
         self.value = int(value)
 
 
-class Enum(object):
+class Enum:
     """Enumeration."""
 
     def __init__(
         self,
         name: str,
-        description: Optional[str] = None,
-        members: Optional[List[EnumMember]] = None,
+        description: str | None = None,
+        members: list[EnumMember] | None = None,
         base: int = 10,
     ) -> None:
         self.name = str(name)
@@ -258,8 +257,8 @@ class EnumArgument(Argument):
         self,
         name: str,
         enum_type: Enum,
-        description: Optional[str] = None,
-        data_type: Union[IntArgument, UIntArgument] = Int8Argument(),
+        description: str | None = None,
+        data_type: IntArgument | UIntArgument = Int8Argument(),
         default: int = 0,
     ) -> None:
         super().__init__(name, description, int(default))
@@ -275,9 +274,9 @@ class Struct(Argument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        arguments: Optional[List[Argument]] = None,
+        name: str | None = None,
+        description: str | None = None,
+        arguments: list[Argument] | None = None,
     ):
         super().__init__(name=name, description=description)
         self.arguments = list(arguments) if arguments else []
@@ -291,11 +290,11 @@ class FArrayArgument(Argument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         data_type: Argument = UInt8Argument(),
         length: int = 0,
-        default: Tuple = (),
+        default: tuple = (),
     ) -> None:
         super().__init__(name, description, tuple(default))
         self.data_type = data_type
@@ -303,7 +302,7 @@ class FArrayArgument(Argument):
 
     def type_hint(self):
         type_name = self.data_type.type_hint()
-        return "{}[{}]".format(type_name, self.length)
+        return f"{type_name}[{self.length}]"
 
 
 class VArrayArgument(Argument):
@@ -311,11 +310,11 @@ class VArrayArgument(Argument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         data_type: Argument = UInt8Argument(),
         length_type: Argument = UInt16Argument(),
-        default: Tuple = (),
+        default: tuple = (),
     ) -> None:
         super().__init__(name, description, tuple(default))
         self.data_type = data_type
@@ -324,7 +323,7 @@ class VArrayArgument(Argument):
     def type_hint(self):
         data_type_name = self.data_type.type_hint()
         length_type_name = self.length_type.type_hint()
-        return "{}[{}]".format(data_type_name, length_type_name)
+        return f"{data_type_name}[{length_type_name}]"
 
 
 class StringArgument(Argument):
@@ -332,8 +331,8 @@ class StringArgument(Argument):
 
     def __init__(
         self,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
+        name: str | None = None,
+        description: str | None = None,
         length_type: Argument = UInt16Argument(),
         default: str = "",
     ) -> None:
@@ -351,10 +350,10 @@ class Packet(Struct, ABC):
         self,
         packet_type: PacketType,
         name: str,
-        packet_id: Optional[int] = None,
-        group: Optional[str] = None,
-        description: Optional[str] = None,
-        arguments: Optional[List[Argument]] = None,
+        packet_id: int | None = None,
+        group: str | None = None,
+        description: str | None = None,
+        arguments: list[Argument] | None = None,
     ):
         super().__init__(name, description, arguments)
         self.type = PacketType(packet_type)
@@ -365,14 +364,14 @@ class Packet(Struct, ABC):
 class Connect(Packet):
     """Connect packet."""
 
-    def __init__(self, description: Optional[str] = None):
+    def __init__(self, description: str | None = None):
         super().__init__(PacketType.CONNECT, "Connect", description=description)
 
 
 class Disconnect(Packet):
     """Disconnect packet."""
 
-    def __init__(self, description: Optional[str] = None):
+    def __init__(self, description: str | None = None):
         super().__init__(PacketType.DISCONNECT, "Disconnect", description=description)
 
 
@@ -383,9 +382,9 @@ class Command(Packet):
         self,
         packet_id: int,
         name: str,
-        group: Optional[str] = None,
-        description: Optional[str] = None,
-        arguments: Optional[List[Argument]] = None,
+        group: str | None = None,
+        description: str | None = None,
+        arguments: list[Argument] | None = None,
     ):
         super().__init__(
             PacketType.COMMAND,
@@ -404,9 +403,9 @@ class Event(Packet):
         self,
         packet_id: int,
         name: str,
-        group: Optional[str] = None,
-        description: Optional[str] = None,
-        arguments: Optional[List[Argument]] = None,
+        group: str | None = None,
+        description: str | None = None,
+        arguments: list[Argument] | None = None,
     ):
         super().__init__(
             PacketType.EVENT,
@@ -421,7 +420,7 @@ class Event(Packet):
 class Ping(Packet):
     """Ping packet."""
 
-    def __init__(self, description: Optional[str] = None):
+    def __init__(self, description: str | None = None):
         super().__init__(
             PacketType.PING,
             "Ping",
@@ -438,14 +437,14 @@ class Ping(Packet):
 class Keyframe(Packet):
     """Keyframe packet."""
 
-    def __init__(self, description: Optional[str] = None):
+    def __init__(self, description: str | None = None):
         super().__init__(PacketType.KEYFRAME, "Keyframe", description=description)
 
 
-class Protocol(object):
+class Protocol:
     """Protocol declaration."""
 
-    def __init__(self, enums: List[Enum], structs: List[Struct], packets: List[Packet]):
+    def __init__(self, enums: list[Enum], structs: list[Struct], packets: list[Packet]):
         self.enums = list(enums)
         self.structs = list(structs)
         self.packets = list(packets)

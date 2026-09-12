@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class BodyMotion(object):
+class BodyMotion:
     __slots__ = ["_tab"]
 
     @classmethod

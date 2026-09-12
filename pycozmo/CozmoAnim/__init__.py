@@ -1,13 +1,15 @@
-from . import AnimClip
-from . import AnimClips
-from . import BackpackLights
-from . import BodyMotion
-from . import Event
-from . import FaceAnimation
-from . import HeadAngle
-from . import Keyframes
-from . import LiftHeight
-from . import ProceduralFace
-from . import RecordHeading
-from . import RobotAudio
-from . import TurnToRecordedHeading
+from . import (  # noqa: F401
+    AnimClip,
+    AnimClips,
+    BackpackLights,
+    BodyMotion,
+    Event,
+    FaceAnimation,
+    HeadAngle,
+    Keyframes,
+    LiftHeight,
+    ProceduralFace,
+    RecordHeading,
+    RobotAudio,
+    TurnToRecordedHeading,
+)

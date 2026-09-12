@@ -4,34 +4,36 @@ Cozmo protocol client and high-level API.
 
 """
 
-from threading import Event, Lock, Timer
-from typing import Optional, Tuple
+import io
 import json
 import time
-import io
+from threading import Event, Lock, Timer
 
 import numpy as np
 from PIL import Image
 
-from . import logger, logger_robot, logger_animation
-from pycozmo.protocol import protocol_encoder
-from . import event
-from pycozmo.vision import camera
-from . import object
-from . import util
-from . import robot
-from . import exception
-from . import filter
-from pycozmo.protocol import protocol_declaration
-from . import conn
-from . import lights
-from . import image_encoder
-from . import anim
-from . import anim_encoder
 from pycozmo.audiokinetic import audio
-from . import anim_controller
-from . import robot_debug
+from pycozmo.protocol import protocol_declaration, protocol_encoder
+from pycozmo.vision import camera
 
+from . import (
+    anim,
+    anim_controller,
+    anim_encoder,
+    conn,
+    event,
+    exception,
+    filter,
+    image_encoder,
+    lights,
+    logger,
+    logger_animation,
+    logger_robot,
+    object,
+    robot,
+    robot_debug,
+    util,
+)
 
 __all__ = [
     "Client",
@@ -43,8 +45,8 @@ class Client(event.Dispatcher):
 
     def __init__(
         self,
-        robot_addr: Optional[Tuple[str, int]] = None,
-        protocol_log_messages: Optional[list] = None,
+        robot_addr: tuple[str, int] | None = None,
+        protocol_log_messages: list | None = None,
         auto_initialize: bool = True,
         enable_animations: bool = True,
         enable_procedural_face: bool = True,
@@ -175,9 +177,7 @@ class Client(event.Dispatcher):
             )
         elif self.robot_fw_sig["version"] < protocol_declaration.FIRMWARE_VERSION:
             logger.warning(
-                "Old firmware detected. PyCozmo works best with v{}. Functionality may be degraded.".format(
-                    protocol_declaration.FIRMWARE_VERSION
-                )
+                f"Old firmware detected. PyCozmo works best with v{protocol_declaration.FIRMWARE_VERSION}. Functionality may be degraded."
             )
         self._enable_robot()
 
@@ -196,11 +196,11 @@ class Client(event.Dispatcher):
             self._initialize_robot()
         self.dispatch(event.EvtRobotFound, self)
 
-    def wait_for(self, evt, timeout: Optional[float] = None):
+    def wait_for(self, evt, timeout: float | None = None):
         e = Event()
         self.add_handler(evt, lambda cli: e.set(), one_shot=True)
         if not e.wait(timeout):
-            raise exception.Timeout("Timeout waiting for event {}".format(evt))
+            raise exception.Timeout(f"Timeout waiting for event {evt}")
 
     def wait_for_factory_ids(
         self,
@@ -502,9 +502,9 @@ class Client(event.Dispatcher):
         self,
         lwheel_speed: float,
         rwheel_speed: float,
-        lwheel_acc: Optional[float] = 0.0,
-        rwheel_acc: Optional[float] = 0.0,
-        duration: Optional[float] = None,
+        lwheel_acc: float | None = 0.0,
+        rwheel_acc: float | None = 0.0,
+        duration: float | None = None,
     ) -> None:
         pkt = protocol_encoder.DriveWheels(
             lwheel_speed_mmps=lwheel_speed,
@@ -707,7 +707,7 @@ class Client(event.Dispatcher):
         pkt = protocol_encoder.DisplayImage(image=b"\x3f\x3f")
         self.anim_controller.display_image(pkt)
 
-    def display_image(self, im: Image, duration: Optional[float] = None) -> None:
+    def display_image(self, im: Image, duration: float | None = None) -> None:
         encoder = image_encoder.ImageEncoder(im)
         buf = bytes(encoder.encode())
         pkt = protocol_encoder.DisplayImage(image=buf)
@@ -728,9 +728,7 @@ class Client(event.Dispatcher):
         for clip in clips.clips:
             self._clips[clip.name] = clip
 
-        logger.debug(
-            "Loaded {} in {:.02f} s.".format(fspec, time.perf_counter() - start_time)
-        )
+        logger.debug(f"Loaded {fspec} in {time.perf_counter() - start_time:.02f} s.")
 
     def play_anim_ppclip(self, ppclip: anim.PreprocessedClip) -> None:
         # Ensure no other animation is playing.
@@ -742,7 +740,7 @@ class Client(event.Dispatcher):
         self._next_anim_id += 1
 
         # Send frames to the animation controller.
-        frames = list(sorted(ppclip.keyframes.keys()))
+        frames = sorted(ppclip.keyframes.keys())
         num_frames = len(frames)
         time_ms = 0
         for i in range(num_frames):
@@ -789,15 +787,13 @@ class Client(event.Dispatcher):
         self.anim_controller.cancel_anim()
 
     def play_anim_group(self, anim_group_name: str) -> None:
-        logger_animation.info("Playing animation group {}".format(anim_group_name))
+        logger_animation.info(f"Playing animation group {anim_group_name}")
         animation_group = self.animation_groups.get(anim_group_name)
         if not animation_group:
-            logger_animation.error(
-                "Failed to find animation group {}.".format(anim_group_name)
-            )
+            logger_animation.error(f"Failed to find animation group {anim_group_name}.")
             return
         member = animation_group.choose_member()
-        logger_animation.info("Playing animation {}".format(member.name))
+        logger_animation.info(f"Playing animation {member.name}")
         self.play_anim(member.name)
 
     def load_anims(self) -> None:

@@ -5,11 +5,11 @@ Exception declarations.
 """
 
 __all__ = [
-    "PyCozmoException",
-    "PyCozmoConnectionError",
     "ConnectionTimeout",
-    "Timeout",
     "NoSpace",
+    "PyCozmoConnectionError",
+    "PyCozmoException",
+    "Timeout",
 ]
 
 

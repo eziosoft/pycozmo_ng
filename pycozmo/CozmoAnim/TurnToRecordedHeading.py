@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class TurnToRecordedHeading(object):
+class TurnToRecordedHeading:
     __slots__ = ["_tab"]
 
     @classmethod

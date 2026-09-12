@@ -4,59 +4,57 @@ Event declaration and dispatching.
 
 """
 
-from typing import Callable, Optional
 import collections
 import threading
+from collections.abc import Callable
 
-from . import exception
-from . import robot
-
+from . import exception, robot
 
 __all__ = [
-    "Event",
-    "EvtRobotFound",
-    "EvtRobotReady",
-    "EvtPacketReceived",
-    "EvtNewRawCameraImage",
-    "EvtAnnotatedCameraImage",
-    "EvtCubeDetectorDebugImages",
-    "EvtRobotMovingChange",
-    "EvtRobotCarryingBlockChange",
-    "EvtRobotPickingOrPlacingChange",
-    "EvtRobotPickedUpChange",
-    "EvtRobotBodyAccModeChange",
-    "EvtRobotFallingChange",
-    "EvtRobotAnimatingChange",
-    "EvtRobotPathingChange",
-    "EvtRobotLiftInPositionChange",
-    "EvtRobotHeadInPositionChange",
-    "EvtRobotAnimBufferFullChange",
-    "EvtRobotAnimatingIdleChange",
-    "EvtRobotOnChargerChange",
-    "EvtRobotChargingChange",
-    "EvtCliffDetectedChange",
-    "EvtRobotWheelsMovingChange",
-    "EvtChargerOOSChange",
-    "EvtRobotStateUpdated",
-    "EvtRobotOrientationChange",
-    "EvtAudioCompleted",
-    "EvtAnimationCompleted",
-    "EvtReactionTrigger",
-    "EvtBehaviorDone",
-    "EvtCubeDetected",
-    "EvtCubeObserved",
-    "EvtCubeLost",
     "STATUS_EVENTS",
-    "Handler",
     "Dispatcher",
+    "Event",
+    "EvtAnimationCompleted",
+    "EvtAnnotatedCameraImage",
+    "EvtAudioCompleted",
+    "EvtBehaviorDone",
+    "EvtChargerOOSChange",
+    "EvtCliffDetectedChange",
+    "EvtCubeDetected",
+    "EvtCubeDetectorDebugImages",
+    "EvtCubeLost",
+    "EvtCubeObserved",
+    "EvtNewRawCameraImage",
+    "EvtPacketReceived",
+    "EvtReactionTrigger",
+    "EvtRobotAnimBufferFullChange",
+    "EvtRobotAnimatingChange",
+    "EvtRobotAnimatingIdleChange",
+    "EvtRobotBodyAccModeChange",
+    "EvtRobotCarryingBlockChange",
+    "EvtRobotChargingChange",
+    "EvtRobotFallingChange",
+    "EvtRobotFound",
+    "EvtRobotHeadInPositionChange",
+    "EvtRobotLiftInPositionChange",
+    "EvtRobotMovingChange",
+    "EvtRobotOnChargerChange",
+    "EvtRobotOrientationChange",
+    "EvtRobotPathingChange",
+    "EvtRobotPickedUpChange",
+    "EvtRobotPickingOrPlacingChange",
+    "EvtRobotReady",
+    "EvtRobotStateUpdated",
+    "EvtRobotWheelsMovingChange",
+    "Handler",
 ]
 
 
-class Event(object):
+class Event:
     """Base class for events."""
 
 
-class Handler(object):
+class Handler:
     """Event handler class."""
 
     def __init__(self, f: Callable, one_shot: bool):
@@ -221,8 +219,6 @@ class EvtCubeDetected(Event):
         detections: List of CubeDetection objects
     """
 
-    pass
-
 
 class EvtCubeObserved(Event):
     """
@@ -231,8 +227,6 @@ class EvtCubeObserved(Event):
     Attributes:
         detections: List of CubeDetection objects
     """
-
-    pass
 
 
 class EvtCubeLost(Event):
@@ -243,10 +237,8 @@ class EvtCubeLost(Event):
         cube_id: ID of the lost cube
     """
 
-    pass
 
-
-class Dispatcher(object):
+class Dispatcher:
     """Event dispatcher class."""
 
     def __init__(self):
@@ -291,7 +283,7 @@ class Dispatcher(object):
         for child in self.dispatch_children:
             child.dispatch(event, *args, **kwargs)
 
-    def wait_for(self, evt, timeout: Optional[float] = None) -> None:
+    def wait_for(self, evt, timeout: float | None = None) -> None:
         e = threading.Event()
         self.add_handler(evt, lambda *args: e.set(), one_shot=True)
         if not e.wait(timeout):

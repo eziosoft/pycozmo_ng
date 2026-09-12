@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class RobotAudio(object):
+class RobotAudio:
     __slots__ = ["_tab"]
 
     @classmethod

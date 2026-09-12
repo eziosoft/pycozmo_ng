@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class FaceAnimation(object):
+class FaceAnimation:
     __slots__ = ["_tab"]
 
     @classmethod

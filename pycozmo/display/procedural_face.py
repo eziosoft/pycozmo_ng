@@ -4,22 +4,21 @@ Cozmo procedural face rendering.
 
 """
 
-from functools import lru_cache
-from typing import Optional, List, Generator
 import random
+from collections.abc import Generator
+from functools import lru_cache
 
-from PIL import Image, ImageDraw
 import numpy as np
+from PIL import Image, ImageDraw
 
 from pycozmo import robot
 
-
 __all__ = [
-    "DEFAULT_WIDTH",
     "DEFAULT_HEIGHT",
-    "ProceduralLid",
+    "DEFAULT_WIDTH",
     "ProceduralEye",
     "ProceduralFace",
+    "ProceduralLid",
     "interpolate",
 ]
 
@@ -38,19 +37,19 @@ RESAMPLE = Image.NEAREST
 
 class ProceduralBase:
     __slots__ = (
-        "params",
-        "offset",
-        "width",
-        "height",
-        "eye_width",
         "eye_height",
-        "half_eye_width",
+        "eye_width",
         "half_eye_height",
-        "scale_factor_lid_height",
+        "half_eye_width",
+        "height",
+        "offset",
+        "params",
         "scale_factor_lid_bend",
+        "scale_factor_lid_height",
+        "width",
     )
 
-    def __init__(self, params: List[float], offset: int, width: int, height: int):
+    def __init__(self, params: list[float], offset: int, width: int, height: int):
         self.params = params
         self.offset = offset
         self.width = width
@@ -65,13 +64,13 @@ class ProceduralBase:
 
 class ProceduralLid(ProceduralBase):
     __slots__ = (
-        "y_offset",
         "angle_offset",
+        "y_offset",
     )
 
     def __init__(
         self,
-        params: List[float],
+        params: list[float],
         offset: int,
         y_offset: float,
         angle_offset: float,
@@ -147,13 +146,13 @@ class ProceduralLid(ProceduralBase):
 class ProceduralEye(ProceduralBase):
     __slots__ = (
         "corner_radius",
-        "x_offset",
         "lids",
+        "x_offset",
     )
 
     def __init__(
         self,
-        params: List[float],
+        params: list[float],
         offset: int,
         x_offset: float = 0.0,
         width: int = DEFAULT_WIDTH,
@@ -440,7 +439,7 @@ class ProceduralFace(ProceduralBase):
 
     def __init__(
         self,
-        params: Optional[List[float]] = None,
+        params: list[float] | None = None,
         width: int = DEFAULT_WIDTH,
         height: int = DEFAULT_HEIGHT,
     ):

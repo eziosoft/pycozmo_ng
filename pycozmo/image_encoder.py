@@ -4,25 +4,23 @@ Cozmo image run-length encoding and decoding.
 
 """
 
-from typing import Optional
 import sys
 from io import StringIO
 
 from PIL import Image
 
-
 __all__ = [
-    "render",
-    "image_to_str",
-    "str_to_image",
     "ImageDecoder",
     "ImageEncoder",
+    "image_to_str",
+    "render",
+    "str_to_image",
 ]
 
 
 def render(image: bytes) -> None:
     for y in range(32):
-        sys.stdout.write("{:3d}".format(y))
+        sys.stdout.write(f"{y:3d}")
         for x in range(128):
             if ((x + 1) % 10) == 1:
                 sys.stdout.write(" ")
@@ -60,7 +58,7 @@ def str_to_image(sim: str) -> Image:
     return im
 
 
-class ImageDecoder(object):
+class ImageDecoder:
     def __init__(self, buffer: bytes):
         self.buffer = buffer
         self.image = bytearray(128 * 32)
@@ -83,7 +81,7 @@ class ImageDecoder(object):
         if cmd == 0:  # Skip column
             cnt += 1
             if self.debug:
-                print("Skip column {}".format(cnt))
+                print(f"Skip column {cnt}")
             if self.last_draw:
                 self.x += 1
             self.x += cnt
@@ -93,7 +91,7 @@ class ImageDecoder(object):
         elif cmd == 1:  # Repeat column
             cnt += 1
             if self.debug:
-                print("Repeat column {}".format(cnt))
+                print(f"Repeat column {cnt}")
             if not self.repeat_column_shift:
                 self.x += 1
             for _ in range(cnt):
@@ -113,13 +111,13 @@ class ImageDecoder(object):
             cnt += 1
             if draw or draw2:
                 if self.debug:
-                    print("Draw {}".format(cnt))
+                    print(f"Draw {cnt}")
                 for _ in range(cnt):
                     self._draw(self.x, self.y)
                     self.y += 1
             else:
                 if self.debug:
-                    print("Skip {}".format(cnt))
+                    print(f"Skip {cnt}")
                 self.y += cnt
             if self.y > 31:
                 self.repeat_column_shift = True
@@ -137,13 +135,13 @@ class ImageDecoder(object):
             cnt += 16
             if draw or draw2:
                 if self.debug:
-                    print("Draw extended {}".format(cnt))
+                    print(f"Draw extended {cnt}")
                 for _ in range(cnt):
                     self._draw(self.x, self.y)
                     self.y += 1
             else:
                 if self.debug:
-                    print("Skip extended {}".format(cnt))
+                    print(f"Skip extended {cnt}")
                 self.y += cnt
             if self.y > 31:
                 self.repeat_column_shift = True
@@ -156,18 +154,16 @@ class ImageDecoder(object):
     def decode(self) -> bytes:
         for i, b in enumerate(self.buffer):
             if self.debug:
-                sys.stdout.write("{}: ".format(i))
+                sys.stdout.write(f"{i}: ")
             self._execute(b)
         return self.image
 
 
-class ImageEncoder(object):
+class ImageEncoder:
     def __init__(self, im: Image):
         if im.size[0] != 128 or im.size[1] != 32:
             raise ValueError(
-                "Invalid image dimensions. Only 128x32 images are supported. {}x{} given.".format(
-                    im.size[0], im.size[1]
-                )
+                f"Invalid image dimensions. Only 128x32 images are supported. {im.size[0]}x{im.size[1]} given."
             )
         if im.mode != "1":
             raise ValueError("Invalid pixel format. Only binary images are supported.")
@@ -180,7 +176,7 @@ class ImageEncoder(object):
         self.x = 0
         self.y = 0
 
-    def _encode_seq(self, color: int, cnt: int) -> Optional[int]:
+    def _encode_seq(self, color: int, cnt: int) -> int | None:
         """Encode a sequence of pixels with the same color."""
         cmd = None  # type: Optional[int]
         if color:

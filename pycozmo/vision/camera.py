@@ -8,11 +8,10 @@ import numpy as np
 
 from pycozmo.protocol import protocol_encoder
 
-
 __all__ = [
     "RESOLUTIONS",
-    "minigray_to_jpeg",
     "minicolor_to_jpeg",
+    "minigray_to_jpeg",
 ]
 
 

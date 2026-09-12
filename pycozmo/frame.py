@@ -4,45 +4,43 @@ Cozmo protocol frame representation and encoding and decoding.
 
 """
 
-from typing import List
-
-from .logger import logger_protocol
 from pycozmo.protocol.protocol_ast import FrameType, PacketType
+from pycozmo.protocol.protocol_base import Packet, UnknownCommand, UnknownEvent
 from pycozmo.protocol.protocol_declaration import (
     FRAME_ID,
-    MIN_FRAME_SIZE,
     MAX_SEQ,
+    MIN_FRAME_SIZE,
     OOB_SEQ,
 )
-from pycozmo.protocol.protocol_base import Packet, UnknownCommand, UnknownEvent
-from pycozmo.protocol.protocol_utils import BinaryReader, BinaryWriter
 from pycozmo.protocol.protocol_encoder import (
+    PACKETS_BY_ID,
     Connect,
     Disconnect,
-    Ping,
     Keyframe,
-    PACKETS_BY_ID,
+    Ping,
 )
+from pycozmo.protocol.protocol_utils import BinaryReader, BinaryWriter
 
+from .logger import logger_protocol
 
 __all__ = [
     "Frame",
 ]
 
 
-class Frame(object):
+class Frame:
     """Cozmo protocol frame."""
 
     __slots__ = [
-        "type",
-        "first_seq",
-        "seq",
         "ack",
+        "first_seq",
         "pkts",
+        "seq",
+        "type",
     ]
 
     def __init__(
-        self, type_id: FrameType, first_seq: int, seq: int, ack: int, pkts: List[Packet]
+        self, type_id: FrameType, first_seq: int, seq: int, ack: int, pkts: list[Packet]
     ) -> None:
         self.type = type_id
         self.first_seq = first_seq
@@ -85,14 +83,11 @@ class Frame(object):
             assert pkt.type in (PacketType.COMMAND, PacketType.DISCONNECT)
             writer.write(pkt.id, "B")
             writer.write_object(pkt)
-        elif self.type == FrameType.RESET:
-            # No packets
-            assert not self.pkts
-        elif self.type == FrameType.FIN:
+        elif self.type == FrameType.RESET or self.type == FrameType.FIN:
             # No packets
             assert not self.pkts
         else:
-            raise NotImplementedError("Unexpected frame type {}.".format(self.type))
+            raise NotImplementedError(f"Unexpected frame type {self.type}.")
 
     @classmethod
     def from_bytes(cls, buffer: bytes) -> "Frame":
@@ -120,7 +115,7 @@ class Frame(object):
         elif pkt_type == PacketType.DISCONNECT:
             res = Disconnect.from_reader(reader)
         else:
-            raise ValueError("Unexpected packet type {}.".format(pkt_type))
+            raise ValueError(f"Unexpected packet type {pkt_type}.")
         return res
 
     @classmethod
@@ -155,9 +150,7 @@ class Frame(object):
                         pkt_seq = (pkt_seq + 1) % MAX_SEQ
                     pkts.append(pkt)
                 except (ValueError, IndexError) as e:
-                    logger_protocol.debug(
-                        "Failed to decode packet. Ignoring. {}".format(e)
-                    )
+                    logger_protocol.debug(f"Failed to decode packet. Ignoring. {e}")
                     reader.seek_set(expected_offset)
             assert seq == OOB_SEQ or seq + 1 == pkt_seq or pkt.type == PacketType.PING
         elif frame_type == FrameType.PING:
@@ -175,16 +168,13 @@ class Frame(object):
                     pkt_seq = (pkt_seq + 1) % MAX_SEQ
                 pkts.append(pkt)
             except (ValueError, IndexError) as e:
-                logger_protocol.debug("Failed to decode packet. Ignoring. {}".format(e))
+                logger_protocol.debug(f"Failed to decode packet. Ignoring. {e}")
             assert seq == OOB_SEQ or seq + 1 == pkt_seq
-        elif frame_type == FrameType.RESET:
-            # No packets
-            assert reader.tell() == len(reader)
-        elif frame_type == FrameType.FIN:
+        elif frame_type == FrameType.RESET or frame_type == FrameType.FIN:
             # No packets
             assert reader.tell() == len(reader)
         else:
-            raise NotImplementedError("Unexpected frame type {}.".format(frame_type))
+            raise NotImplementedError(f"Unexpected frame type {frame_type}.")
 
         res = cls(frame_type, first_seq, seq, ack, pkts)
 

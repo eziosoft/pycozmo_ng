@@ -6,19 +6,18 @@ JSON reading functions for files containing non-standard comments
 
 import json
 import os
-from typing import Dict, List
 
 
-def load_json_file(filename: str) -> Dict:
+def load_json_file(filename: str) -> dict:
     with open(filename, "r") as f:
         filtered_json = ""
-        for line in f.readlines():
+        for line in f:
             # get all characters before '//'
             filtered_json += line.split("//")[0]
         return json.loads(filtered_json)
 
 
-def get_json_files(resource_dir: str, base_names: List[str]) -> List[str]:
+def get_json_files(resource_dir: str, base_names: list[str]) -> list[str]:
     file_addr = []
 
     for name in base_names:

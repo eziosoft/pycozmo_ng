@@ -6,9 +6,8 @@ Based on AnkiLogStringTables.json .
 
 """
 
-from typing import List, Any, Optional
 import logging
-
+from typing import Any
 
 # Map of robot log levels to Python log levels.
 ROBOT_LOG_LEVELS = {
@@ -817,13 +816,13 @@ def get_log_level(robot_level: int) -> int:
     return ROBOT_LOG_LEVELS.get(robot_level, logging.DEBUG)
 
 
-def get_debug_message(name_id: int, format_id: int, args: List[Any]) -> Optional[str]:
+def get_debug_message(name_id: int, format_id: int, args: list[Any]) -> str | None:
     """Generate a log message from robot debug name and format IDs."""
     fmt = ROBOT_FORMAT_IDS.get(format_id)
     if fmt:
         if fmt[1]:
             assert fmt[1] == len(args)
-            msg = fmt[0] % tuple(args)  # noqa
+            msg = fmt[0] % tuple(args)
         else:
             msg = fmt[0]
     else:
@@ -831,7 +830,7 @@ def get_debug_message(name_id: int, format_id: int, args: List[Any]) -> Optional
     name = ROBOT_NAME_IDS.get(name_id)
     if name:
         if msg:
-            msg = "{}: {}".format(name, msg)
+            msg = f"{name}: {msg}"
         else:
             msg = name
     return msg

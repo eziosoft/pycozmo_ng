@@ -6,17 +6,14 @@ Behavior representation and reading.
 
 import os
 import time
-from typing import Dict, Optional, Any
+from typing import Any
 
-from . import event
-from . import client
-from . import logger
+from . import client, event, logger
 from .json_loader import get_json_files, load_json_file
 
-
 __all__ = [
-    "ReactionTrigger",
     "Behavior",
+    "ReactionTrigger",
     "load_behaviors",
     "load_reaction_trigger_behavior_map",
 ]
@@ -26,20 +23,20 @@ class ReactionTrigger:
     """Reaction trigger representation class."""
 
     __slots__ = [
-        "name",
         "behavior_id",
+        "name",
         "should_resume_last",
     ]
 
     def __init__(
-        self, name: str, behavior_id: str, should_resume_last: Optional[bool] = False
+        self, name: str, behavior_id: str, should_resume_last: bool | None = False
     ):
         self.name = str(name)
         self.behavior_id = str(behavior_id)
         self.should_resume_last = bool(should_resume_last)
 
     @classmethod
-    def from_json(cls, data: Dict):
+    def from_json(cls, data: dict):
         return cls(
             name=data["reactionTrigger"],
             behavior_id=data["behaviorID"],
@@ -61,7 +58,7 @@ class Behavior(event.Dispatcher):
         return self.conf["behaviorID"]
 
     def activate(self) -> None:
-        logger.warning("Behavior '{}' not implemented.".format(self.get_id()))
+        logger.warning(f"Behavior '{self.get_id()}' not implemented.")
         self.cli.conn.post_event(event.EvtBehaviorDone, self.cli)
 
     def deactivate(self) -> None:
@@ -133,7 +130,7 @@ def get_behavior_class_from_dict(data):
     return cls
 
 
-def load_behaviors(resource_dir: str, cli: client.Client) -> Dict[str, Behavior]:
+def load_behaviors(resource_dir: str, cli: client.Client) -> dict[str, Behavior]:
 
     start_time = time.perf_counter()
 
@@ -152,15 +149,13 @@ def load_behaviors(resource_dir: str, cli: client.Client) -> Dict[str, Behavior]
         behaviors[data["behaviorID"]] = cls(cli, data)
 
     logger.debug(
-        "Loaded {} behaviors in {:.02f} s.".format(
-            len(behaviors), time.perf_counter() - start_time
-        )
+        f"Loaded {len(behaviors)} behaviors in {time.perf_counter() - start_time:.02f} s."
     )
 
     return behaviors
 
 
-def load_reaction_trigger_behavior_map(resource_dir: str) -> Dict[str, ReactionTrigger]:
+def load_reaction_trigger_behavior_map(resource_dir: str) -> dict[str, ReactionTrigger]:
 
     start_time = time.perf_counter()
 
@@ -181,9 +176,7 @@ def load_reaction_trigger_behavior_map(resource_dir: str) -> Dict[str, ReactionT
         )
 
     logger.debug(
-        "Loaded {} entry reaction trigger behavior map in {:.02f} s.".format(
-            len(reaction_trigger_behavior_map), time.perf_counter() - start_time
-        )
+        f"Loaded {len(reaction_trigger_behavior_map)} entry reaction trigger behavior map in {time.perf_counter() - start_time:.02f} s."
     )
 
     return reaction_trigger_behavior_map

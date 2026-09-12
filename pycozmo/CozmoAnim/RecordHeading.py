@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class RecordHeading(object):
+class RecordHeading:
     __slots__ = ["_tab"]
 
     @classmethod

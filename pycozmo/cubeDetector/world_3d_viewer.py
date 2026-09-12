@@ -1,11 +1,12 @@
+import os
+
+import cv2
 import numpy as np
 import pygame
-from pygame.locals import *
 from OpenGL.GL import *
 from OpenGL.GLU import *
-import os
-import cv2
 from PIL import Image
+from pygame.locals import *
 
 
 class LoadedObjFile:
@@ -431,7 +432,6 @@ class World3DViewer:
         :param image: OpenCV image (BGR format)
         :return: OpenGL texture ID
         """
-        import cv2
 
         # Convert BGR to RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)

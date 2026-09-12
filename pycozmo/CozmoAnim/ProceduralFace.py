@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class ProceduralFace(object):
+class ProceduralFace:
     __slots__ = ["_tab"]
 
     @classmethod

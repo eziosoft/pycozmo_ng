@@ -4,34 +4,32 @@ Helper functions for running PyCozmo applications.
 
 """
 
-from typing import Optional
-import sys
-import os
 import logging
+import os
+import sys
 from contextlib import contextmanager
 
 from . import (
+    client,
+    exception,
     logger,
-    logger_protocol,
-    logger_robot,
-    logger_reaction,
-    logger_behavior,
     logger_animation,
+    logger_behavior,
+    logger_protocol,
+    logger_reaction,
+    logger_robot,
 )
-from . import client
-from . import exception
-
 
 __all__ = [
-    "setup_basic_logging",
     "connect",
+    "setup_basic_logging",
 ]
 
 
 def setup_basic_logging(
-    log_level: Optional[str] = None,
-    protocol_log_level: Optional[str] = None,
-    robot_log_level: Optional[str] = None,
+    log_level: str | None = None,
+    protocol_log_level: str | None = None,
+    robot_log_level: str | None = None,
     target=sys.stderr,
 ) -> None:
 
@@ -64,10 +62,10 @@ def setup_basic_logging(
 
 @contextmanager
 def connect(
-    log_level: Optional[str] = None,
-    protocol_log_level: Optional[str] = None,
-    protocol_log_messages: Optional[list] = None,
-    robot_log_level: Optional[str] = None,
+    log_level: str | None = None,
+    protocol_log_level: str | None = None,
+    protocol_log_messages: list | None = None,
+    robot_log_level: str | None = None,
     auto_initialize: bool = True,
     enable_animations: bool = True,
     enable_procedural_face: bool = True,

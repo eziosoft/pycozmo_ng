@@ -8,14 +8,12 @@ References:
 
 """
 
-from typing import List
 import struct
-import wave
 import time
+import wave
 
 from pycozmo import logger
 from pycozmo.protocol import protocol_encoder
-
 
 __all__ = [
     "load_wav",
@@ -26,7 +24,7 @@ MULAW_MAX = 0x7FFF
 MULAW_BIAS = 132
 
 
-def load_wav(filename: str) -> List[protocol_encoder.OutputAudio]:
+def load_wav(filename: str) -> list[protocol_encoder.OutputAudio]:
     """Load a WAVE file into a list of OutputAudio packets."""
 
     start_time = time.perf_counter()
@@ -52,9 +50,7 @@ def load_wav(filename: str) -> List[protocol_encoder.OutputAudio]:
             pkt = protocol_encoder.OutputAudio(samples=frame_out)
             pkts.append(pkt)
 
-    logger.debug(
-        "Loaded WAVE file in {:.02f} s.".format(time.perf_counter() - start_time)
-    )
+    logger.debug(f"Loaded WAVE file in {time.perf_counter() - start_time:.02f} s.")
 
     return pkts
 
@@ -65,7 +61,7 @@ def bytes_to_cozmo(
     """Convert a 744 sample, 16-bit audio frame into a U-law encoded frame."""
     out = bytearray(744)
     n = channels * rate_correction
-    bs = struct.unpack("{}h".format(int(len(byte_string) / 2)), byte_string)[0::n]
+    bs = struct.unpack(f"{int(len(byte_string) / 2)}h", byte_string)[0::n]
     for i, s in enumerate(bs):
         out[i] = u_law_encoding(s)
     return out
@@ -80,8 +76,7 @@ def u_law_encoding(sample: int) -> int:
         sample = -sample
         sign = 0x80
     sample += MULAW_BIAS
-    if sample > MULAW_MAX:
-        sample = MULAW_MAX
+    sample = min(sample, MULAW_MAX)
 
     while (sample & mask) != mask and position >= 7:
         mask >>= 1

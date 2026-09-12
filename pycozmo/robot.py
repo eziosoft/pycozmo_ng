@@ -9,22 +9,21 @@ import math
 
 from . import util
 
-
 __all__ = [
-    "MIN_HEAD_ANGLE",
-    "MAX_HEAD_ANGLE",
-    "MIN_LIFT_HEIGHT",
-    "MAX_LIFT_HEIGHT",
+    "FRAME_RATE",
     "LIFT_ARM_LENGTH",
     "LIFT_PIVOT_HEIGHT",
-    "MIN_LIFT_ANGLE",
+    "MAX_HEAD_ANGLE",
     "MAX_LIFT_ANGLE",
+    "MAX_LIFT_HEIGHT",
     "MAX_WHEEL_SPEED",
+    "MIN_HEAD_ANGLE",
+    "MIN_LIFT_ANGLE",
+    "MIN_LIFT_HEIGHT",
     "TRACK_WIDTH",
-    "FRAME_RATE",
+    "LiftPosition",
     "RobotStatusFlag",
     "RobotStatusFlagNames",
-    "LiftPosition",
 ]
 
 
@@ -62,7 +61,7 @@ TRACK_WIDTH = util.Distance(mm=45.0)
 FRAME_RATE = 30
 
 
-class RobotStatusFlag(object):
+class RobotStatusFlag:
     # Robot status flags.
     IS_MOVING = 0x1
     IS_CARRYING_BLOCK = 0x2
@@ -115,7 +114,7 @@ class RobotOrientation(enum.Enum):
     ON_RIGHT_SIDE = 4
 
 
-class LiftPosition(object):
+class LiftPosition:
     """
     Represents the position of Cozmo's lift.
 

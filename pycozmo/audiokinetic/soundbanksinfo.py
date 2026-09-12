@@ -6,11 +6,10 @@ See assets/cozmo_resources/sound/SoundbanksInfo.xml
 
 """
 
-from typing import Dict, Any, Union, TextIO
-import xml.etree.ElementTree as et  # noqa
+import xml.etree.ElementTree as et
+from typing import Any, TextIO
 
 from . import exception
-
 
 __all__ = [
     "EventInfo",
@@ -24,10 +23,10 @@ class EventInfo:
     """Event representation in SoundbanksInfo.xml ."""
 
     __slots__ = [
-        "soundbank_id",
         "id",
         "name",
         "object_path",
+        "soundbank_id",
     ]
 
     def __init__(self, soundbank_id: int, event_id: int, name: str, object_path: str):
@@ -41,12 +40,12 @@ class FileInfo:
     """File representation in SoundbanksInfo.xml ."""
 
     __slots__ = [
-        "soundbank_id",
+        "embedded",
         "id",
         "name",
         "path",
-        "embedded",
         "prefetch_size",
+        "soundbank_id",
     ]
 
     def __init__(
@@ -81,10 +80,10 @@ class SoundBankInfo:
 
     __slots__ = [
         "id",
-        "name",
-        "path",
         "language",
+        "name",
         "object_path",
+        "path",
     ]
 
     def __init__(
@@ -97,7 +96,7 @@ class SoundBankInfo:
         self.object_path = str(object_path)
 
 
-def load_soundbanksinfo(fspec: Union[str, TextIO]) -> Dict[int, Any]:
+def load_soundbanksinfo(fspec: str | TextIO) -> dict[int, Any]:
     """Load SoundbanksInfo.xml and return a dictionary of parsed Info objects."""
 
     try:

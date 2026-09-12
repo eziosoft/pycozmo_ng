@@ -4,23 +4,20 @@ Helper routines for working with colors and lights.
 
 """
 
-from typing import Optional, Tuple
-
 from pycozmo.protocol import protocol_encoder
-
 
 __all__ = [
     "Color",
-    "green",
-    "red",
     "blue",
-    "white",
-    "off",
-    "green_light",
-    "red_light",
     "blue_light",
-    "white_light",
+    "green",
+    "green_light",
+    "off",
     "off_light",
+    "red",
+    "red_light",
+    "white",
+    "white_light",
 ]
 
 
@@ -50,9 +47,9 @@ class Color:
 
     def __init__(
         self,
-        int_color: Optional[int] = None,
-        rgb: Optional[Tuple[int, int, int]] = None,
-        name: str = Optional[None],
+        int_color: int | None = None,
+        rgb: tuple[int, int, int] | None = None,
+        name: str = None,
     ) -> None:
         self.name = name
         if int_color is not None:
@@ -89,7 +86,7 @@ class Color:
         return obj
 
     def __repr__(self):
-        return "Color(name={}, int_color=0x{:08x})".format(self.name, self._int_color)
+        return f"Color(name={self.name}, int_color=0x{self._int_color:08x})"
 
 
 #: Green color.

@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class BackpackLights(object):
+class BackpackLights:
     __slots__ = ["_tab"]
 
     @classmethod

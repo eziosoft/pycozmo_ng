@@ -8,36 +8,32 @@ import math
 import os
 import time
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Tuple
+from collections.abc import Iterable
 
-from PIL import Image
 import numpy as np
+from PIL import Image
 
-from . import logger
-from . import anim_encoder
-from . import image_encoder
-from . import lights
 from pycozmo.display import procedural_face
 from pycozmo.protocol import protocol_encoder
-from . import robot
+
+from . import anim_encoder, image_encoder, lights, logger, robot
 from .json_loader import find_file, load_json_file
 
-
 __all__ = [
-    "PreprocessedClip",
-    "AnimationGroupMember",
     "AnimationGroup",
+    "AnimationGroupMember",
+    "PreprocessedClip",
     "load_animation_groups",
-    "load_cube_animation_groups",
     "load_backpack_light_patterns",
+    "load_cube_animation_groups",
 ]
 
 
-class PreprocessedClip(object):
+class PreprocessedClip:
     """Preprocessed animation clip that can be played back."""
 
     def __init__(
-        self, keyframes: Optional[Dict[int, List[protocol_encoder.Packet]]] = None
+        self, keyframes: dict[int, list[protocol_encoder.Packet]] | None = None
     ):
         self.keyframes = keyframes or defaultdict(list)
 
@@ -154,16 +150,13 @@ class PreprocessedClip(object):
                 buf = bytes(encoder.encode())
                 pkt = protocol_encoder.DisplayImage(image=buf)
                 keyframes[keyframe.trigger_time_ms].append(pkt)
-            elif isinstance(keyframe, anim_encoder.AnimRobotAudio):
-                # TODO
-                pass
-            elif isinstance(keyframe, anim_encoder.AnimEvent):
+            elif isinstance(keyframe, anim_encoder.AnimRobotAudio) or isinstance(
+                keyframe, anim_encoder.AnimEvent
+            ):
                 # TODO
                 pass
             else:
-                raise RuntimeError(
-                    "Unexpected keyframe type '{}'".format(type(keyframe))
-                )
+                raise RuntimeError(f"Unexpected keyframe type '{type(keyframe)}'")
         ppclip = cls(keyframes=keyframes)
         return ppclip
 
@@ -171,24 +164,24 @@ class PreprocessedClip(object):
 class LightAnimation:
     # TODO: create play method for light animations
     __slots__ = [
-        "on_colors",
         "off_colors",
-        "on_period",
         "off_period",
-        "transition_on_period",
-        "transition_off_period",
         "offset",
+        "on_colors",
+        "on_period",
+        "transition_off_period",
+        "transition_on_period",
     ]
 
     def __init__(
         self,
-        on_colors: List[List],
-        off_colors: List[List],
-        on_period: List[int],
-        off_period: List[int],
-        transition_on_period: List[int],
-        transition_off_period: List[int],
-        offset: List[int],
+        on_colors: list[list],
+        off_colors: list[list],
+        on_period: list[int],
+        off_period: list[int],
+        transition_on_period: list[int],
+        transition_off_period: list[int],
+        offset: list[int],
     ):
         self.on_colors = on_colors
         self.off_colors = off_colors
@@ -208,7 +201,7 @@ class CubeAnimation(LightAnimation):
         self.rotation_period = int(rotation_period)
 
     @classmethod
-    def from_json(cls, data: Dict):
+    def from_json(cls, data: dict):
         return cls(
             on_colors=data["pattern"]["onColors"],
             off_colors=data["pattern"]["offColors"],
@@ -229,7 +222,7 @@ class BackpackAnimation(LightAnimation):
         super().__init__(*args, **kwargs)
 
     @classmethod
-    def from_json(cls, data: Dict):
+    def from_json(cls, data: dict):
         return cls(
             on_colors=data["onColors"],
             off_colors=data["offColors"],
@@ -243,13 +236,13 @@ class BackpackAnimation(LightAnimation):
 
 class AnimationGroupMember:
     __slots__ = [
-        "name",
-        "weight",
         "cooldown_time",
-        "mood",
-        "use_head_angle",
         "head_angle_max",
         "head_angle_min",
+        "mood",
+        "name",
+        "use_head_angle",
+        "weight",
     ]
 
     def __init__(
@@ -258,9 +251,9 @@ class AnimationGroupMember:
         weight: float,
         cooldown_time: float,
         mood: str,
-        use_head_angle: Optional[bool] = False,
-        head_angle_min: Optional[float] = 0.0,
-        head_angle_max: Optional[float] = 0.0,
+        use_head_angle: bool | None = False,
+        head_angle_min: float | None = 0.0,
+        head_angle_max: float | None = 0.0,
     ) -> None:
         self.name = str(name)
         self.weight = float(weight)
@@ -273,7 +266,7 @@ class AnimationGroupMember:
         self.head_angle_max = float(head_angle_max)
 
     @classmethod
-    def from_json(cls, data: Dict):
+    def from_json(cls, data: dict):
         return cls(
             name=data["Name"],
             weight=data["Weight"],
@@ -287,8 +280,8 @@ class AnimationGroupMember:
 
 class AnimationGroup:
     __slots__ = [
-        "members",
         "member_probabilities",
+        "members",
     ]
 
     def __init__(self, members: Iterable[AnimationGroupMember]) -> None:
@@ -309,7 +302,7 @@ class AnimationGroup:
         assert math.isclose(sum(self.member_probabilities), 1.0)
 
     @classmethod
-    def from_json(cls, data: Dict):
+    def from_json(cls, data: dict):
         animations = [AnimationGroupMember.from_json(a) for a in data["Animations"]]
         return cls(animations)
 
@@ -322,7 +315,7 @@ class AnimationGroup:
 
 def load_trigger_map(
     resource_dir: str, map_relative_path: str
-) -> Tuple[str, str, Dict]:
+) -> tuple[str, str, dict]:
     json_data = load_json_file(os.path.join(resource_dir, map_relative_path))
     for pair in json_data["Pairs"]:
         anim_file = find_file(resource_dir, pair["AnimName"] + ".json")
@@ -330,7 +323,7 @@ def load_trigger_map(
             yield pair["CladEvent"], pair["AnimName"], load_json_file(anim_file)
 
 
-def load_animation_groups(resource_dir: str) -> Dict[str, AnimationGroup]:
+def load_animation_groups(resource_dir: str) -> dict[str, AnimationGroup]:
     start_time = time.perf_counter()
     animation_groups = {}
     trigger_map_loader = load_trigger_map(
@@ -345,14 +338,12 @@ def load_animation_groups(resource_dir: str) -> Dict[str, AnimationGroup]:
     for evt, name, json_data in trigger_map_loader:
         animation_groups[evt] = AnimationGroup.from_json(json_data)
     logger.debug(
-        "Loaded {} animation groups in {:.02f} s.".format(
-            len(animation_groups), time.perf_counter() - start_time
-        )
+        f"Loaded {len(animation_groups)} animation groups in {time.perf_counter() - start_time:.02f} s."
     )
     return animation_groups
 
 
-def load_cube_animation_groups(resource_dir: str) -> Dict[str, List[CubeAnimation]]:
+def load_cube_animation_groups(resource_dir: str) -> dict[str, list[CubeAnimation]]:
     start_time = time.perf_counter()
     cube_animation_groups = {}
     trigger_map_loader = load_trigger_map(
@@ -369,14 +360,12 @@ def load_cube_animation_groups(resource_dir: str) -> Dict[str, List[CubeAnimatio
         for cube_anim in json_data[name]:
             cube_animation_groups[evt].append(CubeAnimation.from_json(cube_anim))
     logger.debug(
-        "Loaded {} cube animation groups in {:.02f} s.".format(
-            len(cube_animation_groups), time.perf_counter() - start_time
-        )
+        f"Loaded {len(cube_animation_groups)} cube animation groups in {time.perf_counter() - start_time:.02f} s."
     )
     return cube_animation_groups
 
 
-def load_backpack_light_patterns(resource_dir: str) -> Dict[str, BackpackAnimation]:
+def load_backpack_light_patterns(resource_dir: str) -> dict[str, BackpackAnimation]:
     backpack_light_patterns = {}
     json_data = load_json_file(
         os.path.join(

@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class Event(object):
+class Event:
     __slots__ = ["_tab"]
 
     @classmethod

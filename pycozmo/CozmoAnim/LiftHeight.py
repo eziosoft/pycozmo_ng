@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class LiftHeight(object):
+class LiftHeight:
     __slots__ = ["_tab"]
 
     @classmethod

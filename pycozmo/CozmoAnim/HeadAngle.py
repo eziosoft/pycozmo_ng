@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class HeadAngle(object):
+class HeadAngle:
     __slots__ = ["_tab"]
 
     @classmethod

@@ -11,20 +11,20 @@ Do not modify.
 import enum
 
 from .protocol_ast import PacketType
-from .protocol_base import Struct, Packet
+from .protocol_base import Packet, Struct
 from .protocol_utils import (
-    validate_float,
-    validate_bool,
-    validate_integer,
-    validate_object,
-    validate_farray,
-    validate_varray,
-    validate_string,
-    get_varray_size,
-    get_string_size,
-    get_object_farray_size,
     BinaryReader,
     BinaryWriter,
+    get_object_farray_size,
+    get_string_size,
+    get_varray_size,
+    validate_bool,
+    validate_farray,
+    validate_float,
+    validate_integer,
+    validate_object,
+    validate_string,
+    validate_varray,
 )
 
 
@@ -218,13 +218,13 @@ class PathEventType(enum.Enum):
 
 class LightState(Struct):
     __slots__ = (
-        "_on_color",  # uint16
         "_off_color",  # uint16
-        "_on_frames",  # uint8
         "_off_frames",  # uint8
-        "_transition_on_frames",  # uint8
-        "_transition_off_frames",  # uint8
         "_offset",  # int16
+        "_on_color",  # uint16
+        "_on_frames",  # uint8
+        "_transition_off_frames",  # uint8
+        "_transition_on_frames",  # uint8
     )
 
     def __init__(
@@ -310,23 +310,14 @@ class LightState(Struct):
 
     def __repr__(self):
         return (
-            "{type}("
-            "on_color={on_color}, "
-            "off_color={off_color}, "
-            "on_frames={on_frames}, "
-            "off_frames={off_frames}, "
-            "transition_on_frames={transition_on_frames}, "
-            "transition_off_frames={transition_off_frames}, "
-            "offset={offset})".format(
-                type=type(self).__name__,
-                on_color=self._on_color,
-                off_color=self._off_color,
-                on_frames=self._on_frames,
-                off_frames=self._off_frames,
-                transition_on_frames=self._transition_on_frames,
-                transition_off_frames=self._transition_off_frames,
-                offset=self._offset,
-            )
+            f"{type(self).__name__}("
+            f"on_color={self._on_color}, "
+            f"off_color={self._off_color}, "
+            f"on_frames={self._on_frames}, "
+            f"off_frames={self._off_frames}, "
+            f"transition_on_frames={self._transition_on_frames}, "
+            f"transition_off_frames={self._transition_off_frames}, "
+            f"offset={self._offset})"
         )
 
     def to_bytes(self):
@@ -371,9 +362,9 @@ class LightState(Struct):
 
 class PathSegmentSpeed(Struct):
     __slots__ = (
-        "_speed_mmps",  # float
         "_accel_mmps2",  # float
         "_decel_mmps2",  # float
+        "_speed_mmps",  # float
     )
 
     def __init__(self, speed_mmps=0.0, accel_mmps2=0.0, decel_mmps2=0.0):
@@ -413,15 +404,10 @@ class PathSegmentSpeed(Struct):
 
     def __repr__(self):
         return (
-            "{type}("
-            "speed_mmps={speed_mmps}, "
-            "accel_mmps2={accel_mmps2}, "
-            "decel_mmps2={decel_mmps2})".format(
-                type=type(self).__name__,
-                speed_mmps=self._speed_mmps,
-                accel_mmps2=self._accel_mmps2,
-                decel_mmps2=self._decel_mmps2,
-            )
+            f"{type(self).__name__}("
+            f"speed_mmps={self._speed_mmps}, "
+            f"accel_mmps2={self._accel_mmps2}, "
+            f"decel_mmps2={self._decel_mmps2})"
         )
 
     def to_bytes(self):
@@ -455,13 +441,12 @@ class Connect(Packet):
 
     def __init__(self):
         super().__init__(PacketType.CONNECT, packet_id=None)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -488,13 +473,12 @@ class Disconnect(Packet):
 
     def __init__(self):
         super().__init__(PacketType.DISCONNECT, packet_id=None)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -518,9 +502,9 @@ class Disconnect(Packet):
 
 class Ping(Packet):
     __slots__ = (
-        "_time_sent_ms",  # double
         "_counter",  # uint32
         "_last",  # uint32
+        "_time_sent_ms",  # double
         "_unknown",  # uint8
     )
 
@@ -568,17 +552,11 @@ class Ping(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "time_sent_ms={time_sent_ms}, "
-            "counter={counter}, "
-            "last={last}, "
-            "unknown={unknown})".format(
-                type=type(self).__name__,
-                time_sent_ms=self._time_sent_ms,
-                counter=self._counter,
-                last=self._last,
-                unknown=self._unknown,
-            )
+            f"{type(self).__name__}("
+            f"time_sent_ms={self._time_sent_ms}, "
+            f"counter={self._counter}, "
+            f"last={self._last}, "
+            f"unknown={self._unknown})"
         )
 
     def to_bytes(self):
@@ -614,13 +592,12 @@ class Keyframe(Packet):
 
     def __init__(self):
         super().__init__(PacketType.KEYFRAME, packet_id=None)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -679,9 +656,7 @@ class LightStateCenter(Packet):
         return get_object_farray_size(self._states, 3) + 1
 
     def __repr__(self):
-        return "{type}(states={states}, unknown={unknown})".format(
-            type=type(self).__name__, states=self._states, unknown=self._unknown
-        )
+        return f"{type(self).__name__}(states={self._states}, unknown={self._unknown})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -731,9 +706,7 @@ class CubeLights(Packet):
         return get_object_farray_size(self._states, 4)
 
     def __repr__(self):
-        return "{type}(states={states})".format(
-            type=type(self).__name__, states=self._states
-        )
+        return f"{type(self).__name__}(states={self._states})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -757,8 +730,8 @@ class CubeLights(Packet):
 
 class ObjectConnect(Packet):
     __slots__ = (
-        "_factory_id",  # uint32
         "_connect",  # bool
+        "_factory_id",  # uint32
     )
 
     def __init__(self, factory_id=0, connect=False):
@@ -786,9 +759,7 @@ class ObjectConnect(Packet):
         return 4 + 1
 
     def __repr__(self):
-        return "{type}(factory_id={factory_id}, connect={connect})".format(
-            type=type(self).__name__, factory_id=self._factory_id, connect=self._connect
-        )
+        return f"{type(self).__name__}(factory_id={self._factory_id}, connect={self._connect})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -814,8 +785,8 @@ class ObjectConnect(Packet):
 
 class StreamObjectAccel(Packet):
     __slots__ = (
-        "_object_id",  # uint32
         "_enable",  # bool
+        "_object_id",  # uint32
     )
 
     def __init__(self, object_id=0, enable=False):
@@ -843,8 +814,8 @@ class StreamObjectAccel(Packet):
         return 4 + 1
 
     def __repr__(self):
-        return "{type}(object_id={object_id}, enable={enable})".format(
-            type=type(self).__name__, object_id=self._object_id, enable=self._enable
+        return (
+            f"{type(self).__name__}(object_id={self._object_id}, enable={self._enable})"
         )
 
     def to_bytes(self):
@@ -890,9 +861,7 @@ class SetAccessoryDiscovery(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(enable={enable})".format(
-            type=type(self).__name__, enable=self._enable
-        )
+        return f"{type(self).__name__}(enable={self._enable})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -935,9 +904,7 @@ class SetHeadLight(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(enable={enable})".format(
-            type=type(self).__name__, enable=self._enable
-        )
+        return f"{type(self).__name__}(enable={self._enable})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -993,13 +960,9 @@ class CubeId(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "object_id={object_id}, "
-            "rotation_period_frames={rotation_period_frames})".format(
-                type=type(self).__name__,
-                object_id=self._object_id,
-                rotation_period_frames=self._rotation_period_frames,
-            )
+            f"{type(self).__name__}("
+            f"object_id={self._object_id}, "
+            f"rotation_period_frames={self._rotation_period_frames})"
         )
 
     def to_bytes(self):
@@ -1061,9 +1024,7 @@ class LightStateSide(Packet):
         return get_object_farray_size(self._states, 2) + 1
 
     def __repr__(self):
-        return "{type}(states={states}, unknown={unknown})".format(
-            type=type(self).__name__, states=self._states, unknown=self._unknown
-        )
+        return f"{type(self).__name__}(states={self._states}, unknown={self._unknown})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -1092,13 +1053,12 @@ class Enable(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0x25)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -1122,10 +1082,10 @@ class Enable(Packet):
 
 class DriveWheels(Packet):
     __slots__ = (
-        "_lwheel_speed_mmps",  # float
-        "_rwheel_speed_mmps",  # float
         "_lwheel_accel_mmps2",  # float
+        "_lwheel_speed_mmps",  # float
         "_rwheel_accel_mmps2",  # float
+        "_rwheel_speed_mmps",  # float
     )
 
     def __init__(
@@ -1178,17 +1138,11 @@ class DriveWheels(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "lwheel_speed_mmps={lwheel_speed_mmps}, "
-            "rwheel_speed_mmps={rwheel_speed_mmps}, "
-            "lwheel_accel_mmps2={lwheel_accel_mmps2}, "
-            "rwheel_accel_mmps2={rwheel_accel_mmps2})".format(
-                type=type(self).__name__,
-                lwheel_speed_mmps=self._lwheel_speed_mmps,
-                rwheel_speed_mmps=self._rwheel_speed_mmps,
-                lwheel_accel_mmps2=self._lwheel_accel_mmps2,
-                rwheel_accel_mmps2=self._rwheel_accel_mmps2,
-            )
+            f"{type(self).__name__}("
+            f"lwheel_speed_mmps={self._lwheel_speed_mmps}, "
+            f"rwheel_speed_mmps={self._rwheel_speed_mmps}, "
+            f"lwheel_accel_mmps2={self._lwheel_accel_mmps2}, "
+            f"rwheel_accel_mmps2={self._rwheel_accel_mmps2})"
         )
 
     def to_bytes(self):
@@ -1224,9 +1178,9 @@ class DriveWheels(Packet):
 
 class TurnInPlaceAtSpeed(Packet):
     __slots__ = (
-        "_wheel_speed_mmps",  # float
-        "_wheel_accel_mmps2",  # float
         "_direction",  # int16
+        "_wheel_accel_mmps2",  # float
+        "_wheel_speed_mmps",  # float
     )
 
     def __init__(self, wheel_speed_mmps=0.0, wheel_accel_mmps2=0.0, direction=0):
@@ -1264,15 +1218,10 @@ class TurnInPlaceAtSpeed(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "wheel_speed_mmps={wheel_speed_mmps}, "
-            "wheel_accel_mmps2={wheel_accel_mmps2}, "
-            "direction={direction})".format(
-                type=type(self).__name__,
-                wheel_speed_mmps=self._wheel_speed_mmps,
-                wheel_accel_mmps2=self._wheel_accel_mmps2,
-                direction=self._direction,
-            )
+            f"{type(self).__name__}("
+            f"wheel_speed_mmps={self._wheel_speed_mmps}, "
+            f"wheel_accel_mmps2={self._wheel_accel_mmps2}, "
+            f"direction={self._direction})"
         )
 
     def to_bytes(self):
@@ -1324,9 +1273,7 @@ class MoveLift(Packet):
         return 4
 
     def __repr__(self):
-        return "{type}(speed_rad_per_sec={speed_rad_per_sec})".format(
-            type=type(self).__name__, speed_rad_per_sec=self._speed_rad_per_sec
-        )
+        return f"{type(self).__name__}(speed_rad_per_sec={self._speed_rad_per_sec})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -1369,9 +1316,7 @@ class MoveHead(Packet):
         return 4
 
     def __repr__(self):
-        return "{type}(speed_rad_per_sec={speed_rad_per_sec})".format(
-            type=type(self).__name__, speed_rad_per_sec=self._speed_rad_per_sec
-        )
+        return f"{type(self).__name__}(speed_rad_per_sec={self._speed_rad_per_sec})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -1395,11 +1340,11 @@ class MoveHead(Packet):
 
 class SetLiftHeight(Packet):
     __slots__ = (
+        "_accel_rad_per_sec2",  # float
+        "_action_id",  # uint8
+        "_duration_sec",  # float
         "_height_mm",  # float
         "_max_speed_rad_per_sec",  # float
-        "_accel_rad_per_sec2",  # float
-        "_duration_sec",  # float
-        "_action_id",  # uint8
     )
 
     def __init__(
@@ -1463,19 +1408,12 @@ class SetLiftHeight(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "height_mm={height_mm}, "
-            "max_speed_rad_per_sec={max_speed_rad_per_sec}, "
-            "accel_rad_per_sec2={accel_rad_per_sec2}, "
-            "duration_sec={duration_sec}, "
-            "action_id={action_id})".format(
-                type=type(self).__name__,
-                height_mm=self._height_mm,
-                max_speed_rad_per_sec=self._max_speed_rad_per_sec,
-                accel_rad_per_sec2=self._accel_rad_per_sec2,
-                duration_sec=self._duration_sec,
-                action_id=self._action_id,
-            )
+            f"{type(self).__name__}("
+            f"height_mm={self._height_mm}, "
+            f"max_speed_rad_per_sec={self._max_speed_rad_per_sec}, "
+            f"accel_rad_per_sec2={self._accel_rad_per_sec2}, "
+            f"duration_sec={self._duration_sec}, "
+            f"action_id={self._action_id})"
         )
 
     def to_bytes(self):
@@ -1514,11 +1452,11 @@ class SetLiftHeight(Packet):
 
 class SetHeadAngle(Packet):
     __slots__ = (
-        "_angle_rad",  # float
-        "_max_speed_rad_per_sec",  # float
         "_accel_rad_per_sec2",  # float
-        "_duration_sec",  # float
         "_action_id",  # uint8
+        "_angle_rad",  # float
+        "_duration_sec",  # float
+        "_max_speed_rad_per_sec",  # float
     )
 
     def __init__(
@@ -1582,19 +1520,12 @@ class SetHeadAngle(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "angle_rad={angle_rad}, "
-            "max_speed_rad_per_sec={max_speed_rad_per_sec}, "
-            "accel_rad_per_sec2={accel_rad_per_sec2}, "
-            "duration_sec={duration_sec}, "
-            "action_id={action_id})".format(
-                type=type(self).__name__,
-                angle_rad=self._angle_rad,
-                max_speed_rad_per_sec=self._max_speed_rad_per_sec,
-                accel_rad_per_sec2=self._accel_rad_per_sec2,
-                duration_sec=self._duration_sec,
-                action_id=self._action_id,
-            )
+            f"{type(self).__name__}("
+            f"angle_rad={self._angle_rad}, "
+            f"max_speed_rad_per_sec={self._max_speed_rad_per_sec}, "
+            f"accel_rad_per_sec2={self._accel_rad_per_sec2}, "
+            f"duration_sec={self._duration_sec}, "
+            f"action_id={self._action_id})"
         )
 
     def to_bytes(self):
@@ -1633,14 +1564,14 @@ class SetHeadAngle(Packet):
 
 class TurnInPlace(Packet):
     __slots__ = (
-        "_angle_rad",  # float
-        "_speed_rad_per_sec",  # float
         "_accel_rad_per_sec2",  # float
+        "_action_id",  # uint8
+        "_angle_rad",  # float
         "_angle_tolerance_rad",  # float
+        "_is_absolute",  # bool
+        "_speed_rad_per_sec",  # float
         "_unknown4",  # uint8
         "_unknown5",  # uint8
-        "_is_absolute",  # bool
-        "_action_id",  # uint8
     )
 
     def __init__(
@@ -1733,25 +1664,15 @@ class TurnInPlace(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "angle_rad={angle_rad}, "
-            "speed_rad_per_sec={speed_rad_per_sec}, "
-            "accel_rad_per_sec2={accel_rad_per_sec2}, "
-            "angle_tolerance_rad={angle_tolerance_rad}, "
-            "unknown4={unknown4}, "
-            "unknown5={unknown5}, "
-            "is_absolute={is_absolute}, "
-            "action_id={action_id})".format(
-                type=type(self).__name__,
-                angle_rad=self._angle_rad,
-                speed_rad_per_sec=self._speed_rad_per_sec,
-                accel_rad_per_sec2=self._accel_rad_per_sec2,
-                angle_tolerance_rad=self._angle_tolerance_rad,
-                unknown4=self._unknown4,
-                unknown5=self._unknown5,
-                is_absolute=self._is_absolute,
-                action_id=self._action_id,
-            )
+            f"{type(self).__name__}("
+            f"angle_rad={self._angle_rad}, "
+            f"speed_rad_per_sec={self._speed_rad_per_sec}, "
+            f"accel_rad_per_sec2={self._accel_rad_per_sec2}, "
+            f"angle_tolerance_rad={self._angle_tolerance_rad}, "
+            f"unknown4={self._unknown4}, "
+            f"unknown5={self._unknown5}, "
+            f"is_absolute={self._is_absolute}, "
+            f"action_id={self._action_id})"
         )
 
     def to_bytes(self):
@@ -1802,13 +1723,12 @@ class StopAllMotors(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0x3B)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -1851,9 +1771,7 @@ class ClearPath(Packet):
         return 2
 
     def __repr__(self):
-        return "{type}(unknown={unknown})".format(
-            type=type(self).__name__, unknown=self._unknown
-        )
+        return f"{type(self).__name__}(unknown={self._unknown})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -1877,13 +1795,13 @@ class ClearPath(Packet):
 
 class AppendPathSegLine(Packet):
     __slots__ = (
-        "_from_x",  # float
-        "_from_y",  # float
-        "_to_x",  # float
-        "_to_y",  # float
-        "_speed_mmps",  # float
         "_accel_mmps2",  # float
         "_decel_mmps2",  # float
+        "_from_x",  # float
+        "_from_y",  # float
+        "_speed_mmps",  # float
+        "_to_x",  # float
+        "_to_y",  # float
     )
 
     def __init__(
@@ -1966,23 +1884,14 @@ class AppendPathSegLine(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "from_x={from_x}, "
-            "from_y={from_y}, "
-            "to_x={to_x}, "
-            "to_y={to_y}, "
-            "speed_mmps={speed_mmps}, "
-            "accel_mmps2={accel_mmps2}, "
-            "decel_mmps2={decel_mmps2})".format(
-                type=type(self).__name__,
-                from_x=self._from_x,
-                from_y=self._from_y,
-                to_x=self._to_x,
-                to_y=self._to_y,
-                speed_mmps=self._speed_mmps,
-                accel_mmps2=self._accel_mmps2,
-                decel_mmps2=self._decel_mmps2,
-            )
+            f"{type(self).__name__}("
+            f"from_x={self._from_x}, "
+            f"from_y={self._from_y}, "
+            f"to_x={self._to_x}, "
+            f"to_y={self._to_y}, "
+            f"speed_mmps={self._speed_mmps}, "
+            f"accel_mmps2={self._accel_mmps2}, "
+            f"decel_mmps2={self._decel_mmps2})"
         )
 
     def to_bytes(self):
@@ -2027,14 +1936,14 @@ class AppendPathSegLine(Packet):
 
 class AppendPathSegArc(Packet):
     __slots__ = (
+        "_accel_mmps2",  # float
         "_center_x",  # float
         "_center_y",  # float
+        "_decel_mmps2",  # float
         "_radius_mm",  # float
+        "_speed_mmps",  # float
         "_start_angle_rad",  # float
         "_sweep_rad",  # float
-        "_speed_mmps",  # float
-        "_accel_mmps2",  # float
-        "_decel_mmps2",  # float
     )
 
     def __init__(
@@ -2127,25 +2036,15 @@ class AppendPathSegArc(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "center_x={center_x}, "
-            "center_y={center_y}, "
-            "radius_mm={radius_mm}, "
-            "start_angle_rad={start_angle_rad}, "
-            "sweep_rad={sweep_rad}, "
-            "speed_mmps={speed_mmps}, "
-            "accel_mmps2={accel_mmps2}, "
-            "decel_mmps2={decel_mmps2})".format(
-                type=type(self).__name__,
-                center_x=self._center_x,
-                center_y=self._center_y,
-                radius_mm=self._radius_mm,
-                start_angle_rad=self._start_angle_rad,
-                sweep_rad=self._sweep_rad,
-                speed_mmps=self._speed_mmps,
-                accel_mmps2=self._accel_mmps2,
-                decel_mmps2=self._decel_mmps2,
-            )
+            f"{type(self).__name__}("
+            f"center_x={self._center_x}, "
+            f"center_y={self._center_y}, "
+            f"radius_mm={self._radius_mm}, "
+            f"start_angle_rad={self._start_angle_rad}, "
+            f"sweep_rad={self._sweep_rad}, "
+            f"speed_mmps={self._speed_mmps}, "
+            f"accel_mmps2={self._accel_mmps2}, "
+            f"decel_mmps2={self._decel_mmps2})"
         )
 
     def to_bytes(self):
@@ -2193,14 +2092,14 @@ class AppendPathSegArc(Packet):
 
 class AppendPathSegPointTurn(Packet):
     __slots__ = (
-        "_x",  # float
-        "_y",  # float
+        "_accel_mmps2",  # float
         "_angle_rad",  # float
         "_angle_tolerance_rad",  # float
-        "_speed_mmps",  # float
-        "_accel_mmps2",  # float
         "_decel_mmps2",  # float
+        "_speed_mmps",  # float
         "_unknown",  # bool
+        "_x",  # float
+        "_y",  # float
     )
 
     def __init__(
@@ -2293,25 +2192,15 @@ class AppendPathSegPointTurn(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "x={x}, "
-            "y={y}, "
-            "angle_rad={angle_rad}, "
-            "angle_tolerance_rad={angle_tolerance_rad}, "
-            "speed_mmps={speed_mmps}, "
-            "accel_mmps2={accel_mmps2}, "
-            "decel_mmps2={decel_mmps2}, "
-            "unknown={unknown})".format(
-                type=type(self).__name__,
-                x=self._x,
-                y=self._y,
-                angle_rad=self._angle_rad,
-                angle_tolerance_rad=self._angle_tolerance_rad,
-                speed_mmps=self._speed_mmps,
-                accel_mmps2=self._accel_mmps2,
-                decel_mmps2=self._decel_mmps2,
-                unknown=self._unknown,
-            )
+            f"{type(self).__name__}("
+            f"x={self._x}, "
+            f"y={self._y}, "
+            f"angle_rad={self._angle_rad}, "
+            f"angle_tolerance_rad={self._angle_tolerance_rad}, "
+            f"speed_mmps={self._speed_mmps}, "
+            f"accel_mmps2={self._accel_mmps2}, "
+            f"decel_mmps2={self._decel_mmps2}, "
+            f"unknown={self._unknown})"
         )
 
     def to_bytes(self):
@@ -2388,9 +2277,7 @@ class TrimPath(Packet):
         return 1 + 1
 
     def __repr__(self):
-        return "{type}(head={head}, tail={tail})".format(
-            type=type(self).__name__, head=self._head, tail=self._tail
-        )
+        return f"{type(self).__name__}(head={self._head}, tail={self._tail})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -2445,8 +2332,8 @@ class ExecutePath(Packet):
         return 2 + 1
 
     def __repr__(self):
-        return "{type}(event_id={event_id}, unknown={unknown})".format(
-            type=type(self).__name__, event_id=self._event_id, unknown=self._unknown
+        return (
+            f"{type(self).__name__}(event_id={self._event_id}, unknown={self._unknown})"
         )
 
     def to_bytes(self):
@@ -2473,11 +2360,11 @@ class ExecutePath(Packet):
 
 class SetOrigin(Packet):
     __slots__ = (
-        "_unknown0",  # uint32
         "_pose_frame_id",  # uint32
         "_pose_origin_id",  # uint32
         "_pose_x",  # float
         "_pose_y",  # float
+        "_unknown0",  # uint32
         "_unknown5",  # uint32
     )
 
@@ -2551,21 +2438,13 @@ class SetOrigin(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "unknown0={unknown0}, "
-            "pose_frame_id={pose_frame_id}, "
-            "pose_origin_id={pose_origin_id}, "
-            "pose_x={pose_x}, "
-            "pose_y={pose_y}, "
-            "unknown5={unknown5})".format(
-                type=type(self).__name__,
-                unknown0=self._unknown0,
-                pose_frame_id=self._pose_frame_id,
-                pose_origin_id=self._pose_origin_id,
-                pose_x=self._pose_x,
-                pose_y=self._pose_y,
-                unknown5=self._unknown5,
-            )
+            f"{type(self).__name__}("
+            f"unknown0={self._unknown0}, "
+            f"pose_frame_id={self._pose_frame_id}, "
+            f"pose_origin_id={self._pose_origin_id}, "
+            f"pose_x={self._pose_x}, "
+            f"pose_y={self._pose_y}, "
+            f"unknown5={self._unknown5})"
         )
 
     def to_bytes(self):
@@ -2636,9 +2515,7 @@ class SyncTime(Packet):
         return 4 + 4
 
     def __repr__(self):
-        return "{type}(timestamp={timestamp}, unknown={unknown})".format(
-            type=type(self).__name__, timestamp=self._timestamp, unknown=self._unknown
-        )
+        return f"{type(self).__name__}(timestamp={self._timestamp}, unknown={self._unknown})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -2664,8 +2541,8 @@ class SyncTime(Packet):
 
 class EnableCamera(Packet):
     __slots__ = (
-        "_image_send_mode",  # ImageSendMode
         "_image_resolution",  # ImageResolution
+        "_image_send_mode",  # ImageSendMode
     )
 
     def __init__(self, image_send_mode=1, image_resolution=4):
@@ -2696,13 +2573,9 @@ class EnableCamera(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "image_send_mode={image_send_mode}, "
-            "image_resolution={image_resolution})".format(
-                type=type(self).__name__,
-                image_send_mode=self._image_send_mode,
-                image_resolution=self._image_resolution,
-            )
+            f"{type(self).__name__}("
+            f"image_send_mode={self._image_send_mode}, "
+            f"image_resolution={self._image_resolution})"
         )
 
     def to_bytes(self):
@@ -2729,9 +2602,9 @@ class EnableCamera(Packet):
 
 class SetCameraParams(Packet):
     __slots__ = (
-        "_gain",  # float
-        "_exposure_ms",  # uint16
         "_auto_exposure_enabled",  # bool
+        "_exposure_ms",  # uint16
+        "_gain",  # float
     )
 
     def __init__(self, gain=0.0, exposure_ms=0, auto_exposure_enabled=False):
@@ -2769,15 +2642,10 @@ class SetCameraParams(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "gain={gain}, "
-            "exposure_ms={exposure_ms}, "
-            "auto_exposure_enabled={auto_exposure_enabled})".format(
-                type=type(self).__name__,
-                gain=self._gain,
-                exposure_ms=self._exposure_ms,
-                auto_exposure_enabled=self._auto_exposure_enabled,
-            )
+            f"{type(self).__name__}("
+            f"gain={self._gain}, "
+            f"exposure_ms={self._exposure_ms}, "
+            f"auto_exposure_enabled={self._auto_exposure_enabled})"
         )
 
     def to_bytes(self):
@@ -2839,9 +2707,7 @@ class StartMotorCalibration(Packet):
         return 1 + 1
 
     def __repr__(self):
-        return "{type}(head={head}, lift={lift})".format(
-            type=type(self).__name__, head=self._head, lift=self._lift
-        )
+        return f"{type(self).__name__}(head={self._head}, lift={self._lift})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -2886,9 +2752,7 @@ class EnableStopOnCliff(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(enable={enable})".format(
-            type=type(self).__name__, enable=self._enable
-        )
+        return f"{type(self).__name__}(enable={self._enable})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -2931,9 +2795,7 @@ class SetRobotVolume(Packet):
         return 2
 
     def __repr__(self):
-        return "{type}(level={level})".format(
-            type=type(self).__name__, level=self._level
-        )
+        return f"{type(self).__name__}(level={self._level})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -2976,9 +2838,7 @@ class EnableColorImages(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(enable={enable})".format(
-            type=type(self).__name__, enable=self._enable
-        )
+        return f"{type(self).__name__}(enable={self._enable})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3002,11 +2862,11 @@ class EnableColorImages(Packet):
 
 class NvStorageOp(Packet):
     __slots__ = (
-        "_tag",  # NvEntryTag
+        "_data",  # uint8[uint16]
         "_length",  # int32
         "_op",  # NvOperation
+        "_tag",  # NvEntryTag
         "_unknown",  # uint8
-        "_data",  # uint8[uint16]
     )
 
     def __init__(self, tag=4294967295, length=0, op=0, unknown=0, data=()):
@@ -3069,19 +2929,12 @@ class NvStorageOp(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "tag={tag}, "
-            "length={length}, "
-            "op={op}, "
-            "unknown={unknown}, "
-            "data={data})".format(
-                type=type(self).__name__,
-                tag=self._tag,
-                length=self._length,
-                op=self._op,
-                unknown=self._unknown,
-                data=self._data,
-            )
+            f"{type(self).__name__}("
+            f"tag={self._tag}, "
+            f"length={self._length}, "
+            f"op={self._op}, "
+            f"unknown={self._unknown}, "
+            f"data={self._data})"
         )
 
     def to_bytes(self):
@@ -3117,13 +2970,12 @@ class AbortAnimation(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0x8D)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3171,9 +3023,7 @@ class OutputAudio(Packet):
         return 744
 
     def __repr__(self):
-        return "{type}(samples={samples})".format(
-            type=type(self).__name__, samples=self._samples
-        )
+        return f"{type(self).__name__}(samples={self._samples})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3200,13 +3050,12 @@ class OutputSilence(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0x8F)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3233,13 +3082,12 @@ class RecordHeading(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0x91)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3266,13 +3114,12 @@ class TurnToRecordedHeading(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0x92)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3296,9 +3143,9 @@ class TurnToRecordedHeading(Packet):
 
 class AnimHead(Packet):
     __slots__ = (
+        "_angle_deg",  # int8
         "_duration_ms",  # uint8
         "_variability_deg",  # int8
-        "_angle_deg",  # int8
     )
 
     def __init__(self, duration_ms=0, variability_deg=0, angle_deg=0):
@@ -3336,15 +3183,10 @@ class AnimHead(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "duration_ms={duration_ms}, "
-            "variability_deg={variability_deg}, "
-            "angle_deg={angle_deg})".format(
-                type=type(self).__name__,
-                duration_ms=self._duration_ms,
-                variability_deg=self._variability_deg,
-                angle_deg=self._angle_deg,
-            )
+            f"{type(self).__name__}("
+            f"duration_ms={self._duration_ms}, "
+            f"variability_deg={self._variability_deg}, "
+            f"angle_deg={self._angle_deg})"
         )
 
     def to_bytes(self):
@@ -3378,8 +3220,8 @@ class AnimHead(Packet):
 class AnimLift(Packet):
     __slots__ = (
         "_duration_ms",  # uint8
-        "_variability_mm",  # uint8
         "_height_mm",  # uint8
+        "_variability_mm",  # uint8
     )
 
     def __init__(self, duration_ms=0, variability_mm=0, height_mm=0):
@@ -3417,15 +3259,10 @@ class AnimLift(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "duration_ms={duration_ms}, "
-            "variability_mm={variability_mm}, "
-            "height_mm={height_mm})".format(
-                type=type(self).__name__,
-                duration_ms=self._duration_ms,
-                variability_mm=self._variability_mm,
-                height_mm=self._height_mm,
-            )
+            f"{type(self).__name__}("
+            f"duration_ms={self._duration_ms}, "
+            f"variability_mm={self._variability_mm}, "
+            f"height_mm={self._height_mm})"
         )
 
     def to_bytes(self):
@@ -3480,9 +3317,7 @@ class DisplayImage(Packet):
         return get_varray_size(self._image, "H", "B")
 
     def __repr__(self):
-        return "{type}(image={image})".format(
-            type=type(self).__name__, image=self._image
-        )
+        return f"{type(self).__name__}(image={self._image})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3531,9 +3366,7 @@ class AnimBackpackLights(Packet):
         return 10
 
     def __repr__(self):
-        return "{type}(colors={colors})".format(
-            type=type(self).__name__, colors=self._colors
-        )
+        return f"{type(self).__name__}(colors={self._colors})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3586,9 +3419,7 @@ class AnimBody(Packet):
         return 2 + 2
 
     def __repr__(self):
-        return "{type}(speed={speed}, unknown={unknown})".format(
-            type=type(self).__name__, speed=self._speed, unknown=self._unknown
-        )
+        return f"{type(self).__name__}(speed={self._speed}, unknown={self._unknown})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3617,13 +3448,12 @@ class EndAnimation(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0x9A)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3666,9 +3496,7 @@ class StartAnimation(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(anim_id={anim_id})".format(
-            type=type(self).__name__, anim_id=self._anim_id
-        )
+        return f"{type(self).__name__}(anim_id={self._anim_id})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3695,13 +3523,12 @@ class EnableAnimationState(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0x9F)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3728,13 +3555,12 @@ class ShutdownRobot(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0xA9)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3777,9 +3603,7 @@ class WifiOff(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(enable={enable})".format(
-            type=type(self).__name__, enable=self._enable
-        )
+        return f"{type(self).__name__}(enable={self._enable})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3837,9 +3661,7 @@ class FirmwareUpdate(Packet):
         return 2 + 1024
 
     def __repr__(self):
-        return "{type}(chunk_id={chunk_id}, data={data})".format(
-            type=type(self).__name__, chunk_id=self._chunk_id, data=self._data
-        )
+        return f"{type(self).__name__}(chunk_id={self._chunk_id}, data={self._data})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3865,11 +3687,11 @@ class FirmwareUpdate(Packet):
 
 class DebugData(Packet):
     __slots__ = (
-        "_format_id",  # uint16
-        "_unused",  # uint16
-        "_name_id",  # uint16
-        "_level",  # int8
         "_args",  # uint32[uint8]
+        "_format_id",  # uint16
+        "_level",  # int8
+        "_name_id",  # uint16
+        "_unused",  # uint16
     )
 
     def __init__(self, format_id=0, unused=0, name_id=0, level=0, args=()):
@@ -3936,19 +3758,12 @@ class DebugData(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "format_id={format_id}, "
-            "unused={unused}, "
-            "name_id={name_id}, "
-            "level={level}, "
-            "args={args})".format(
-                type=type(self).__name__,
-                format_id=self._format_id,
-                unused=self._unused,
-                name_id=self._name_id,
-                level=self._level,
-                args=self._args,
-            )
+            f"{type(self).__name__}("
+            f"format_id={self._format_id}, "
+            f"unused={self._unused}, "
+            f"name_id={self._name_id}, "
+            f"level={self._level}, "
+            f"args={self._args})"
         )
 
     def to_bytes(self):
@@ -3983,12 +3798,12 @@ class DebugData(Packet):
 
 class ObjectMoved(Packet):
     __slots__ = (
-        "_timestamp",  # uint32
-        "_object_id",  # uint32
         "_active_accel_x",  # float
         "_active_accel_y",  # float
         "_active_accel_z",  # float
         "_axis_of_accel",  # UpAxis
+        "_object_id",  # uint32
+        "_timestamp",  # uint32
     )
 
     def __init__(
@@ -4062,21 +3877,13 @@ class ObjectMoved(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "timestamp={timestamp}, "
-            "object_id={object_id}, "
-            "active_accel_x={active_accel_x}, "
-            "active_accel_y={active_accel_y}, "
-            "active_accel_z={active_accel_z}, "
-            "axis_of_accel={axis_of_accel})".format(
-                type=type(self).__name__,
-                timestamp=self._timestamp,
-                object_id=self._object_id,
-                active_accel_x=self._active_accel_x,
-                active_accel_y=self._active_accel_y,
-                active_accel_z=self._active_accel_z,
-                axis_of_accel=self._axis_of_accel,
-            )
+            f"{type(self).__name__}("
+            f"timestamp={self._timestamp}, "
+            f"object_id={self._object_id}, "
+            f"active_accel_x={self._active_accel_x}, "
+            f"active_accel_y={self._active_accel_y}, "
+            f"active_accel_z={self._active_accel_z}, "
+            f"axis_of_accel={self._axis_of_accel})"
         )
 
     def to_bytes(self):
@@ -4118,8 +3925,8 @@ class ObjectMoved(Packet):
 
 class ObjectStoppedMoving(Packet):
     __slots__ = (
-        "_timestamp",  # uint32
         "_object_id",  # uint32
+        "_timestamp",  # uint32
     )
 
     def __init__(self, timestamp=0, object_id=0):
@@ -4147,11 +3954,7 @@ class ObjectStoppedMoving(Packet):
         return 4 + 4
 
     def __repr__(self):
-        return "{type}(timestamp={timestamp}, object_id={object_id})".format(
-            type=type(self).__name__,
-            timestamp=self._timestamp,
-            object_id=self._object_id,
-        )
+        return f"{type(self).__name__}(timestamp={self._timestamp}, object_id={self._object_id})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -4177,12 +3980,12 @@ class ObjectStoppedMoving(Packet):
 
 class ObjectTapped(Packet):
     __slots__ = (
-        "_timestamp",  # uint32
-        "_object_id",  # uint32
         "_num_taps",  # uint8
-        "_tap_time",  # uint8
+        "_object_id",  # uint32
         "_tap_neg",  # int8
         "_tap_pos",  # int8
+        "_tap_time",  # uint8
+        "_timestamp",  # uint32
     )
 
     def __init__(
@@ -4249,21 +4052,13 @@ class ObjectTapped(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "timestamp={timestamp}, "
-            "object_id={object_id}, "
-            "num_taps={num_taps}, "
-            "tap_time={tap_time}, "
-            "tap_neg={tap_neg}, "
-            "tap_pos={tap_pos})".format(
-                type=type(self).__name__,
-                timestamp=self._timestamp,
-                object_id=self._object_id,
-                num_taps=self._num_taps,
-                tap_time=self._tap_time,
-                tap_neg=self._tap_neg,
-                tap_pos=self._tap_pos,
-            )
+            f"{type(self).__name__}("
+            f"timestamp={self._timestamp}, "
+            f"object_id={self._object_id}, "
+            f"num_taps={self._num_taps}, "
+            f"tap_time={self._tap_time}, "
+            f"tap_neg={self._tap_neg}, "
+            f"tap_pos={self._tap_pos})"
         )
 
     def to_bytes(self):
@@ -4305,10 +4100,10 @@ class ObjectTapped(Packet):
 
 class ObjectTapFiltered(Packet):
     __slots__ = (
-        "_timestamp",  # uint32
+        "_intensity",  # uint8
         "_object_id",  # uint32
         "_time",  # uint8
-        "_intensity",  # uint8
+        "_timestamp",  # uint32
     )
 
     def __init__(self, timestamp=0, object_id=0, time=0, intensity=0):
@@ -4355,17 +4150,11 @@ class ObjectTapFiltered(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "timestamp={timestamp}, "
-            "object_id={object_id}, "
-            "time={time}, "
-            "intensity={intensity})".format(
-                type=type(self).__name__,
-                timestamp=self._timestamp,
-                object_id=self._object_id,
-                time=self._time,
-                intensity=self._intensity,
-            )
+            f"{type(self).__name__}("
+            f"timestamp={self._timestamp}, "
+            f"object_id={self._object_id}, "
+            f"time={self._time}, "
+            f"intensity={self._intensity})"
         )
 
     def to_bytes(self):
@@ -4417,9 +4206,7 @@ class AcknowledgeAction(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(action_id={action_id})".format(
-            type=type(self).__name__, action_id=self._action_id
-        )
+        return f"{type(self).__name__}(action_id={self._action_id})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -4446,13 +4233,12 @@ class RobotDelocalized(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0xC2)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -4479,13 +4265,12 @@ class RobotPoked(Packet):
 
     def __init__(self):
         super().__init__(PacketType.COMMAND, packet_id=0xC3)
-        pass
 
     def __len__(self):
         return 0
 
     def __repr__(self):
-        return "{type}()".format(type=type(self).__name__)
+        return f"{type(self).__name__}()"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -4539,11 +4324,7 @@ class PathFollowingEvent(Packet):
         return 2 + 1
 
     def __repr__(self):
-        return "{type}(event_id={event_id}, event_type={event_type})".format(
-            type=type(self).__name__,
-            event_id=self._event_id,
-            event_type=self._event_type,
-        )
+        return f"{type(self).__name__}(event_id={self._event_id}, event_type={self._event_type})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -4611,15 +4392,10 @@ class HardwareInfo(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "serial_number_head={serial_number_head}, "
-            "unknown1={unknown1}, "
-            "unknown2={unknown2})".format(
-                type=type(self).__name__,
-                serial_number_head=self._serial_number_head,
-                unknown1=self._unknown1,
-                unknown2=self._unknown2,
-            )
+            f"{type(self).__name__}("
+            f"serial_number_head={self._serial_number_head}, "
+            f"unknown1={self._unknown1}, "
+            f"unknown2={self._unknown2})"
         )
 
     def to_bytes(self):
@@ -4669,9 +4445,7 @@ class AnimationStarted(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(anim_id={anim_id})".format(
-            type=type(self).__name__, anim_id=self._anim_id
-        )
+        return f"{type(self).__name__}(anim_id={self._anim_id})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -4714,9 +4488,7 @@ class AnimationEnded(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(anim_id={anim_id})".format(
-            type=type(self).__name__, anim_id=self._anim_id
-        )
+        return f"{type(self).__name__}(anim_id={self._anim_id})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -4740,11 +4512,11 @@ class AnimationEnded(Packet):
 
 class NvStorageOpResult(Packet):
     __slots__ = (
-        "_tag",  # NvEntryTag
+        "_data",  # uint8[uint16]
         "_length",  # int32
         "_op",  # NvOperation
         "_result",  # NvResult
-        "_data",  # uint8[uint16]
+        "_tag",  # NvEntryTag
     )
 
     def __init__(self, tag=4294967295, length=0, op=0, result=0, data=()):
@@ -4808,19 +4580,12 @@ class NvStorageOpResult(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "tag={tag}, "
-            "length={length}, "
-            "op={op}, "
-            "result={result}, "
-            "data={data})".format(
-                type=type(self).__name__,
-                tag=self._tag,
-                length=self._length,
-                op=self._op,
-                result=self._result,
-                data=self._data,
-            )
+            f"{type(self).__name__}("
+            f"tag={self._tag}, "
+            f"length={self._length}, "
+            f"op={self._op}, "
+            f"result={self._result}, "
+            f"data={self._data})"
         )
 
     def to_bytes(self):
@@ -4853,9 +4618,9 @@ class NvStorageOpResult(Packet):
 
 class ObjectPowerLevel(Packet):
     __slots__ = (
-        "_object_id",  # uint32
-        "_missed_packets",  # uint32
         "_battery_level",  # uint8
+        "_missed_packets",  # uint32
+        "_object_id",  # uint32
     )
 
     def __init__(self, object_id=0, missed_packets=0, battery_level=0):
@@ -4893,15 +4658,10 @@ class ObjectPowerLevel(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "object_id={object_id}, "
-            "missed_packets={missed_packets}, "
-            "battery_level={battery_level})".format(
-                type=type(self).__name__,
-                object_id=self._object_id,
-                missed_packets=self._missed_packets,
-                battery_level=self._battery_level,
-            )
+            f"{type(self).__name__}("
+            f"object_id={self._object_id}, "
+            f"missed_packets={self._missed_packets}, "
+            f"battery_level={self._battery_level})"
         )
 
     def to_bytes(self):
@@ -4934,10 +4694,10 @@ class ObjectPowerLevel(Packet):
 
 class ObjectConnectionState(Packet):
     __slots__ = (
-        "_object_id",  # uint32
-        "_factory_id",  # uint32
-        "_object_type",  # ObjectType
         "_connected",  # bool
+        "_factory_id",  # uint32
+        "_object_id",  # uint32
+        "_object_type",  # ObjectType
     )
 
     def __init__(self, object_id=0, factory_id=0, object_type=-1, connected=False):
@@ -4985,17 +4745,11 @@ class ObjectConnectionState(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "object_id={object_id}, "
-            "factory_id={factory_id}, "
-            "object_type={object_type}, "
-            "connected={connected})".format(
-                type=type(self).__name__,
-                object_id=self._object_id,
-                factory_id=self._factory_id,
-                object_type=self._object_type,
-                connected=self._connected,
-            )
+            f"{type(self).__name__}("
+            f"object_id={self._object_id}, "
+            f"factory_id={self._factory_id}, "
+            f"object_type={self._object_type}, "
+            f"connected={self._connected})"
         )
 
     def to_bytes(self):
@@ -5031,9 +4785,9 @@ class ObjectConnectionState(Packet):
 
 class MotorCalibration(Packet):
     __slots__ = (
-        "_motor_id",  # MotorID
-        "_calib_started",  # bool
         "_auto_started",  # bool
+        "_calib_started",  # bool
+        "_motor_id",  # MotorID
     )
 
     def __init__(self, motor_id=0, calib_started=False, auto_started=False):
@@ -5072,15 +4826,10 @@ class MotorCalibration(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "motor_id={motor_id}, "
-            "calib_started={calib_started}, "
-            "auto_started={auto_started})".format(
-                type=type(self).__name__,
-                motor_id=self._motor_id,
-                calib_started=self._calib_started,
-                auto_started=self._auto_started,
-            )
+            f"{type(self).__name__}("
+            f"motor_id={self._motor_id}, "
+            f"calib_started={self._calib_started}, "
+            f"auto_started={self._auto_started})"
         )
 
     def to_bytes(self):
@@ -5111,9 +4860,9 @@ class MotorCalibration(Packet):
 
 class ObjectUpAxisChanged(Packet):
     __slots__ = (
-        "_timestamp",  # uint32
-        "_object_id",  # uint32
         "_axis",  # UpAxis
+        "_object_id",  # uint32
+        "_timestamp",  # uint32
     )
 
     def __init__(self, timestamp=0, object_id=0, axis=7):
@@ -5151,14 +4900,7 @@ class ObjectUpAxisChanged(Packet):
         return 4 + 4 + 1
 
     def __repr__(self):
-        return (
-            "{type}(timestamp={timestamp}, object_id={object_id}, axis={axis})".format(
-                type=type(self).__name__,
-                timestamp=self._timestamp,
-                object_id=self._object_id,
-                axis=self._axis,
-            )
-        )
+        return f"{type(self).__name__}(timestamp={self._timestamp}, object_id={self._object_id}, axis={self._axis})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -5205,9 +4947,7 @@ class ButtonPressed(Packet):
         return 1
 
     def __repr__(self):
-        return "{type}(pressed={pressed})".format(
-            type=type(self).__name__, pressed=self._pressed
-        )
+        return f"{type(self).__name__}(pressed={self._pressed})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -5250,9 +4990,7 @@ class FallingStarted(Packet):
         return 4
 
     def __repr__(self):
-        return "{type}(unknown={unknown})".format(
-            type=type(self).__name__, unknown=self._unknown
-        )
+        return f"{type(self).__name__}(unknown={self._unknown})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -5276,9 +5014,9 @@ class FallingStarted(Packet):
 
 class FallingStopped(Packet):
     __slots__ = (
-        "_unknown",  # uint32
         "_duration_ms",  # uint32
         "_impact_intensity",  # float
+        "_unknown",  # uint32
     )
 
     def __init__(self, unknown=0, duration_ms=0, impact_intensity=0.0):
@@ -5316,15 +5054,10 @@ class FallingStopped(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "unknown={unknown}, "
-            "duration_ms={duration_ms}, "
-            "impact_intensity={impact_intensity})".format(
-                type=type(self).__name__,
-                unknown=self._unknown,
-                duration_ms=self._duration_ms,
-                impact_intensity=self._impact_intensity,
-            )
+            f"{type(self).__name__}("
+            f"unknown={self._unknown}, "
+            f"duration_ms={self._duration_ms}, "
+            f"impact_intensity={self._impact_intensity})"
         )
 
     def to_bytes(self):
@@ -5355,9 +5088,9 @@ class FallingStopped(Packet):
 
 class BodyInfo(Packet):
     __slots__ = (
-        "_serial_number",  # uint32
-        "_body_hw_version",  # uint32
         "_body_color",  # BodyColor
+        "_body_hw_version",  # uint32
+        "_serial_number",  # uint32
     )
 
     def __init__(self, serial_number=0, body_hw_version=0, body_color=-1):
@@ -5399,15 +5132,10 @@ class BodyInfo(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "serial_number={serial_number}, "
-            "body_hw_version={body_hw_version}, "
-            "body_color={body_color})".format(
-                type=type(self).__name__,
-                serial_number=self._serial_number,
-                body_hw_version=self._body_hw_version,
-                body_color=self._body_color,
-            )
+            f"{type(self).__name__}("
+            f"serial_number={self._serial_number}, "
+            f"body_hw_version={self._body_hw_version}, "
+            f"body_color={self._body_color})"
         )
 
     def to_bytes(self):
@@ -5440,8 +5168,8 @@ class BodyInfo(Packet):
 
 class FirmwareSignature(Packet):
     __slots__ = (
-        "_unknown",  # uint16
         "_signature",  # str
+        "_unknown",  # uint16
     )
 
     def __init__(self, unknown=0, signature=""):
@@ -5470,9 +5198,7 @@ class FirmwareSignature(Packet):
         return 2 + get_string_size(self._signature, "H")
 
     def __repr__(self):
-        return "{type}(unknown={unknown}, signature={signature})".format(
-            type=type(self).__name__, unknown=self._unknown, signature=self._signature
-        )
+        return f"{type(self).__name__}(unknown={self._unknown}, signature={self._signature})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -5539,15 +5265,10 @@ class FirmwareUpdateResult(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "byte_count={byte_count}, "
-            "chunk_id={chunk_id}, "
-            "status={status})".format(
-                type=type(self).__name__,
-                byte_count=self._byte_count,
-                chunk_id=self._chunk_id,
-                status=self._status,
-            )
+            f"{type(self).__name__}("
+            f"byte_count={self._byte_count}, "
+            f"chunk_id={self._chunk_id}, "
+            f"status={self._status})"
         )
 
     def to_bytes(self):
@@ -5576,29 +5297,29 @@ class FirmwareUpdateResult(Packet):
 
 class RobotState(Packet):
     __slots__ = (
-        "_timestamp",  # uint32
-        "_pose_frame_id",  # uint32
-        "_pose_origin_id",  # uint32
-        "_pose_x",  # float
-        "_pose_y",  # float
-        "_pose_z",  # float
-        "_pose_angle_rad",  # float
-        "_pose_pitch_rad",  # float
-        "_lwheel_speed_mmps",  # float
-        "_rwheel_speed_mmps",  # float
-        "_head_angle_rad",  # float
-        "_lift_height_mm",  # float
         "_accel_x",  # float
         "_accel_y",  # float
         "_accel_z",  # float
+        "_backpack_touch_sensor_raw",  # uint16
+        "_battery_voltage",  # float
+        "_cliff_data_raw",  # uint16[4]
+        "_curr_path_segment",  # uint8
         "_gyro_x",  # float
         "_gyro_y",  # float
         "_gyro_z",  # float
-        "_battery_voltage",  # float
+        "_head_angle_rad",  # float
+        "_lift_height_mm",  # float
+        "_lwheel_speed_mmps",  # float
+        "_pose_angle_rad",  # float
+        "_pose_frame_id",  # uint32
+        "_pose_origin_id",  # uint32
+        "_pose_pitch_rad",  # float
+        "_pose_x",  # float
+        "_pose_y",  # float
+        "_pose_z",  # float
+        "_rwheel_speed_mmps",  # float
         "_status",  # uint32
-        "_cliff_data_raw",  # uint16[4]
-        "_backpack_touch_sensor_raw",  # uint16
-        "_curr_path_segment",  # uint8
+        "_timestamp",  # uint32
     )
 
     def __init__(
@@ -5872,55 +5593,30 @@ class RobotState(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "timestamp={timestamp}, "
-            "pose_frame_id={pose_frame_id}, "
-            "pose_origin_id={pose_origin_id}, "
-            "pose_x={pose_x}, "
-            "pose_y={pose_y}, "
-            "pose_z={pose_z}, "
-            "pose_angle_rad={pose_angle_rad}, "
-            "pose_pitch_rad={pose_pitch_rad}, "
-            "lwheel_speed_mmps={lwheel_speed_mmps}, "
-            "rwheel_speed_mmps={rwheel_speed_mmps}, "
-            "head_angle_rad={head_angle_rad}, "
-            "lift_height_mm={lift_height_mm}, "
-            "accel_x={accel_x}, "
-            "accel_y={accel_y}, "
-            "accel_z={accel_z}, "
-            "gyro_x={gyro_x}, "
-            "gyro_y={gyro_y}, "
-            "gyro_z={gyro_z}, "
-            "battery_voltage={battery_voltage}, "
-            "status={status}, "
-            "cliff_data_raw={cliff_data_raw}, "
-            "backpack_touch_sensor_raw={backpack_touch_sensor_raw}, "
-            "curr_path_segment={curr_path_segment})".format(
-                type=type(self).__name__,
-                timestamp=self._timestamp,
-                pose_frame_id=self._pose_frame_id,
-                pose_origin_id=self._pose_origin_id,
-                pose_x=self._pose_x,
-                pose_y=self._pose_y,
-                pose_z=self._pose_z,
-                pose_angle_rad=self._pose_angle_rad,
-                pose_pitch_rad=self._pose_pitch_rad,
-                lwheel_speed_mmps=self._lwheel_speed_mmps,
-                rwheel_speed_mmps=self._rwheel_speed_mmps,
-                head_angle_rad=self._head_angle_rad,
-                lift_height_mm=self._lift_height_mm,
-                accel_x=self._accel_x,
-                accel_y=self._accel_y,
-                accel_z=self._accel_z,
-                gyro_x=self._gyro_x,
-                gyro_y=self._gyro_y,
-                gyro_z=self._gyro_z,
-                battery_voltage=self._battery_voltage,
-                status=self._status,
-                cliff_data_raw=self._cliff_data_raw,
-                backpack_touch_sensor_raw=self._backpack_touch_sensor_raw,
-                curr_path_segment=self._curr_path_segment,
-            )
+            f"{type(self).__name__}("
+            f"timestamp={self._timestamp}, "
+            f"pose_frame_id={self._pose_frame_id}, "
+            f"pose_origin_id={self._pose_origin_id}, "
+            f"pose_x={self._pose_x}, "
+            f"pose_y={self._pose_y}, "
+            f"pose_z={self._pose_z}, "
+            f"pose_angle_rad={self._pose_angle_rad}, "
+            f"pose_pitch_rad={self._pose_pitch_rad}, "
+            f"lwheel_speed_mmps={self._lwheel_speed_mmps}, "
+            f"rwheel_speed_mmps={self._rwheel_speed_mmps}, "
+            f"head_angle_rad={self._head_angle_rad}, "
+            f"lift_height_mm={self._lift_height_mm}, "
+            f"accel_x={self._accel_x}, "
+            f"accel_y={self._accel_y}, "
+            f"accel_z={self._accel_z}, "
+            f"gyro_x={self._gyro_x}, "
+            f"gyro_y={self._gyro_y}, "
+            f"gyro_z={self._gyro_z}, "
+            f"battery_voltage={self._battery_voltage}, "
+            f"status={self._status}, "
+            f"cliff_data_raw={self._cliff_data_raw}, "
+            f"backpack_touch_sensor_raw={self._backpack_touch_sensor_raw}, "
+            f"curr_path_segment={self._curr_path_segment})"
         )
 
     def to_bytes(self):
@@ -6013,12 +5709,12 @@ class RobotState(Packet):
 
 class AnimationState(Packet):
     __slots__ = (
-        "_timestamp",  # uint32
+        "_client_drop_count",  # uint8
+        "_enabled_anim_tracks",  # uint8
         "_num_anim_bytes_played",  # int32
         "_num_audio_frames_played",  # int32
-        "_enabled_anim_tracks",  # uint8
         "_tag",  # uint8
-        "_client_drop_count",  # uint8
+        "_timestamp",  # uint32
     )
 
     def __init__(
@@ -6098,21 +5794,13 @@ class AnimationState(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "timestamp={timestamp}, "
-            "num_anim_bytes_played={num_anim_bytes_played}, "
-            "num_audio_frames_played={num_audio_frames_played}, "
-            "enabled_anim_tracks={enabled_anim_tracks}, "
-            "tag={tag}, "
-            "client_drop_count={client_drop_count})".format(
-                type=type(self).__name__,
-                timestamp=self._timestamp,
-                num_anim_bytes_played=self._num_anim_bytes_played,
-                num_audio_frames_played=self._num_audio_frames_played,
-                enabled_anim_tracks=self._enabled_anim_tracks,
-                tag=self._tag,
-                client_drop_count=self._client_drop_count,
-            )
+            f"{type(self).__name__}("
+            f"timestamp={self._timestamp}, "
+            f"num_anim_bytes_played={self._num_anim_bytes_played}, "
+            f"num_audio_frames_played={self._num_audio_frames_played}, "
+            f"enabled_anim_tracks={self._enabled_anim_tracks}, "
+            f"tag={self._tag}, "
+            f"client_drop_count={self._client_drop_count})"
         )
 
     def to_bytes(self):
@@ -6154,15 +5842,15 @@ class AnimationState(Packet):
 
 class ImageChunk(Packet):
     __slots__ = (
-        "_frame_timestamp",  # uint32
-        "_image_id",  # uint32
         "_chunk_debug",  # uint32
-        "_image_encoding",  # ImageEncoding
-        "_image_resolution",  # ImageResolution
-        "_image_chunk_count",  # uint8
         "_chunk_id",  # uint8
-        "_status",  # uint16
         "_data",  # uint8[uint16]
+        "_frame_timestamp",  # uint32
+        "_image_chunk_count",  # uint8
+        "_image_encoding",  # ImageEncoding
+        "_image_id",  # uint32
+        "_image_resolution",  # ImageResolution
+        "_status",  # uint16
     )
 
     def __init__(
@@ -6274,27 +5962,16 @@ class ImageChunk(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "frame_timestamp={frame_timestamp}, "
-            "image_id={image_id}, "
-            "chunk_debug={chunk_debug}, "
-            "image_encoding={image_encoding}, "
-            "image_resolution={image_resolution}, "
-            "image_chunk_count={image_chunk_count}, "
-            "chunk_id={chunk_id}, "
-            "status={status}, "
-            "data={data})".format(
-                type=type(self).__name__,
-                frame_timestamp=self._frame_timestamp,
-                image_id=self._image_id,
-                chunk_debug=self._chunk_debug,
-                image_encoding=self._image_encoding,
-                image_resolution=self._image_resolution,
-                image_chunk_count=self._image_chunk_count,
-                chunk_id=self._chunk_id,
-                status=self._status,
-                data=self._data,
-            )
+            f"{type(self).__name__}("
+            f"frame_timestamp={self._frame_timestamp}, "
+            f"image_id={self._image_id}, "
+            f"chunk_debug={self._chunk_debug}, "
+            f"image_encoding={self._image_encoding}, "
+            f"image_resolution={self._image_resolution}, "
+            f"image_chunk_count={self._image_chunk_count}, "
+            f"chunk_id={self._chunk_id}, "
+            f"status={self._status}, "
+            f"data={self._data})"
         )
 
     def to_bytes(self):
@@ -6386,15 +6063,10 @@ class ObjectAvailable(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "factory_id={factory_id}, "
-            "object_type={object_type}, "
-            "rssi={rssi})".format(
-                type=type(self).__name__,
-                factory_id=self._factory_id,
-                object_type=self._object_type,
-                rssi=self._rssi,
-            )
+            f"{type(self).__name__}("
+            f"factory_id={self._factory_id}, "
+            f"object_type={self._object_type}, "
+            f"rssi={self._rssi})"
         )
 
     def to_bytes(self):
@@ -6424,10 +6096,10 @@ class ObjectAvailable(Packet):
 class ImageImuData(Packet):
     __slots__ = (
         "_image_id",  # uint32
+        "_line_2_number",  # uint8
         "_rate_x",  # float
         "_rate_y",  # float
         "_rate_z",  # float
-        "_line_2_number",  # uint8
     )
 
     def __init__(self, image_id=0, rate_x=0.0, rate_y=0.0, rate_z=0.0, line_2_number=0):
@@ -6483,19 +6155,12 @@ class ImageImuData(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "image_id={image_id}, "
-            "rate_x={rate_x}, "
-            "rate_y={rate_y}, "
-            "rate_z={rate_z}, "
-            "line_2_number={line_2_number})".format(
-                type=type(self).__name__,
-                image_id=self._image_id,
-                rate_x=self._rate_x,
-                rate_y=self._rate_y,
-                rate_z=self._rate_z,
-                line_2_number=self._line_2_number,
-            )
+            f"{type(self).__name__}("
+            f"image_id={self._image_id}, "
+            f"rate_x={self._rate_x}, "
+            f"rate_y={self._rate_y}, "
+            f"rate_z={self._rate_z}, "
+            f"line_2_number={self._line_2_number})"
         )
 
     def to_bytes(self):
@@ -6534,11 +6199,11 @@ class ImageImuData(Packet):
 
 class ObjectAccel(Packet):
     __slots__ = (
-        "_timestamp",  # uint32
-        "_object_id",  # uint32
         "_accel_x",  # float
         "_accel_y",  # float
         "_accel_z",  # float
+        "_object_id",  # uint32
+        "_timestamp",  # uint32
     )
 
     def __init__(self, timestamp=0, object_id=0, accel_x=0.0, accel_y=0.0, accel_z=0.0):
@@ -6594,19 +6259,12 @@ class ObjectAccel(Packet):
 
     def __repr__(self):
         return (
-            "{type}("
-            "timestamp={timestamp}, "
-            "object_id={object_id}, "
-            "accel_x={accel_x}, "
-            "accel_y={accel_y}, "
-            "accel_z={accel_z})".format(
-                type=type(self).__name__,
-                timestamp=self._timestamp,
-                object_id=self._object_id,
-                accel_x=self._accel_x,
-                accel_y=self._accel_y,
-                accel_z=self._accel_z,
-            )
+            f"{type(self).__name__}("
+            f"timestamp={self._timestamp}, "
+            f"object_id={self._object_id}, "
+            f"accel_x={self._accel_x}, "
+            f"accel_y={self._accel_y}, "
+            f"accel_z={self._accel_z})"
         )
 
     def to_bytes(self):

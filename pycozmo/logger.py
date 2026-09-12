@@ -6,15 +6,14 @@ Logging.
 
 import logging
 
-
 __all__ = [
     "logger",
-    "logger_protocol",
-    "logger_robot",
-    "logger_reaction",
-    "logger_behavior",
     "logger_animation",
+    "logger_behavior",
     "logger_cubes",
+    "logger_protocol",
+    "logger_reaction",
+    "logger_robot",
 ]
 
 

@@ -15,16 +15,14 @@ Note: Raw camera images from Cozmo may be distorted and require undistortion
 using the calibration data. Undistortion is disabled by default to avoid warping.
 """
 
-from typing import Optional
-from dataclasses import dataclass
 import struct
+from dataclasses import dataclass
 from threading import Event
 
 import numpy as np
 
 from pycozmo import logger
-from pycozmo import protocol_encoder
-
+from pycozmo.protocol import protocol_encoder
 
 __all__ = [
     "CameraCalibration",
@@ -52,8 +50,8 @@ class CameraCalibration:
     p2: float = 0.0
     image_width: int = 320
     image_height: int = 240
-    fov_x: Optional[float] = None
-    fov_y: Optional[float] = None
+    fov_x: float | None = None
+    fov_y: float | None = None
 
     def __post_init__(self):
         """Compute FOV if not provided."""
@@ -85,7 +83,7 @@ class CameraCalibrationRetriever:
         self._event = Event()
         self._success = False
 
-    def get_calibration(self, timeout: float = 10.0) -> Optional[CameraCalibration]:
+    def get_calibration(self, timeout: float = 10.0) -> CameraCalibration | None:
         """Retrieve camera calibration from robot."""
         logger.info("Requesting camera calibration from Cozmo...")
         self._calib_data = []
@@ -108,7 +106,7 @@ class CameraCalibrationRetriever:
                 if self._success and self._calib_data:
                     calib = self._parse_calibration_data(self._calib_data)
                     if calib:
-                        logger.info(f"Camera calibration retrieved successfully")
+                        logger.info("Camera calibration retrieved successfully")
                         return calib
             else:
                 logger.error("Timeout waiting for calibration")
@@ -126,7 +124,7 @@ class CameraCalibrationRetriever:
                 self._success = pkt.result == protocol_encoder.NvResult.NV_OKAY
                 self._event.set()
 
-    def _parse_calibration_data(self, data: list) -> Optional[CameraCalibration]:
+    def _parse_calibration_data(self, data: list) -> CameraCalibration | None:
         """Parse raw calibration data."""
         if not data:
             return None

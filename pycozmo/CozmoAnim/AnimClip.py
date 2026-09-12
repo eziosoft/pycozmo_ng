@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class AnimClip(object):
+class AnimClip:
     __slots__ = ["_tab"]
 
     @classmethod

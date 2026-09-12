@@ -4,21 +4,20 @@ Cozmo protocol implementation base.
 
 """
 
-from typing import Optional
 from abc import ABC, abstractmethod
+
+from pycozmo.util import hex_dump
 
 from .protocol_ast import PacketType
 from .protocol_declaration import FIRST_ROBOT_PACKET_ID, OOB_SEQ
 from .protocol_utils import BinaryReader, BinaryWriter
-from pycozmo.util import hex_dump
-
 
 __all__ = [
-    "Struct",
     "Packet",
-    "UnknownPacket",
+    "Struct",
     "UnknownCommand",
     "UnknownEvent",
+    "UnknownPacket",
 ]
 
 
@@ -52,13 +51,13 @@ class Struct(ABC):
 
 class Packet(Struct, ABC):
     __slots__ = (
-        "_type",
         "_id",
-        "seq",
+        "_type",
         "ack",
+        "seq",
     )
 
-    def __init__(self, packet_type: PacketType, packet_id: Optional[int] = None):
+    def __init__(self, packet_type: PacketType, packet_id: int | None = None):
         self.type = packet_type
         self.id = packet_id
         self.seq = OOB_SEQ
@@ -73,11 +72,11 @@ class Packet(Struct, ABC):
         self._type = PacketType(value)
 
     @property
-    def id(self) -> Optional[int]:
+    def id(self) -> int | None:
         return self._id
 
     @id.setter
-    def id(self, value: Optional[int]) -> None:
+    def id(self, value: int | None) -> None:
         self._id = value
 
     def is_oob(self) -> bool:
@@ -101,7 +100,7 @@ class UnknownPacket(Packet):
     __slots__ = ("_data",)
 
     def __init__(
-        self, packet_type: PacketType, data: bytes, packet_id: Optional[int] = None
+        self, packet_type: PacketType, data: bytes, packet_id: int | None = None
     ):
         super().__init__(packet_type, packet_id)
         self.data = data
@@ -118,10 +117,8 @@ class UnknownPacket(Packet):
         return len(self._data)
 
     def __repr__(self):
-        return "{type_name}({type:02x}, {data})".format(
-            type=self.type.value,
-            type_name=type(self).__name__,
-            data=hex_dump(data=self._data),
+        return (
+            f"{type(self).__name__}({self.type.value:02x}, {hex_dump(data=self._data)})"
         )
 
     def to_bytes(self):
@@ -158,9 +155,7 @@ class UnknownCommand(UnknownPacket):
         raise NotImplementedError
 
     def __repr__(self):
-        return "{type}({id:02x}, {data})".format(
-            id=self.id, type=type(self).__name__, data=hex_dump(data=self._data)
-        )
+        return f"{type(self).__name__}({self.id:02x}, {hex_dump(data=self._data)})"
 
 
 class UnknownEvent(UnknownPacket):
@@ -178,6 +173,4 @@ class UnknownEvent(UnknownPacket):
         raise NotImplementedError
 
     def __repr__(self):
-        return "{type}({id:02x}, {data})".format(
-            id=self.id, type=type(self).__name__, data=hex_dump(data=self._data)
-        )
+        return f"{type(self).__name__}({self.id:02x}, {hex_dump(data=self._data)})"

@@ -30,7 +30,7 @@ state from any source (keyboard daemon, network, gamepad bridge, etc.).
 import logging
 import threading
 import time
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from . import robot
 
@@ -95,7 +95,7 @@ class RemoteControl:
         self._last_applied: set[str] = set()
 
         self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     # -- public API --------------------------------------------------------
 
@@ -152,7 +152,7 @@ class RemoteControl:
                 if active_keys != self._last_applied:
                     self._apply_head_lift(active_keys)
                     self._last_applied = active_keys
-            except Exception as e:  # noqa: BLE001 — don't kill the loop
+            except Exception as e:
                 logger.exception("RemoteControl tick failed: %s", e)
             self._stop_event.wait(period)
 

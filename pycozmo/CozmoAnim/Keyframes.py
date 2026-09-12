@@ -5,7 +5,7 @@
 import flatbuffers
 
 
-class Keyframes(object):
+class Keyframes:
     __slots__ = ["_tab"]
 
     @classmethod

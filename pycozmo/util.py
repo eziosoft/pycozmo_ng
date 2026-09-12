@@ -4,32 +4,30 @@ Utility classes and functions.
 
 """
 
-from typing import Optional, Tuple
+import math
 import os
 import pathlib
-import math
 import time
 
 from . import exception
 
-
 __all__ = [
     "Angle",
     "Distance",
+    "FPSTimer",
+    "Matrix44",
+    "Pose",
+    "Quaternion",
     "Speed",
     "Vector3",
     "angle_z_to_quaternion",
-    "Matrix44",
-    "Quaternion",
-    "Pose",
-    "FPSTimer",
+    "check_assets",
+    "frange",
+    "get_cozmo_anim_dir",
+    "get_cozmo_asset_dir",
+    "get_pycozmo_dir",
     "hex_dump",
     "hex_load",
-    "frange",
-    "get_pycozmo_dir",
-    "get_cozmo_asset_dir",
-    "check_assets",
-    "get_cozmo_anim_dir",
 ]
 
 
@@ -46,9 +44,7 @@ class Angle:
 
     __slots__ = "_radians"
 
-    def __init__(
-        self, radians: Optional[float] = None, degrees: Optional[float] = None
-    ):
+    def __init__(self, radians: float | None = None, degrees: float | None = None):
         if radians is None and degrees is None:
             raise ValueError("Expected either the degrees or radians keyword argument")
         if radians and degrees:
@@ -144,7 +140,7 @@ class Distance:
 
     __slots__ = "_mm"
 
-    def __init__(self, mm: Optional[float] = None, inches: Optional[float] = None):
+    def __init__(self, mm: float | None = None, inches: float | None = None):
         if mm is None and inches is None:
             raise ValueError("Expected either the mm or inches keyword argument")
         if mm and inches:
@@ -281,7 +277,7 @@ class Vector3:
         return self._z
 
     @property
-    def x_y_z(self) -> Tuple[float, float, float]:
+    def x_y_z(self) -> tuple[float, float, float]:
         """The X, Y, Z elements of the Vector3 (x,y,z)."""
         return self._x, self._y, self._z
 
@@ -314,7 +310,7 @@ class Vector3:
         return Vector3(self.x / other, self.y / other, self.z / other)
 
 
-def angle_z_to_quaternion(angle_z: Angle) -> Tuple[float, float, float, float]:
+def angle_z_to_quaternion(angle_z: Angle) -> tuple[float, float, float, float]:
     """
     Converts an angle in the z axis (Euler angle z component) to a quaternion.
     """
@@ -341,20 +337,20 @@ class Matrix44:
 
     __slots__ = (
         "m00",
-        "m10",
-        "m20",
-        "m30",
         "m01",
-        "m11",
-        "m21",
-        "m31",
         "m02",
-        "m12",
-        "m22",
-        "m32",
         "m03",
+        "m10",
+        "m11",
+        "m12",
         "m13",
+        "m20",
+        "m21",
+        "m22",
         "m23",
+        "m30",
+        "m31",
+        "m32",
         "m33",
     )
 
@@ -418,7 +414,7 @@ class Matrix44:
     @property
     def in_row_order(
         self,
-    ) -> Tuple[
+    ) -> tuple[
         float,
         float,
         float,
@@ -461,7 +457,7 @@ class Matrix44:
     @property
     def in_column_order(
         self,
-    ) -> Tuple[
+    ) -> tuple[
         float,
         float,
         float,
@@ -502,28 +498,28 @@ class Matrix44:
         )
 
     @property
-    def forward_xyz(self) -> Tuple[float, float, float]:
+    def forward_xyz(self) -> tuple[float, float, float]:
         """
         Returns the x,y,z components representing the matrix's forward vector.
         """
         return self.m00, self.m01, self.m02
 
     @property
-    def left_xyz(self) -> Tuple[float, float, float]:
+    def left_xyz(self) -> tuple[float, float, float]:
         """
         Returns the x,y,z components representing the matrix's left vector.
         """
         return self.m10, self.m11, self.m12
 
     @property
-    def up_xyz(self) -> Tuple[float, float, float]:
+    def up_xyz(self) -> tuple[float, float, float]:
         """
         Returns the x,y,z components representing the matrix's up vector.
         """
         return self.m20, self.m21, self.m22
 
     @property
-    def pos_xyz(self) -> Tuple[float, float, float]:
+    def pos_xyz(self) -> tuple[float, float, float]:
         """
         Returns the x,y,z components representing the matrix's position vector.
         """
@@ -571,11 +567,11 @@ class Quaternion:
 
     def __init__(
         self,
-        q0: Optional[float] = None,
-        q1: Optional[float] = None,
-        q2: Optional[float] = None,
-        q3: Optional[float] = None,
-        angle_z: Optional[Angle] = None,
+        q0: float | None = None,
+        q1: float | None = None,
+        q2: float | None = None,
+        q3: float | None = None,
+        angle_z: Angle | None = None,
     ):
 
         is_quaternion = (
@@ -710,7 +706,7 @@ class Quaternion:
         return self._q3
 
     @property
-    def q0_q1_q2_q3(self) -> Tuple[float, float, float, float]:
+    def q0_q1_q2_q3(self) -> tuple[float, float, float, float]:
         return self._q0, self._q1, self._q2, self._q3
 
     @property
@@ -722,7 +718,7 @@ class Quaternion:
         return Angle(radians=radians)
 
     @property
-    def euler_angles(self) -> Tuple[float, float, float]:
+    def euler_angles(self) -> tuple[float, float, float]:
         """
         Returns the pitch, yaw, roll Euler components of the object's
         rotation defined as rotations in the x, y, and z axis respectively.
@@ -763,18 +759,18 @@ class Pose:
     A combination of position (vector) and rotation (quaternion).
     """
 
-    __slots__ = ("_position", "_rotation", "_origin_id", "_is_accurate")
+    __slots__ = ("_is_accurate", "_origin_id", "_position", "_rotation")
 
     def __init__(
         self,
         x: float,
         y: float,
         z: float,
-        q0: Optional[float] = None,
-        q1: Optional[float] = None,
-        q2: Optional[float] = None,
-        q3: Optional[float] = None,
-        angle_z: Optional[Angle] = None,
+        q0: float | None = None,
+        q1: float | None = None,
+        q2: float | None = None,
+        q3: float | None = None,
+        angle_z: Angle | None = None,
         origin_id: int = -1,
         is_accurate: bool = True,
     ):
@@ -930,7 +926,7 @@ class Pose:
 
 
 def hex_dump(data: bytes) -> str:
-    res = ":".join("{:02x}".format(b) for b in data)
+    res = ":".join(f"{b:02x}" for b in data)
     return res
 
 

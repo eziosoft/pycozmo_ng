@@ -5,10 +5,9 @@ Cozmo protocol sliding window implementation.
 """
 
 import math
-from typing import Optional, List, Tuple, Any
+from typing import Any
 
 from . import exception
-
 
 __all__ = [
     "BaseWindow",
@@ -17,11 +16,11 @@ __all__ = [
 ]
 
 
-class BaseWindow(object):
+class BaseWindow:
     """Base communication window class."""
 
     def __init__(
-        self, seq_bits: int, size: Optional[int] = None, max_seq: Optional[int] = None
+        self, seq_bits: int, size: int | None = None, max_seq: int | None = None
     ) -> None:
         """Crate a window by specifying either sequence number bits or size of the window."""
         if size is None:
@@ -64,7 +63,7 @@ class ReceiveWindow(BaseWindow):
     """
 
     def __init__(
-        self, seq_bits: int, size: Optional[int] = None, max_seq: Optional[int] = None
+        self, seq_bits: int, size: int | None = None, max_seq: int | None = None
     ) -> None:
         """Crate a window by specifying either sequence number bits or size of the window."""
         super().__init__(seq_bits, size, max_seq)
@@ -122,7 +121,7 @@ class SendWindow(BaseWindow):
     """
 
     def __init__(
-        self, seq_bits: int, size: Optional[int] = None, max_seq: Optional[int] = None
+        self, seq_bits: int, size: int | None = None, max_seq: int | None = None
     ) -> None:
         """Crate a window by specifying either sequence number bits or size of the window."""
         super().__init__(seq_bits, size, max_seq)
@@ -166,7 +165,7 @@ class SendWindow(BaseWindow):
             self.window[self.expected_seq % self.size] = None
             self.expected_seq = (self.expected_seq + 1) % self.max_seq
 
-    def get(self) -> List[Tuple[int, Any]]:
+    def get(self) -> list[tuple[int, Any]]:
         """Get the contents of the window as a list of tuples (sequence number, data)."""
         res = []
         seq = self.expected_seq

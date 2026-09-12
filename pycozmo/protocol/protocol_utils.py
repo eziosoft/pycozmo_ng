@@ -4,26 +4,24 @@ Cozmo protocol encoding helper classes and functions.
 
 """
 
-from typing import Dict, Tuple
 import struct
 
-
 __all__ = [
-    "validate_float",
-    "validate_bool",
-    "validate_integer",
-    "validate_object",
-    "validate_farray",
-    "validate_varray",
-    "validate_string",
-    "get_size",
-    "get_farray_size",
-    "get_varray_size",
-    "get_string_size",
-    "get_object_size",
-    "get_object_farray_size",
     "BinaryReader",
     "BinaryWriter",
+    "get_farray_size",
+    "get_object_farray_size",
+    "get_object_size",
+    "get_size",
+    "get_string_size",
+    "get_varray_size",
+    "validate_bool",
+    "validate_farray",
+    "validate_float",
+    "validate_integer",
+    "validate_object",
+    "validate_string",
+    "validate_varray",
 ]
 
 
@@ -35,7 +33,7 @@ def _get_struct(fmt: str, length: int) -> struct.Struct:
     if key in _struct_cache:
         return _struct_cache[key]
     else:
-        reader = struct.Struct("<{0}{1}".format(length, fmt))
+        reader = struct.Struct(f"<{length}{fmt}")
         _struct_cache[key] = reader
         return reader
 
@@ -44,11 +42,7 @@ def validate_float(name, value):
     try:
         value = float(value)
     except ValueError:
-        raise ValueError(
-            "{name} must be float. Got {type}.".format(
-                name=name, type=type(value).__name__
-            )
-        )
+        raise ValueError(f"{name} must be float. Got {type(value).__name__}.")
     return value
 
 
@@ -56,11 +50,7 @@ def validate_bool(name, value):
     try:
         value = bool(value)
     except ValueError:
-        raise ValueError(
-            "{name} must be bool. Got {type}.".format(
-                name=name, type=type(value).__name__
-            )
-        )
+        raise ValueError(f"{name} must be bool. Got {type(value).__name__}.")
     return value
 
 
@@ -68,16 +58,10 @@ def validate_integer(name, value, minimum, maximum):
     try:
         value = int(value)
     except ValueError:
-        raise ValueError(
-            "{name} must be an integer. Got a {type}.".format(
-                name=name, type=type(value).__name__
-            )
-        )
+        raise ValueError(f"{name} must be an integer. Got a {type(value).__name__}.")
     if value < minimum or value > maximum:
         raise ValueError(
-            "{name} must be between {minimum} and {maximum}. Got {value}.".format(
-                name=name, minimum=minimum, maximum=maximum, value=value
-            )
+            f"{name} must be between {minimum} and {maximum}. Got {value}."
         )
     return value
 
@@ -85,11 +69,7 @@ def validate_integer(name, value, minimum, maximum):
 def validate_object(name, value, expected_type):
     if not isinstance(value, expected_type):
         raise ValueError(
-            "{name} must be a {expected_type}. Got a {value_type}.".format(
-                name=name,
-                expected_type=expected_type.__name__,
-                value_type=type(value).__name__,
-            )
+            f"{name} must be a {expected_type.__name__}. Got a {type(value).__name__}."
         )
     return value
 
@@ -100,16 +80,12 @@ def validate_farray(name, value, length, element_validation):
             value = tuple(value)
         except ValueError:
             raise ValueError(
-                "{name} must be a sequence. Got a {type}.".format(
-                    name=name, type=type(value).__name__
-                )
+                f"{name} must be a sequence. Got a {type(value).__name__}."
             )
     if len(value) != length:
         raise ValueError(
-            (
-                "{name} must be a sequence of length {expected_length}. "
-                "Got a sequence of length {value_length}."
-            ).format(name=name, expected_length=length, value_length=len(value))
+            f"{name} must be a sequence of length {length}. "
+            f"Got a sequence of length {len(value)}."
         )
     if isinstance(value, (bytes, bytearray)):
         # Do not validate byte arrays.
@@ -127,16 +103,12 @@ def validate_varray(name, value, maximum_length, element_validation):
             value = tuple(value)
         except ValueError:
             raise ValueError(
-                "{name} must be a sequence. Got a {type}.".format(
-                    name=name, type=type(value).__name__
-                )
+                f"{name} must be a sequence. Got a {type(value).__name__}."
             )
     if len(value) > maximum_length:
         raise ValueError(
-            (
-                "{name} must be a sequence with length less than or equal to {maximum_length}. "
-                "Got a sequence of length {value_length}."
-            ).format(name=name, maximum_length=maximum_length, value_length=len(value))
+            f"{name} must be a sequence with length less than or equal to {maximum_length}. "
+            f"Got a sequence of length {len(value)}."
         )
     if isinstance(value, (bytes, bytearray)):
         # Do not validate byte arrays.
@@ -151,10 +123,8 @@ def validate_varray(name, value, maximum_length, element_validation):
 def validate_string(name, value, maximum_length):
     if len(value) > maximum_length:
         raise ValueError(
-            (
-                "{name} must be a string with less than or equal to {maximum_length}. "
-                "Got a string of length {value_length}."
-            ).format(name=name, maximum_length=maximum_length, value_length=len(value))
+            f"{name} must be a string with less than or equal to {maximum_length}. "
+            f"Got a string of length {len(value)}."
         )
     return value
 
@@ -197,7 +167,7 @@ def get_object_farray_size(value, length):
         return sum(get_object_size(element) for element in value)
 
 
-class BinaryReader(object):
+class BinaryReader:
     """Used to read in a stream of binary data, keeping track of the current position."""
 
     def __init__(self, buffer: bytes, offset: int = 0):
@@ -235,9 +205,7 @@ class BinaryReader(object):
         if fmt == "B" and length > 1:
             if self._index + length > len(self._buffer):
                 raise IndexError(
-                    "Buffer not large enough to read serialized message. Received {0} bytes.".format(
-                        len(self._buffer)
-                    )
+                    f"Buffer not large enough to read serialized message. Received {len(self._buffer)} bytes."
                 )
             result = self._buffer[self._index : self._index + length]
             self._index += length
@@ -245,9 +213,7 @@ class BinaryReader(object):
             reader = _get_struct(fmt, length)
             if self._index + reader.size > len(self._buffer):
                 raise IndexError(
-                    "Buffer not large enough to read serialized message. Received {0} bytes.".format(
-                        len(self._buffer)
-                    )
+                    f"Buffer not large enough to read serialized message. Received {len(self._buffer)} bytes."
                 )
             result = reader.unpack_from(self._buffer, self._index)
             self._index += reader.size
@@ -287,7 +253,7 @@ class BinaryReader(object):
         return [from__reader_method(self) for _ in range(length)]
 
 
-class BinaryWriter(object):
+class BinaryWriter:
     """Used to write out a stream of binary data."""
 
     def __init__(self):

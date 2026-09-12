@@ -6,14 +6,13 @@ Cozmo protocol abstract syntax tree (AST) declaration.
 
 from .protocol_ast import *
 
-
 __all__ = [
-    "FRAME_ID",
-    "MIN_FRAME_SIZE",
-    "MAX_FRAME_PAYLOAD_SIZE",
-    "FIRST_ROBOT_PACKET_ID",
     "FIRMWARE_VERSION",
+    "FIRST_ROBOT_PACKET_ID",
+    "FRAME_ID",
+    "MAX_FRAME_PAYLOAD_SIZE",
     "MAX_SEQ",
+    "MIN_FRAME_SIZE",
     "OOB_SEQ",
     "PROTOCOL",
 ]

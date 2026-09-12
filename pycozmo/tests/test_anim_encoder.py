@@ -1,5 +1,5 @@
-import json
 import io
+import json
 import unittest
 
 from pycozmo.anim_encoder import AnimClips

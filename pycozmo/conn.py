@@ -7,12 +7,11 @@ Cozmo protocol low-level client and server connection.
 import select
 import socket
 import time
-from queue import Queue, Empty
-from threading import Thread, Lock
-from typing import Optional, Tuple, Any
+from queue import Empty, Queue
+from threading import Lock, Thread
+from typing import Any
 
-from .logger import logger, logger_protocol
-from .frame import Frame
+from pycozmo.protocol import protocol_declaration, protocol_encoder
 from pycozmo.protocol.protocol_ast import PacketType
 from pycozmo.protocol.protocol_base import Packet
 from pycozmo.protocol.protocol_declaration import (
@@ -20,19 +19,17 @@ from pycozmo.protocol.protocol_declaration import (
     MAX_SEQ,
     OOB_SEQ,
 )
-from .window import ReceiveWindow, SendWindow
-from pycozmo.protocol import protocol_encoder
-from . import event
-from . import filter
-from pycozmo.protocol import protocol_declaration
-from . import exception
 
+from . import event, exception, filter
+from .frame import Frame
+from .logger import logger, logger_protocol
+from .window import ReceiveWindow, SendWindow
 
 __all__ = [
     "ROBOT_ADDR",
+    "Connection",
     "ReceiveThread",
     "SendThread",
-    "Connection",
 ]
 
 
@@ -49,7 +46,7 @@ class SendThread(Thread):
     ACK_TIMEOUT = 3 * 1 / 30
 
     def __init__(
-        self, sock: socket.socket, receiver_address: Optional[Tuple[str, int]]
+        self, sock: socket.socket, receiver_address: tuple[str, int] | None
     ) -> None:
         super().__init__(daemon=True, name=__class__.__name__)
         self.sock = sock
@@ -86,7 +83,7 @@ class SendThread(Thread):
             except Exception:
                 pass
 
-    def _collect_messages(self) -> Tuple[list, int]:
+    def _collect_messages(self) -> tuple[list, int]:
         with self.lock:
             last_ack = self.last_ack
             is_full = self.window.is_full()
@@ -179,7 +176,7 @@ class SendThread(Thread):
             )
             return frame.to_bytes()
         except Exception as e:
-            logger.error("Failed to serialize frame. {}".format(e))
+            logger.error(f"Failed to serialize frame. {e}")
             raise
 
     def _send_raw_frame(self, raw_frame: bytes) -> None:
@@ -221,7 +218,7 @@ class ReceiveThread(Thread):
         self,
         sock: socket.socket,
         send_thread: SendThread,
-        sender_address: Optional[Tuple[str, int]],
+        sender_address: tuple[str, int] | None,
         delivery_handler,
         buffer_size: int = 2048,
     ) -> None:
@@ -260,14 +257,14 @@ class ReceiveThread(Thread):
                 self.received_bytes += len(raw_frame)
             except Exception as e:
                 self.discarded_frames += 1
-                logger_protocol.error("Failed to receive frame. {}".format(e))
+                logger_protocol.error(f"Failed to receive frame. {e}")
                 continue
 
             try:
                 frame = Frame.from_bytes(raw_frame)
             except Exception as e:
                 self.discarded_frames += 1
-                logger_protocol.error("Failed to decode frame. {}".format(e))
+                logger_protocol.error(f"Failed to decode frame. {e}")
                 continue
 
             try:
@@ -276,27 +273,23 @@ class ReceiveThread(Thread):
                 elif self.sender_address:
                     if self.sender_address != address:
                         logger_protocol.debug(
-                            "Received a UDP datagram from unexpected address {}.".format(
-                                address
-                            )
+                            f"Received a UDP datagram from unexpected address {address}."
                         )
                     elif frame.type == protocol_declaration.FrameType.FIN:
                         self.handle_fin()
                     else:
                         self.handle_frame(frame)
                 else:
-                    logger_protocol.debug(
-                        "Got unexpected {} from {}".format(frame.type, address)
-                    )
+                    logger_protocol.debug(f"Got unexpected {frame.type} from {address}")
             except Exception as e:
-                logger_protocol.error("Failed to handle frame. {}".format(e))
+                logger_protocol.error(f"Failed to handle frame. {e}")
                 continue
 
     def handle_reset(self, address):
         if not self.server:
-            logger_protocol.debug("Got unexpected reset from {}.".format(address))
+            logger_protocol.debug(f"Got unexpected reset from {address}.")
             return
-        logger_protocol.debug("Got reset from {}.".format(address))
+        logger_protocol.debug(f"Got reset from {address}.")
         self.sender_address = address
         self.reset()
         self.send_thread.reset()
@@ -373,8 +366,8 @@ class Connection(Thread, event.Dispatcher):
 
     def __init__(
         self,
-        robot_addr: Optional[Tuple[str, int]] = None,
-        protocol_log_messages: Optional[list] = None,
+        robot_addr: tuple[str, int] | None = None,
+        protocol_log_messages: list | None = None,
         server: bool = False,
     ) -> None:
         super().__init__(daemon=True, name=__class__.__name__)
@@ -438,7 +431,7 @@ class Connection(Thread, event.Dispatcher):
             except Empty:
                 evt, args, kwargs = None, [], {}
             except Exception as e:
-                logger.error("Failed to get from event queue. {}".format(e))
+                logger.error(f"Failed to get from event queue. {e}")
                 continue
 
             if not self.server and self.state == self.CONNECTED:
@@ -454,7 +447,7 @@ class Connection(Thread, event.Dispatcher):
                 try:
                     self.dispatch(evt, *args, **kwargs)
                 except Exception as e:
-                    logger.error("Failed to process event {}. {}".format(evt, e))
+                    logger.error(f"Failed to process event {evt}. {e}")
 
     def connect(self) -> None:
         if self.server:

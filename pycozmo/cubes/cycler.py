@@ -1,5 +1,4 @@
 import threading
-from typing import Optional
 
 
 class CubeCycler:
@@ -20,9 +19,9 @@ class CubeCycler:
     def __init__(self, cycle_ms: int = 150):
         self._cycle_ms = cycle_ms
         self._stop = threading.Event()
-        self._thread: Optional[threading.Thread] = None
-        self._current_cube_id: Optional[int] = None
-        self._current_object_id: Optional[int] = None
+        self._thread: threading.Thread | None = None
+        self._current_cube_id: int | None = None
+        self._current_object_id: int | None = None
         self._cube_map: dict[int, int] = {}  # cube_id -> factory_id
         self._object_map: dict[int, int] = {}  # cube_id -> object_id
         self._lock = threading.Lock()
@@ -44,7 +43,7 @@ class CubeCycler:
         if self._thread:
             self._thread.join(timeout=2.0)
 
-    def get_current(self) -> tuple[Optional[int], Optional[int]]:
+    def get_current(self) -> tuple[int | None, int | None]:
         """Return (cube_id, object_id) of the currently connected cube."""
         with self._lock:
             return self._current_cube_id, self._current_object_id

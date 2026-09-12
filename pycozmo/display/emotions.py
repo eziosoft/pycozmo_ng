@@ -6,19 +6,17 @@ Emotion representation and reading.
 
 import os
 import time
-from typing import Dict, List, Tuple
 
 import numpy as np
 
 from pycozmo import logger
 from pycozmo.json_loader import get_json_files, load_json_file
 
-
 __all__ = [
-    "EmotionType",
     "EmotionEvent",
-    "load_emotion_types",
+    "EmotionType",
     "load_emotion_events",
+    "load_emotion_types",
 ]
 
 
@@ -30,12 +28,12 @@ class Node:
 
 class DecayGraph:
     __slots__ = [
+        "ext_line_params",
         "nodes_x",
         "nodes_y",
-        "ext_line_params",
     ]
 
-    def __init__(self, nodes: List[Node]) -> None:
+    def __init__(self, nodes: list[Node]) -> None:
         self.nodes_x = [node.x for node in nodes]
         self.nodes_y = [node.y for node in nodes]
         self.ext_line_params = (
@@ -52,7 +50,7 @@ class DecayGraph:
         return f_out
 
     @staticmethod
-    def get_line_parameters(p1: Node, p2: Node) -> Tuple[float]:
+    def get_line_parameters(p1: Node, p2: Node) -> tuple[float]:
         try:
             m = (p1.y - p2.y) / (p1.x - p2.x)
             b = p1.y - m * p1.x
@@ -64,7 +62,7 @@ class DecayGraph:
 class EmotionType:
     """Emotion type class."""
 
-    __slots__ = ["name", "decay_graph", "repetition_penalty"]
+    __slots__ = ["decay_graph", "name", "repetition_penalty"]
 
     def __init__(
         self, name: str, decay_graph: DecayGraph, repetition_penaly: DecayGraph
@@ -76,30 +74,29 @@ class EmotionType:
     def update(self):
         """Update from decay function."""
         # TODO
-        pass
 
 
 class EmotionEvent:
     """EmotionEvent representation class."""
 
     __slots__ = [
-        "name",
         "affectors",
+        "name",
     ]
 
-    def __init__(self, name: str, affectors: Dict[str, float]) -> None:
+    def __init__(self, name: str, affectors: dict[str, float]) -> None:
         self.name = str(name)
         self.affectors = dict(affectors)
 
     @classmethod
-    def from_json(cls, data: Dict):
+    def from_json(cls, data: dict):
         affectors = {}
         for affector in data["emotionAffectors"]:
             affectors[affector["emotionType"]] = affector["value"]
         return cls(name=data["name"], affectors=affectors)
 
 
-def load_emotion_types(resource_dir: str) -> Dict[str, EmotionType]:
+def load_emotion_types(resource_dir: str) -> dict[str, EmotionType]:
 
     start_time = time.perf_counter()
 
@@ -150,14 +147,12 @@ def load_emotion_types(resource_dir: str) -> Dict[str, EmotionType]:
         ),
     }
 
-    logger.debug(
-        "Loaded emotion types in {:.02f} s.".format(time.perf_counter() - start_time)
-    )
+    logger.debug(f"Loaded emotion types in {time.perf_counter() - start_time:.02f} s.")
 
     return emotion_types
 
 
-def load_emotion_events(resource_dir: str) -> Dict[str, EmotionEvent]:
+def load_emotion_events(resource_dir: str) -> dict[str, EmotionEvent]:
 
     start_time = time.perf_counter()
 
@@ -176,9 +171,7 @@ def load_emotion_events(resource_dir: str) -> Dict[str, EmotionEvent]:
                 emotion_events[event["name"]] = EmotionEvent.from_json(event)
 
     logger.debug(
-        "Loaded {} emotion events in {:.02f} s.".format(
-            len(emotion_events), time.perf_counter() - start_time
-        )
+        f"Loaded {len(emotion_events)} emotion events in {time.perf_counter() - start_time:.02f} s."
     )
 
     return emotion_events

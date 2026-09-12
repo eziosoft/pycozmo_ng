@@ -6,13 +6,12 @@ Cozmo objects (cubes, platforms, etc.).
 
 from pycozmo.protocol import protocol_encoder
 
-
 __all__ = [
     "Object",
 ]
 
 
-class Object(object):
+class Object:
     """Object representation."""
 
     def __init__(

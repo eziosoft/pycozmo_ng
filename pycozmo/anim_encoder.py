@@ -8,35 +8,34 @@ Animation data structures are declared in FlatBuffers format in files/cozmo/cozm
 
 """
 
-from typing import Union, Dict, TextIO, BinaryIO, Iterable
-from abc import ABC
-import os
-import json
 import glob
+import json
+import os
 import time
+from abc import ABC
+from collections.abc import Iterable
+from typing import BinaryIO, TextIO
 
 import flatbuffers
 
-from . import logger
-from . import CozmoAnim
-
+from . import CozmoAnim, logger
 
 __all__ = [
+    "AnimBackpackLights",
     "AnimBase",
+    "AnimBodyMotion",
     "AnimClip",
     "AnimClips",
-    "AnimLight",
-    "AnimKeyframe",
-    "AnimHeadAngle",
-    "AnimLiftHeight",
-    "AnimRecordHeading",
-    "AnimTurnToRecordedHeading",
-    "AnimBodyMotion",
-    "AnimBackpackLights",
-    "AnimFaceAnimation",
-    "AnimProceduralFace",
-    "AnimRobotAudio",
     "AnimEvent",
+    "AnimFaceAnimation",
+    "AnimHeadAngle",
+    "AnimKeyframe",
+    "AnimLiftHeight",
+    "AnimLight",
+    "AnimProceduralFace",
+    "AnimRecordHeading",
+    "AnimRobotAudio",
+    "AnimTurnToRecordedHeading",
     "ClipMetadata",
     "get_clip_metadata",
 ]
@@ -698,7 +697,7 @@ class AnimBodyMotion(AnimKeyframe):
         self,
         trigger_time_ms: int = 0,
         duration_ms: int = 0,
-        radius_mm: Union[float, str] = "STRAIGHT",
+        radius_mm: float | str = "STRAIGHT",
         speed: int = 0,
     ):
         super().__init__()
@@ -747,7 +746,7 @@ class AnimBodyMotion(AnimKeyframe):
         )
 
 
-class AnimLight(object):
+class AnimLight:
     """Light color class."""
 
     def __init__(self, red: int = 0, green: int = 0, blue: int = 0, ir: int = 0):
@@ -1117,7 +1116,7 @@ class AnimEvent(AnimKeyframe):
         )
 
 
-class ClipMetadata(object):
+class ClipMetadata:
     """Animation clip metadata class."""
 
     def __init__(
@@ -1153,7 +1152,7 @@ class ClipMetadata(object):
         self.has_event_track = bool(has_event_track)
 
 
-def get_clip_metadata(dspec: str) -> Dict[str, ClipMetadata]:
+def get_clip_metadata(dspec: str) -> dict[str, ClipMetadata]:
     """Retrieve clip metadata from animation FlatBuffers .bin files."""
 
     start_time = time.perf_counter()
@@ -1186,9 +1185,7 @@ def get_clip_metadata(dspec: str) -> Dict[str, ClipMetadata]:
             res[metadata.name] = metadata
 
     logger.debug(
-        "Loaded {} clip metadata in {:.02f} s.".format(
-            len(res), time.perf_counter() - start_time
-        )
+        f"Loaded {len(res)} clip metadata in {time.perf_counter() - start_time:.02f} s."
     )
 
     return res

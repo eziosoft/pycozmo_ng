@@ -8,22 +8,22 @@ References:
 
 """
 
-from typing import BinaryIO, Iterable, Dict, Any
 import struct
-from .chunk import Chunk
+from collections.abc import Iterable
+from typing import Any, BinaryIO
 
-from . import exception
-from . import soundbanksinfo
+from . import exception, soundbanksinfo
+from .chunk import Chunk
 
 
 class File:
     """AudioKinetic WWise WEM File."""
 
     __slots__ = [
-        "soundbank_id",
         "id",
-        "offset",
         "length",
+        "offset",
+        "soundbank_id",
     ]
 
     def __init__(
@@ -43,12 +43,12 @@ class SFX:
     """AudioKinetic WWise sound effect/voice."""
 
     __slots__ = [
-        "soundbank_id",
-        "id",
-        "name",
-        "location",
         "file_id",
+        "id",
         "length",
+        "location",
+        "name",
+        "soundbank_id",
         "type",
     ]
 
@@ -92,7 +92,7 @@ class SFX:
 class EventAction:
     """AudioKinetic WWise Event Action."""
 
-    __slots__ = ["soundbank_id", "id", "scope", "type", "reference_id"]
+    __slots__ = ["id", "reference_id", "scope", "soundbank_id", "type"]
 
     def __init__(
         self, soundbank_id: int, ea_id: int, scope: int, ea_type: int, reference_id: int
@@ -112,7 +112,7 @@ class EventAction:
 class Event:
     """AudioKinetic WWise Event."""
 
-    __slots__ = ["soundbank_id", "id", "name", "action_ids"]
+    __slots__ = ["action_ids", "id", "name", "soundbank_id"]
 
     def __init__(
         self, soundbank_id: int, event_id: int, name: str, action_ids: Iterable[int]
@@ -131,12 +131,12 @@ class SoundBank:
     """AudioKinetic WWise SoundBank (.bnk) file representation class."""
 
     __slots__ = [
+        "data_offset",
         "fspec",
         "id",
         "name",
-        "version",
-        "data_offset",
         "objs",
+        "version",
     ]
 
     def __init__(self) -> None:
@@ -155,7 +155,7 @@ class SoundBank:
 
 
 class SoundBankReader:
-    def __init__(self, soundbankinfo: Dict[int, Any]) -> None:
+    def __init__(self, soundbankinfo: dict[int, Any]) -> None:
         self.soundbankinfo = soundbankinfo
         self._soundbank = None
 

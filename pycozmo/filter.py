@@ -4,23 +4,20 @@ ID filtering for logging.
 
 """
 
-from typing import Set
-
-
 __all__ = [
     "Filter",
 ]
 
 
-class Filter(object):
+class Filter:
     def __init__(self):
         self.allowed_ids = set()
         self.denied_ids = set()
 
-    def allow_ids(self, ids: Set[int]) -> None:
+    def allow_ids(self, ids: set[int]) -> None:
         self.allowed_ids.update(ids)
 
-    def deny_ids(self, ids: Set[int]) -> None:
+    def deny_ids(self, ids: set[int]) -> None:
         self.denied_ids.update(ids)
 
     def filter(self, target_id: int) -> bool:
