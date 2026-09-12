@@ -12,7 +12,7 @@ from threading import Event, Lock, Timer
 import numpy as np
 from PIL import Image
 
-from pycozmo.audiokinetic import audio
+from pycozmo.sound import audio
 from pycozmo.protocol import protocol_declaration, protocol_encoder
 from pycozmo.vision import camera
 

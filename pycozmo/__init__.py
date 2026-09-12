@@ -27,7 +27,7 @@ from .anim import activity, anim, behavior  # noqa: F401
 from .run import *
 
 from . import (  # noqa: F401
-    audiokinetic,
+    sound,
     brain,
     exception,
     image_encoder,

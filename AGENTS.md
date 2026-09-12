@@ -112,7 +112,7 @@ pycozmo/           # Main library
 │   ├── viewer.py      # WebBridge — streaming, telemetry
 │   ├── viewer_server.py  # WebSocket server for browser viewer
 │   └── static/        # Three.js browser viewer (HTML/CSS/JS)
-├── audiokinetic/  # SoundBank + audio encoding
+├── sound/         # SoundBank + audio encoding
 ├── CozmoAnim/     # Animation data classes (flatbuffers)
 └── tests/         # Unit tests (pytest)
 ```
@@ -165,7 +165,7 @@ The application layer — everything `main.py` drives — lives in **`pycozmo/`*
 
 ## Testing
 
-Tests are in `pycozmo/tests/` and `pycozmo/audiokinetic/tests/`. No conftest.py or fixtures found.
+Tests are in `pycozmo/tests/` and `pycozmo/sound/tests/`. No conftest.py or fixtures found.
 
 ## Constraints
 
