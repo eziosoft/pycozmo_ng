@@ -16,7 +16,7 @@ from pycozmo.sound import audio
 from pycozmo.protocol import protocol_declaration, protocol_encoder
 from pycozmo.vision import camera
 
-from pycozmo.anim import anim, anim_controller, anim_encoder
+from pycozmo.animation import anim, anim_controller, anim_encoder
 from pycozmo.transport import conn
 from pycozmo.util import filter, object, robot, robot_debug
 

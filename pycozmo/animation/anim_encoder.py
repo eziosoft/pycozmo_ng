@@ -18,7 +18,8 @@ from typing import BinaryIO, TextIO
 
 import flatbuffers
 
-from pycozmo import CozmoAnim, logger
+from pycozmo import logger
+from pycozmo.animation import data as CozmoAnim
 
 __all__ = [
     "AnimBackpackLights",

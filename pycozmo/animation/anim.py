@@ -17,7 +17,7 @@ from pycozmo.display import procedural_face
 from pycozmo.protocol import protocol_encoder
 
 from pycozmo import image_encoder, lights, logger
-from pycozmo.anim import anim_encoder
+from pycozmo.animation import anim_encoder
 from pycozmo.json_loader import find_file, load_json_file
 from pycozmo.util import robot
 

@@ -21,8 +21,8 @@ from .protocol import (  # noqa: I001,F401
 # Order matters: some modules are imported eagerly by others during package init.
 from .util import coords, filter, object, robot, robot_debug  # noqa: F401
 from .transport import conn, frame, window  # noqa: F401
-from .anim import anim_controller, anim_encoder  # noqa: F401
-from .anim import activity, anim, behavior  # noqa: F401
+from .animation import anim_controller, anim_encoder  # noqa: F401
+from .animation import activity, anim, behavior  # noqa: F401
 
 from .run import *
 
