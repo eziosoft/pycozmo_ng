@@ -75,7 +75,7 @@ def _head_tilt_matrix(head_angle_rad: float) -> np.ndarray:
     Columns are where each camera basis vector maps in body coordinates:
 
     * camera X (right)   -> body (0, -1, 0)            (body right = -Y)
-    * camera Y (down)    -> body (-sinθ, 0, -cosθ)
+    * camera Y (down)    -> body ( sinθ, 0, -cosθ)
     * camera Z (forward) -> body ( cosθ, 0,  sinθ)
 
     At level head (θ = 0) this maps camera-forward (+Zc) to body-forward (+X),
@@ -84,7 +84,7 @@ def _head_tilt_matrix(head_angle_rad: float) -> np.ndarray:
     """
     c = np.cos(head_angle_rad)
     s = np.sin(head_angle_rad)
-    return np.array([[0.0, -s, c], [-1.0, 0.0, 0.0], [0.0, -c, s]], dtype=np.float64)
+    return np.array([[0.0, s, c], [-1.0, 0.0, 0.0], [0.0, -c, s]], dtype=np.float64)
 
 
 def camera_to_body(

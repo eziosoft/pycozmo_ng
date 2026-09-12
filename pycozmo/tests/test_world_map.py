@@ -62,6 +62,35 @@ class TestCoords:
         assert coords.world_yaw_to_scene(np.pi / 2) == pytest.approx(np.pi / 2)
         assert coords.world_yaw_to_scene(-np.pi / 2) == pytest.approx(-np.pi / 2)
 
+    def test_head_tilt_matrix_is_proper_rotation(self):
+        # The camera->body pitch matrix must be orthonormal with det=+1.
+        # Regression: the Yc column had the wrong sign (-sin instead of +sin),
+        # making the matrix a shear (det=cos(2*theta)) for theta != 0 — a
+        # level cube then came out tilted by roughly the head angle.
+        for theta in (0.0, np.pi / 6, -np.pi / 6, np.pi / 3):
+            M = coords._head_tilt_matrix(theta)
+            np.testing.assert_allclose(
+                M @ M.T, np.eye(3), atol=1e-9, err_msg=f"theta={theta}"
+            )
+            np.testing.assert_allclose(np.linalg.det(M), 1.0, atol=1e-9)
+
+    def test_cube_orientation_invariant_to_head_tilt(self):
+        # A level cube (yaw 20 deg) must recover that exact world orientation
+        # regardless of the head pitch. Regression: the shear in the head-tilt
+        # matrix left a residual tilt proportional to head angle, so the cube
+        # appeared to rock with the head.
+        yaw = np.deg2rad(20.0)
+        c, s = np.cos(yaw), np.sin(yaw)
+        r_world = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+        p_cam = np.array([0.0, 40.0, 300.0])
+        for head in (0.0, np.deg2rad(10), np.deg2rad(-20), np.deg2rad(30)):
+            # Inverse of the pipeline, all the way back to camera frame.
+            r_cam = np.linalg.inv(coords._head_tilt_matrix(head)) @ r_world
+            _, rot_world = coords.camera_to_world(p_cam, r_cam, head, np.zeros(3), 0.0)
+            np.testing.assert_allclose(
+                rot_world, r_world, atol=1e-9, err_msg=f"head={head}"
+            )
+
 
 class TestWorldMapFusion:
     def test_cube_placed_in_world_frame(self):
