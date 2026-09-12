@@ -230,13 +230,20 @@ class Navigator:
     ) -> tuple[float, float, float] | None:
         """Pick the cube face to approach and the heading that faces it.
 
-        The four wall faces' outward normals are the cube's local ±X and ±Y
-        axes expressed in world frame. The best face is the one whose normal
-        most points toward the robot (so Cozmo sees the marker frontally).
-        When the robot is roughly diagonal to the cube the two adjacent
-        faces score about equally — ties are broken deterministically by the
-        smallest heading change, so the choice no longer flips arbitrarily
-        and the robot stops aiming "at the corner".
+        The cube always rests on one face, so exactly one of its three body
+        axes is vertical (aligned with world Z); the four wall faces' outward
+        normals are the ± of the two body axes that lie in the ground plane.
+        Those two axes are the rotation-matrix columns with the largest
+        horizontal (XY) component. Using all four ±X/±Y columns and
+        normalizing their plan view was wrong: for a cube resting flat, one
+        of those columns *is* the vertical axis, and its small horizontal
+        noise normalizes into a plausible-looking but arbitrary ~45°
+        direction — ending up "aligned to the corner" instead of a wall.
+
+        The best face is the one whose normal most points toward the robot
+        (so Cozmo sees the marker frontally). When the robot is roughly
+        diagonal to the cube the two adjacent faces score about equally —
+        ties are broken deterministically by the smallest heading change.
 
         Args:
             cube_pos: Cube center (mm, world frame; z ignored).
@@ -257,20 +264,29 @@ class Navigator:
             return None
         ux, uy = dx / d, dy / d
 
-        normals = [
-            (float(cube_rot[0, 0]), float(cube_rot[1, 0])),
-            (-float(cube_rot[0, 0]), -float(cube_rot[1, 0])),
-            (float(cube_rot[0, 1]), float(cube_rot[1, 1])),
-            (-float(cube_rot[0, 1]), -float(cube_rot[1, 1])),
-        ]
+        # Wall normals: ± of the two most-horizontal cube axes. The vertical
+        # axis (near-zero horizontal length) is excluded even when noise gives
+        # it a small nonzero XY component.
+        plan = []
+        for col in range(3):
+            nx, ny = float(cube_rot[0, col]), float(cube_rot[1, col])
+            length = math.hypot(nx, ny)
+            if length > 1e-3:
+                plan.append((nx / length, ny / length, length))
+        if not plan:
+            return None
+        plan.sort(key=lambda p: p[2], reverse=True)
+        wall_axes = [p for p in plan if p[2] >= 0.5 * plan[0][2]][:2]
+
+        normals: list[tuple[float, float]] = []
+        for axis in wall_axes:
+            normals.append((axis[0], axis[1]))
+            normals.append((-axis[0], -axis[1]))
 
         best: tuple[float, float, float] | None = None
         best_key: tuple[float, float] | None = None
         for n in normals:
-            nlen = math.hypot(*n)
-            if nlen < 1e-3:
-                continue
-            nx, ny = n[0] / nlen, n[1] / nlen
+            nx, ny = n
             dot = nx * ux + ny * uy
             heading = math.atan2(-ny, -nx)  # robot at cube + n faces the cube
             turn = abs(wrap_pi(heading - robot_yaw))
