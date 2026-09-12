@@ -16,22 +16,18 @@ from pycozmo.audiokinetic import audio
 from pycozmo.protocol import protocol_declaration, protocol_encoder
 from pycozmo.vision import camera
 
+from pycozmo.anim import anim, anim_controller, anim_encoder
+from pycozmo.transport import conn
+from pycozmo.util import filter, object, robot, robot_debug
+
 from . import (
-    anim,
-    anim_controller,
-    anim_encoder,
-    conn,
     event,
     exception,
-    filter,
     image_encoder,
     lights,
     logger,
     logger_animation,
     logger_robot,
-    object,
-    robot,
-    robot_debug,
     util,
 )
 
