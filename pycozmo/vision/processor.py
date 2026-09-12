@@ -91,7 +91,7 @@ class VisionProcessor:
         # Load marker templates
         target_markers = []
         marker_dir = os.path.join(
-            os.path.dirname(__file__), "cubeDetector", "cube_faces"
+            os.path.dirname(os.path.dirname(__file__)), "cubeDetector", "cube_faces"
         )
 
         if not os.path.exists(marker_dir):
