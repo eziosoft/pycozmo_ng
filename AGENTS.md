@@ -89,12 +89,15 @@ pycozmo/           # Main library
 ├── navigation/    # Navigation subsystem
 │   ├── navigator.py  # Navigator — navigate, approach, dock
 │   └── world_map.py  # WorldMap — fused robot/cube poses, path trail
-├── anim/          # Animation and behavior system
+├── animation/     # Animation and behavior system
 │   ├── anim.py          # Anim — animation playback
 │   ├── anim_controller.py  # AnimController — animation scheduling
 │   ├── anim_encoder.py  # AnimEncoder — animation file encoding
 │   ├── activity.py      # Activity system
-│   └── behavior.py      # Behavior system
+│   ├── behavior.py      # Behavior system
+│   └── data/            # FlatBuffer data classes (auto-generated from Anki SDK)
+│       ├── AnimClip.py, AnimClips.py, Keyframes.py, ...
+│       └── (BackpackLights, BodyMotion, FaceAnimation, HeadAngle, etc.)
 ├── util/          # Utility modules
 │   ├── util.py      # Angle, Distance, Pose, Vector3, hex_dump, etc.
 │   ├── coords.py    # Coordinate transforms (camera→world)
@@ -113,7 +116,6 @@ pycozmo/           # Main library
 │   ├── viewer_server.py  # WebSocket server for browser viewer
 │   └── static/        # Three.js browser viewer (HTML/CSS/JS)
 ├── sound/         # SoundBank + audio encoding
-├── CozmoAnim/     # Animation data classes (flatbuffers)
 └── tests/         # Unit tests (pytest)
 ```
 
