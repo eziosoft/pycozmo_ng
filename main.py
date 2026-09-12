@@ -232,7 +232,7 @@ def main():
 
                 time.sleep(2.0)
 
-                brain.cubes.setup_cube_mbraining(cli)
+                brain.cubes.setup_cube_mapping(cli)
 
                 brain.install_remote_control(cli)
             else:
