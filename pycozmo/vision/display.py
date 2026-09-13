@@ -153,6 +153,8 @@ class VisionDisplay:
 
         top_row = np.hstack([raw_labeled, annotated_labeled])
 
+        combined = top_row
+
         # Floor-projected view below the camera panels
         floor_cv2 = self.brain.latest_floor_image
         if floor_cv2 is not None:
@@ -180,10 +182,16 @@ class VisionDisplay:
             elif fw_scaled > top_w:
                 floor_up = floor_up[:, :top_w]
             combined = np.vstack([top_row, floor_up])
-        else:
-            combined = top_row
 
         cv2.imshow(self.brain.window_name, combined)
+        # Resize window on first frame or when dimensions change
+        ch, cw = combined.shape[:2]
+        if not hasattr(self, "_last_combined_size") or self._last_combined_size != (
+            ch,
+            cw,
+        ):
+            cv2.resizeWindow(self.brain.window_name, cw, ch)
+            self._last_combined_size = (ch, cw)
 
         for name, img in self.brain.latest_debug_images.items():
             cv2.imshow(f"Debug: {name}", img)
