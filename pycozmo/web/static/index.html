@@ -375,18 +375,15 @@
     scene.add(robot);
 
     // -----------------------------------------------------------------------
-    // Floor camera overlay — textured plane parented to robot (COZMO-XX)
+    // Floor camera overlay — canvas texture parented to robot
     // -----------------------------------------------------------------------
     const FLOOR_MM = 600;
-    const floorVid = document.createElement('video');
-    floorVid.src = '/floor-video';
-    floorVid.autoplay = true;
-    floorVid.muted = true;
-    floorVid.playsInline = true;
-    floorVid.style.display = 'none';
-    document.body.appendChild(floorVid);
+    const floorCanvas = document.createElement('canvas');
+    floorCanvas.width = 320;
+    floorCanvas.height = 240;
+    const floorCtx = floorCanvas.getContext('2d');
 
-    const floorTex = new THREE.VideoTexture(floorVid);
+    const floorTex = new THREE.CanvasTexture(floorCanvas);
     floorTex.minFilter = THREE.NearestFilter;
     floorTex.magFilter = THREE.NearestFilter;
 
@@ -402,6 +399,21 @@
     floorOverlay.rotation.x = -Math.PI / 2;
     floorOverlay.position.set(FLOOR_MM / 2, 0.5, 0);
     robot.add(floorOverlay);
+
+    // MJPEG stream — img auto-updates, we copy to canvas each frame
+    const floorImg = new Image();
+    floorImg.src = '/floor-video';
+    floorImg.onload = () => {
+      // First frame arrived — start copying to canvas
+      function updateFloorTexture() {
+        if (floorImg.naturalWidth > 0) {
+          floorCtx.drawImage(floorImg, 0, 0, floorCanvas.width, floorCanvas.height);
+          floorTex.needsUpdate = true;
+        }
+        requestAnimationFrame(updateFloorTexture);
+      }
+      updateFloorTexture();
+    };
 
     // -----------------------------------------------------------------------
     // Path trail (COZMO-27)
