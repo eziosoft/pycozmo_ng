@@ -399,6 +399,7 @@
     });
     const floorOverlay = new THREE.Mesh(floorOverlayGeo, floorOverlayMat);
     floorOverlay.rotation.x = -Math.PI / 2;
+    floorOverlay.rotation.z = Math.PI;
     // Position: body (X forward, Y left) → robot local (Z forward, X lateral)
     floorOverlay.position.set(-floorCenterY, 1, floorCenterX);
     robot.add(floorOverlay);
