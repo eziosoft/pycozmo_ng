@@ -56,14 +56,18 @@ class FloorProjector:
         x_max = self._floor_center[0] + self._floor_size[0] / 2.0
         y_min = self._floor_center[1] - self._floor_size[1] / 2.0
 
-        # Columns = body Y (left/right), rows = body X (forward/backward)
-        # Forward (top of image) = row 0, so X range is reversed.
-        ys = y_min + (np.arange(self._out_w) + 0.5) * self._mm_per_pixel
-        xs = x_max - (np.arange(self._out_h) + 0.5) * self._mm_per_pixel
-        xx, yy = np.meshgrid(xs, ys)  # shape (out_h, out_w)
+        # Columns = body Y (left/right), rows = body X (forward/backward).
+        # Forward at top (row 0), left at left (col 0).
+        y_min = self._floor_center[1] - self._floor_size[1] / 2.0
+        x_max = self._floor_center[0] + self._floor_size[0] / 2.0
 
-        self._floor_x = xx.ravel()  # body X (forward)
-        self._floor_y = yy.ravel()  # body Y (left)
+        col_vals = y_min + (np.arange(self._out_w) + 0.5) * self._mm_per_pixel
+        row_vals = x_max - (np.arange(self._out_h) + 0.5) * self._mm_per_pixel
+        # meshgrid with 'ij' indexing: aa varies along rows, bb along columns
+        bb, aa = np.meshgrid(col_vals, row_vals)  # both shape (out_h, out_w)
+
+        self._floor_x = aa.ravel()  # body X (forward) — rows
+        self._floor_y = bb.ravel()  # body Y (left) — columns
         self._floor_z = np.zeros_like(self._floor_x)  # body Z = 0
 
         self._remap_x: np.ndarray | None = None
