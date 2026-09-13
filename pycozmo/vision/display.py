@@ -53,6 +53,7 @@ class VisionDisplay:
         """Handler for floor-projected (bird's-eye) images."""
         self.brain.latest_floor_image = floor_image
         self.brain.latest_occupancy_grid = occupancy_grid
+        self.brain.web_viewer.push_floor_frame(floor_image)
 
     def pil_to_cv2(self, pil_image):
         """Convert PIL Image to OpenCV format."""

@@ -122,6 +122,34 @@ html, body {
   display: block;
 }
 
+/* ---- Floor panel ---- */
+#floor-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+}
+
+#floor-label {
+  padding: 8px 12px;
+  font-family: var(--font-display);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+
+#floor-feed {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: #000;
+  display: block;
+}
+
 /* ---- Telemetry panel ---- */
 #telemetry-panel {
   flex: 1;
