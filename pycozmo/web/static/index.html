@@ -464,7 +464,9 @@
       depthWrite: false,
     });
     const occOverlay = new THREE.Mesh(occOverlayGeo, occOverlayMat);
+    occOverlay.rotation.order = 'YXZ';
     occOverlay.rotation.x = -Math.PI / 2;
+    occOverlay.rotation.y = Math.PI / 2;
     occOverlay.position.set(0, 3, 0);
     scene.add(occOverlay);  // world frame — stationary, does not rotate with robot
 
