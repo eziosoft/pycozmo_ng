@@ -111,6 +111,7 @@ class WebViewerServer:
 
         # Occupancy grid (base64-encoded PNG for WebSocket)
         self._latest_occupancy_png: str | None = None
+        self._occupancy_origin: list[float] | None = None
 
         # Broadcast coalescing: the loop thread keeps a queue and always
         # sends the latest state — broadcasts never pile up.
@@ -295,13 +296,14 @@ class WebViewerServer:
         self._latest_floor_image = Image.fromarray(rgb)
         self._floor_image_id += 1
 
-    def push_occupancy_grid(self, grid_image) -> None:
+    def push_occupancy_grid(self, grid_image, origin_x: float = 0.0, origin_y: float = 0.0) -> None:
         """Publish the occupancy grid as a base64-encoded PNG for WebSocket."""
         import base64
         import cv2
 
         _, buf = cv2.imencode(".png", grid_image)
         self._latest_occupancy_png = base64.b64encode(buf).decode("ascii")
+        self._occupancy_origin = [origin_x, origin_y]
 
     def set_floor_size(self, width_mm: float, height_mm: float) -> None:
         """Set the floor grid dimensions (mm) for the browser overlay."""
@@ -427,6 +429,8 @@ class WebViewerServer:
         # Include occupancy grid PNG if available
         if self._latest_occupancy_png is not None:
             state["occupancy_png"] = self._latest_occupancy_png
+        if self._occupancy_origin is not None:
+            state["occupancy_origin"] = self._occupancy_origin
 
         return json.dumps(state)
 

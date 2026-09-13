@@ -58,9 +58,13 @@ class VisionDisplay:
         if (
             self.brain.vision_processor is not None
             and self.brain.vision_processor.latest_occupancy_map_image is not None
+            and self.brain.vision_processor.occupancy_map is not None
         ):
+            occ = self.brain.vision_processor.occupancy_map
             self.brain.web_viewer.push_occupancy_grid(
-                self.brain.vision_processor.latest_occupancy_map_image
+                self.brain.vision_processor.latest_occupancy_map_image,
+                occ.origin[0],
+                occ.origin[1],
             )
         # Sync floor grid dimensions to browser on first frame
         if self.brain.vision_processor and self.brain.vision_processor.floor_projector:
