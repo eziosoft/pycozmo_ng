@@ -584,13 +584,14 @@ class AnnotatedVisionProcessor(VisionProcessor):
 
                 # Accumulate into world-frame occupancy map
                 if self.occupancy_map is not None and hasattr(cli, "pose"):
+                    pose = cli.pose
                     self.occupancy_map.update(
                         floor_img,
                         self.floor_projector._floor_x,
                         self.floor_projector._floor_y,
-                        cli.pose.position.x,
-                        cli.pose.position.y,
-                        cli.pose.yaw,
+                        pose.position.x,
+                        pose.position.y,
+                        pose.rotation.angle_z.radians,
                     )
                     self.latest_occupancy_map_image = (
                         self.occupancy_map.to_color_image()
