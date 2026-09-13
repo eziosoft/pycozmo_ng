@@ -109,6 +109,9 @@ class WebViewerServer:
         self._floor_size_mm: tuple[float, float] = (600.0, 600.0)
         self._floor_center_mm: tuple[float, float] = (200.0, 0.0)
 
+        # Occupancy grid (base64-encoded PNG for WebSocket)
+        self._latest_occupancy_png: str | None = None
+
         # Broadcast coalescing: the loop thread keeps a queue and always
         # sends the latest state — broadcasts never pile up.
         self._broadcast_queue = None
@@ -292,6 +295,14 @@ class WebViewerServer:
         self._latest_floor_image = Image.fromarray(rgb)
         self._floor_image_id += 1
 
+    def push_occupancy_grid(self, grid_image) -> None:
+        """Publish the occupancy grid as a base64-encoded PNG for WebSocket."""
+        import base64
+        import cv2
+
+        _, buf = cv2.imencode(".png", grid_image)
+        self._latest_occupancy_png = base64.b64encode(buf).decode("ascii")
+
     def set_floor_size(self, width_mm: float, height_mm: float) -> None:
         """Set the floor grid dimensions (mm) for the browser overlay."""
         self._floor_size_mm = (width_mm, height_mm)
@@ -412,6 +423,11 @@ class WebViewerServer:
             "floor_center": list(self._floor_center_mm),
             "timestamp": int((time.time() - self._start_time) * 1000),
         }
+
+        # Include occupancy grid PNG if available
+        if self._latest_occupancy_png is not None:
+            state["occupancy_png"] = self._latest_occupancy_png
+
         return json.dumps(state)
 
     async def _broadcast_loop(self):

@@ -443,6 +443,47 @@
     };
 
     // -----------------------------------------------------------------------
+    // Occupancy map overlay — base64 PNG texture parented to robot
+    // -----------------------------------------------------------------------
+    const OCC_GRID_SIZE = 2000;  // mm, must match OccupancyMap.grid_size_mm
+    const occCanvas = document.createElement('canvas');
+    occCanvas.width = 400;
+    occCanvas.height = 400;
+    const occCtx = occCanvas.getContext('2d');
+
+    const occTex = new THREE.CanvasTexture(occCanvas);
+    occTex.minFilter = THREE.NearestFilter;
+    occTex.magFilter = THREE.NearestFilter;
+
+    const occOverlayGeo = new THREE.PlaneGeometry(OCC_GRID_SIZE, OCC_GRID_SIZE);
+    const occOverlayMat = new THREE.MeshBasicMaterial({
+      map: occTex,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const occOverlay = new THREE.Mesh(occOverlayGeo, occOverlayMat);
+    occOverlay.rotation.x = -Math.PI / 2;
+    occOverlay.rotation.z = Math.PI;
+    occOverlay.position.set(0, 1.5, 0);
+    robot.add(occOverlay);
+
+    function applyOccupancyPng(pngBase64) {
+      if (!pngBase64) return;
+      const img = new Image();
+      img.onload = () => {
+        if (occCanvas.width !== img.naturalWidth || occCanvas.height !== img.naturalHeight) {
+          occCanvas.width = img.naturalWidth;
+          occCanvas.height = img.naturalHeight;
+        }
+        occCtx.drawImage(img, 0, 0);
+        occTex.needsUpdate = true;
+      };
+      img.src = 'data:image/png;base64,' + pngBase64;
+    }
+
+    // -----------------------------------------------------------------------
     // Path trail (COZMO-27)
     // -----------------------------------------------------------------------
     const PATH_MAX_POINTS = 5000;
@@ -651,6 +692,9 @@
       // Floor grid size
       if (state.floor_size) applyFloorSize(state.floor_size);
       if (state.floor_center) applyFloorCenter(state.floor_center);
+
+      // Occupancy map overlay
+      if (state.occupancy_png) applyOccupancyPng(state.occupancy_png);
     }
 
     // -----------------------------------------------------------------------

@@ -71,6 +71,7 @@ class Brain:
         self.latest_debug_images: dict = {}
         self.latest_floor_image = None
         self.latest_occupancy_grid = None
+        self.latest_occupancy_map_image = None
 
         # Cube tracking
         self.cube_factory_id_map: dict[int, int] = {}

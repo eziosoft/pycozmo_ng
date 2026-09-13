@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pycozmo import logger
 from pycozmo.vision.camera_calibration import CameraCalibration
 from pycozmo.vision.floor_projector import FloorProjector
+from pycozmo.vision.occupancy_map import OccupancyMap
 
 # Import CubeFusionTracker
 try:
@@ -435,6 +436,10 @@ class AnnotatedVisionProcessor(VisionProcessor):
         floor_center_mm: tuple[float, float] = (200.0, 0.0),
         floor_size_mm: tuple[float, float] = (600.0, 600.0),
         mm_per_pixel: float = 5.0,
+        enable_occupancy_map: bool = True,
+        occupancy_grid_size_mm: float = 2000.0,
+        occupancy_cell_size_mm: float = 5.0,
+        occupancy_inflation_radius: int = 2,
     ):
         """
         Initialize the annotated vision processor.
@@ -450,6 +455,10 @@ class AnnotatedVisionProcessor(VisionProcessor):
             floor_center_mm: World-frame (x, y) centre of the floor grid in mm.
             floor_size_mm: (width, height) of the floor grid in mm.
             mm_per_pixel: Millimetres per output pixel for the floor view.
+            enable_occupancy_map: Enable world-frame occupancy map accumulation.
+            occupancy_grid_size_mm: Physical extent of the occupancy grid (mm).
+            occupancy_cell_size_mm: Millimetres per occupancy grid cell.
+            occupancy_inflation_radius: Dilate edge mask by this many iterations.
         """
         super().__init__(camera_calibration=camera_calibration)
 
@@ -462,6 +471,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         self.floor_projector: FloorProjector | None = None
         self.latest_floor_image = None
         self.latest_occupancy_grid = None
+        self.latest_occupancy_map_image: np.ndarray | None = None
         if enable_floor_projection:
             self.floor_projector = FloorProjector(
                 camera_calibration.camera_matrix,
@@ -474,6 +484,15 @@ class AnnotatedVisionProcessor(VisionProcessor):
             logger.info(
                 f"Floor projection enabled: "
                 f"{floor_size_mm[0]}x{floor_size_mm[1]}mm @ {mm_per_pixel} mm/px"
+            )
+
+        # Occupancy map (optional, requires floor projector)
+        self.occupancy_map: OccupancyMap | None = None
+        if enable_floor_projection and enable_occupancy_map:
+            self.occupancy_map = OccupancyMap(
+                grid_size_mm=occupancy_grid_size_mm,
+                cell_size_mm=occupancy_cell_size_mm,
+                inflation_radius=occupancy_inflation_radius,
             )
 
         # Import here to avoid circular dependency
@@ -562,6 +581,20 @@ class AnnotatedVisionProcessor(VisionProcessor):
                 self.latest_floor_image = floor_img
                 self.latest_occupancy_grid = occ_grid
                 cli.dispatch(event.EvtFloorProjectedImage, cli, floor_img, occ_grid)
+
+                # Accumulate into world-frame occupancy map
+                if self.occupancy_map is not None and hasattr(cli, "pose"):
+                    self.occupancy_map.update(
+                        floor_img,
+                        self.floor_projector._floor_x,
+                        self.floor_projector._floor_y,
+                        cli.pose.position.x,
+                        cli.pose.position.y,
+                        cli.pose.yaw,
+                    )
+                    self.latest_occupancy_map_image = (
+                        self.occupancy_map.to_color_image()
+                    )
 
             # NOTE: do NOT call ``gc.collect()`` here. Periodic forced GC
             # runs synchronously on the pycozmo event-dispatcher thread,
