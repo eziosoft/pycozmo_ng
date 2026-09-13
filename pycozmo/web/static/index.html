@@ -379,8 +379,9 @@
     // -----------------------------------------------------------------------
     let floorW = 600, floorH = 600;
     const floorCanvas = document.createElement('canvas');
-    floorCanvas.width = 320;
-    floorCanvas.height = 240;
+    // Start square; resized to match actual floor image on first frame
+    floorCanvas.width = 120;
+    floorCanvas.height = 120;
     const floorCtx = floorCanvas.getContext('2d');
 
     const floorTex = new THREE.CanvasTexture(floorCanvas);
@@ -413,9 +414,17 @@
     const floorImg = new Image();
     floorImg.src = '/floor-video';
     floorImg.onload = () => {
-      // First frame arrived — start copying to canvas
+      // First frame arrived — match canvas to image size, start copying
+      floorCanvas.width = floorImg.naturalWidth || 120;
+      floorCanvas.height = floorImg.naturalHeight || 120;
       function updateFloorTexture() {
         if (floorImg.naturalWidth > 0) {
+          // Re-size canvas if image dimensions changed (e.g. different config)
+          if (floorCanvas.width !== floorImg.naturalWidth ||
+              floorCanvas.height !== floorImg.naturalHeight) {
+            floorCanvas.width = floorImg.naturalWidth;
+            floorCanvas.height = floorImg.naturalHeight;
+          }
           floorCtx.drawImage(floorImg, 0, 0, floorCanvas.width, floorCanvas.height);
           floorTex.needsUpdate = true;
         }
