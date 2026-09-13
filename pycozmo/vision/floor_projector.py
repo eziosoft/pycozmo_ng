@@ -53,15 +53,12 @@ class FloorProjector:
         self._out_h = int(np.ceil(self._floor_size[1] / self._mm_per_pixel))
 
         # Pre-compute floor-grid coordinates in body frame (Z = 0).
-        x_max = self._floor_center[0] + self._floor_size[0] / 2.0
-        y_min = self._floor_center[1] - self._floor_size[1] / 2.0
-
         # Columns = body Y (left/right), rows = body X (forward/backward).
         # Forward at top (row 0), left at left (col 0).
-        y_min = self._floor_center[1] - self._floor_size[1] / 2.0
         x_max = self._floor_center[0] + self._floor_size[0] / 2.0
+        y_max = self._floor_center[1] + self._floor_size[1] / 2.0
 
-        col_vals = y_min + (np.arange(self._out_w) + 0.5) * self._mm_per_pixel
+        col_vals = y_max - (np.arange(self._out_w) + 0.5) * self._mm_per_pixel
         row_vals = x_max - (np.arange(self._out_h) + 0.5) * self._mm_per_pixel
         # meshgrid with 'ij' indexing: aa varies along rows, bb along columns
         bb, aa = np.meshgrid(col_vals, row_vals)  # both shape (out_h, out_w)
@@ -207,10 +204,10 @@ class FloorProjector:
         body_y = s * dx + c * dy
 
         x_max = self._floor_center[0] + self._floor_size[0] / 2.0
-        y_min = self._floor_center[1] - self._floor_size[1] / 2.0
+        y_max = self._floor_center[1] + self._floor_size[1] / 2.0
 
         # col = body Y (left), row = body X reversed (forward = row 0)
-        col = int((body_y - y_min) / self._mm_per_pixel)
+        col = int((y_max - body_y) / self._mm_per_pixel)
         row = int((x_max - body_x) / self._mm_per_pixel)
 
         if 0 <= col < self._out_w and 0 <= row < self._out_h:
@@ -220,9 +217,9 @@ class FloorProjector:
     def floor_pixel_to_body(self, col: int, row: int) -> tuple[float, float]:
         """Convert a floor-pixel (col, row) to body-frame (x, y) in mm."""
         x_max = self._floor_center[0] + self._floor_size[0] / 2.0
-        y_min = self._floor_center[1] - self._floor_size[1] / 2.0
+        y_max = self._floor_center[1] + self._floor_size[1] / 2.0
         bx = x_max - (row + 0.5) * self._mm_per_pixel
-        by = y_min + (col + 0.5) * self._mm_per_pixel
+        by = y_max - (col + 0.5) * self._mm_per_pixel
         return bx, by
 
     # ------------------------------------------------------------------
