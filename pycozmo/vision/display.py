@@ -151,23 +151,21 @@ class VisionDisplay:
                     det_lines.append(f"  ID:{det.cube_id} Conf:{det.confidence:.2f}")
                 self.add_text_overlay(annotated_labeled, det_lines, (10, height - 90))
 
-        panels = [raw_labeled, annotated_labeled]
+        top_row = np.hstack([raw_labeled, annotated_labeled])
 
-        # Floor-projected view (third panel when available)
+        # Floor-projected view below the camera panels
         floor_cv2 = self.brain.latest_floor_image
         if floor_cv2 is not None:
-            # Scale floor image up for visibility (it's small: ~120x120 at 5mm/px)
+            top_w = top_row.shape[1]
             fh, fw = floor_cv2.shape[:2]
-            scale = max(1, min(height, width) // max(fw, fh))
-            if scale > 1:
-                floor_cv2 = cv2.resize(
-                    floor_cv2, (fw * scale, fh * scale), interpolation=cv2.INTER_NEAREST
-                )
-            floor_labeled = floor_cv2.copy()
-            fh_scaled, fw_scaled = floor_labeled.shape[:2]
-            cv2.rectangle(floor_labeled, (0, 0), (fw_scaled, 30), (0, 0, 0), -1)
+            scale = max(1, top_w // fw)
+            floor_up = cv2.resize(
+                floor_cv2, (fw * scale, fh * scale), interpolation=cv2.INTER_NEAREST
+            )
+            fh_scaled, fw_scaled = floor_up.shape[:2]
+            cv2.rectangle(floor_up, (0, 0), (fw_scaled, 30), (0, 0, 0), -1)
             cv2.putText(
-                floor_labeled,
+                floor_up,
                 "Floor (Bird's Eye)",
                 (10, 22),
                 cv2.FONT_HERSHEY_SIMPLEX,
@@ -175,12 +173,16 @@ class VisionDisplay:
                 (0, 200, 255),
                 2,
             )
-            # Resize to match other panels' height for clean stacking
-            if fh_scaled != height:
-                floor_labeled = cv2.resize(floor_labeled, (width, height))
-            panels.append(floor_labeled)
+            # Pad or crop width to match top row, then vstack
+            if fw_scaled < top_w:
+                pad = np.zeros((fh_scaled, top_w - fw_scaled, 3), dtype=np.uint8)
+                floor_up = np.hstack([floor_up, pad])
+            elif fw_scaled > top_w:
+                floor_up = floor_up[:, :top_w]
+            combined = np.vstack([top_row, floor_up])
+        else:
+            combined = top_row
 
-        combined = np.hstack(panels)
         cv2.imshow(self.brain.window_name, combined)
 
         for name, img in self.brain.latest_debug_images.items():
