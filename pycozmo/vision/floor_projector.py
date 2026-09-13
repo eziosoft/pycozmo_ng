@@ -53,12 +53,13 @@ class FloorProjector:
         self._out_h = int(np.ceil(self._floor_size[1] / self._mm_per_pixel))
 
         # Pre-compute floor-grid coordinates in body frame (Z = 0).
-        # Grid origin is at (center - size/2) in body X/Y.
-        x_min = self._floor_center[0] - self._floor_size[0] / 2.0
+        x_max = self._floor_center[0] + self._floor_size[0] / 2.0
         y_min = self._floor_center[1] - self._floor_size[1] / 2.0
 
-        xs = x_min + (np.arange(self._out_w) + 0.5) * self._mm_per_pixel
-        ys = y_min + (np.arange(self._out_h) + 0.5) * self._mm_per_pixel
+        # Columns = body Y (left/right), rows = body X (forward/backward)
+        # Forward (top of image) = row 0, so X range is reversed.
+        ys = y_min + (np.arange(self._out_w) + 0.5) * self._mm_per_pixel
+        xs = x_max - (np.arange(self._out_h) + 0.5) * self._mm_per_pixel
         xx, yy = np.meshgrid(xs, ys)  # shape (out_h, out_w)
 
         self._floor_x = xx.ravel()  # body X (forward)
@@ -201,11 +202,12 @@ class FloorProjector:
         body_x = c * dx - s * dy
         body_y = s * dx + c * dy
 
-        x_min = self._floor_center[0] - self._floor_size[0] / 2.0
+        x_max = self._floor_center[0] + self._floor_size[0] / 2.0
         y_min = self._floor_center[1] - self._floor_size[1] / 2.0
 
-        col = int((body_x - x_min) / self._mm_per_pixel)
-        row = int((body_y - y_min) / self._mm_per_pixel)
+        # col = body Y (left), row = body X reversed (forward = row 0)
+        col = int((body_y - y_min) / self._mm_per_pixel)
+        row = int((x_max - body_x) / self._mm_per_pixel)
 
         if 0 <= col < self._out_w and 0 <= row < self._out_h:
             return col, row
@@ -213,10 +215,10 @@ class FloorProjector:
 
     def floor_pixel_to_body(self, col: int, row: int) -> tuple[float, float]:
         """Convert a floor-pixel (col, row) to body-frame (x, y) in mm."""
-        x_min = self._floor_center[0] - self._floor_size[0] / 2.0
+        x_max = self._floor_center[0] + self._floor_size[0] / 2.0
         y_min = self._floor_center[1] - self._floor_size[1] / 2.0
-        bx = x_min + (col + 0.5) * self._mm_per_pixel
-        by = y_min + (row + 0.5) * self._mm_per_pixel
+        bx = x_max - (row + 0.5) * self._mm_per_pixel
+        by = y_min + (col + 0.5) * self._mm_per_pixel
         return bx, by
 
     # ------------------------------------------------------------------
