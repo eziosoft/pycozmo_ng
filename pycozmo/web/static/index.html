@@ -138,7 +138,6 @@
     // Scene + camera
     // -----------------------------------------------------------------------
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x0d1110, 1500, 4000);
 
     const camera = new THREE.PerspectiveCamera(
       45, viewerPanel.clientWidth / viewerPanel.clientHeight, 0.1, 5000
@@ -401,7 +400,7 @@
     floorOverlay.rotation.x = -Math.PI / 2;
     floorOverlay.rotation.z = Math.PI;
     // Position: body (X forward, Y left) → robot local (Z forward, X lateral)
-    floorOverlay.position.set(-floorCenterY, 1, floorCenterX);
+    floorOverlay.position.set(-floorCenterY, 2, floorCenterX);
     robot.add(floorOverlay);
 
     function applyFloorSize(size) {
@@ -417,7 +416,7 @@
       floorCenterX = center[0];
       floorCenterY = center[1];
       // Body (X forward, Y left) → robot local (Z forward, -X lateral)
-      floorOverlay.position.set(-floorCenterY, 1, floorCenterX);
+    floorOverlay.position.set(-floorCenterY, 2, floorCenterX);
     }
 
     // MJPEG stream — img auto-updates, we copy to canvas each frame
