@@ -375,6 +375,35 @@
     scene.add(robot);
 
     // -----------------------------------------------------------------------
+    // Floor camera overlay — textured plane parented to robot (COZMO-XX)
+    // -----------------------------------------------------------------------
+    const FLOOR_MM = 600;
+    const floorVid = document.createElement('video');
+    floorVid.src = '/floor-video';
+    floorVid.autoplay = true;
+    floorVid.muted = true;
+    floorVid.playsInline = true;
+    floorVid.style.display = 'none';
+    document.body.appendChild(floorVid);
+
+    const floorTex = new THREE.VideoTexture(floorVid);
+    floorTex.minFilter = THREE.NearestFilter;
+    floorTex.magFilter = THREE.NearestFilter;
+
+    const floorOverlayGeo = new THREE.PlaneGeometry(FLOOR_MM, FLOOR_MM);
+    const floorOverlayMat = new THREE.MeshBasicMaterial({
+      map: floorTex,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const floorOverlay = new THREE.Mesh(floorOverlayGeo, floorOverlayMat);
+    floorOverlay.rotation.x = -Math.PI / 2;
+    floorOverlay.position.set(FLOOR_MM / 2, 0.5, 0);
+    robot.add(floorOverlay);
+
+    // -----------------------------------------------------------------------
     // Path trail (COZMO-27)
     // -----------------------------------------------------------------------
     const PATH_MAX_POINTS = 5000;
