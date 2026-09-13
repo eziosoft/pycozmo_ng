@@ -465,7 +465,7 @@
     });
     const occOverlay = new THREE.Mesh(occOverlayGeo, occOverlayMat);
     occOverlay.rotation.x = -Math.PI / 2;
-    occOverlay.rotation.z = Math.PI / 2;
+    occOverlay.rotation.y = Math.PI / 2;
     occOverlay.position.set(0, 3, 0);
     scene.add(occOverlay);  // world frame, not parented to robot
 
