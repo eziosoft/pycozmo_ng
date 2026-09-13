@@ -74,8 +74,6 @@
         <span class="status-dot disconnected" id="status-dot"></span>
         <span class="status-label disconnected" id="status-text">disconnected</span>
         <span class="stat" id="fps">-- FPS</span>
-        <span class="stat" id="cube-count">0 cubes</span>
-        <span class="stat" id="path-count"></span>
       </div>
       <div id="viewer-canvas-wrap"></div>
 
@@ -498,7 +496,6 @@
       for (const id of Object.keys(cubeGroups)) {
         if (!seen.has(id)) removeCube(id);
       }
-      document.getElementById('cube-count').textContent = `${seen.size} cubes`;
       document.getElementById('tel-cubes').textContent = seen.size;
 
       // Path trail
@@ -512,7 +509,6 @@
         }
         pathGeometry.attributes.position.needsUpdate = true;
         pathGeometry.setDrawRange(0, pathPointCount);
-        document.getElementById('path-count').textContent = `${pathPointCount} pts`;
         document.getElementById('tel-path').textContent = `${pathPointCount} pts`;
       }
 
