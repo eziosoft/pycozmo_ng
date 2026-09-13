@@ -377,7 +377,7 @@
     // -----------------------------------------------------------------------
     // Floor camera overlay — canvas texture parented to robot
     // -----------------------------------------------------------------------
-    const FLOOR_MM = 600;
+    let floorW = 600, floorH = 600;
     const floorCanvas = document.createElement('canvas');
     floorCanvas.width = 320;
     floorCanvas.height = 240;
@@ -387,7 +387,7 @@
     floorTex.minFilter = THREE.NearestFilter;
     floorTex.magFilter = THREE.NearestFilter;
 
-    const floorOverlayGeo = new THREE.PlaneGeometry(FLOOR_MM, FLOOR_MM);
+    const floorOverlayGeo = new THREE.PlaneGeometry(floorW, floorH);
     const floorOverlayMat = new THREE.MeshBasicMaterial({
       map: floorTex,
       transparent: true,
@@ -397,8 +397,17 @@
     });
     const floorOverlay = new THREE.Mesh(floorOverlayGeo, floorOverlayMat);
     floorOverlay.rotation.x = -Math.PI / 2;
-    floorOverlay.position.set(FLOOR_MM / 2, 0.5, 0);
+    floorOverlay.position.set(floorW / 2, 1, 0);
     robot.add(floorOverlay);
+
+    function applyFloorSize(size) {
+      if (!size || size.length < 2) return;
+      floorW = size[0];
+      floorH = size[1];
+      floorOverlay.geometry.dispose();
+      floorOverlay.geometry = new THREE.PlaneGeometry(floorW, floorH);
+      floorOverlay.position.set(floorW / 2, 1, 0);
+    }
 
     // MJPEG stream — img auto-updates, we copy to canvas each frame
     const floorImg = new Image();
@@ -620,6 +629,9 @@
         document.getElementById('tel-wheel-r').textContent =
           `${(t.right_wheel_speed || 0).toFixed(0)} mm/s`;
       }
+
+      // Floor grid size
+      if (state.floor_size) applyFloorSize(state.floor_size);
     }
 
     // -----------------------------------------------------------------------

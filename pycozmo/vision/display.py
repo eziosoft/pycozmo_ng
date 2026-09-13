@@ -54,6 +54,12 @@ class VisionDisplay:
         self.brain.latest_floor_image = floor_image
         self.brain.latest_occupancy_grid = occupancy_grid
         self.brain.web_viewer.push_floor_frame(floor_image)
+        # Sync floor grid dimensions to browser on first frame
+        if self.brain.vision_processor and self.brain.vision_processor.floor_projector:
+            fp = self.brain.vision_processor.floor_projector
+            self.brain.web_viewer.set_floor_size(
+                fp._floor_size[0], fp._floor_size[1]
+            )
 
     def pil_to_cv2(self, pil_image):
         """Convert PIL Image to OpenCV format."""
