@@ -1,120 +1,120 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cozmo 3D World Viewer</title>
-    <link rel="stylesheet" href="style.css">
-    <script type="importmap">
-        {
-          "imports": {
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-          }
-        }
-    </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cozmo 3D World Viewer</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
 </head>
 <body>
-<!-- Split layout: left (camera + telemetry) | right (status + 3D) -->
-<div id="layout">
+  <!-- Split layout: left (camera + telemetry) | right (status + 3D) -->
+  <div id="layout">
     <!-- Left column: camera feed on top, telemetry below -->
     <div id="left-col">
-        <div id="camera-panel">
-            <div id="camera-label">Cozmo Camera</div>
-            <img id="camera-feed" src="/video" alt="Camera feed"/>
+      <div id="camera-panel">
+        <div id="camera-label">Cozmo Camera</div>
+        <img id="camera-feed" src="/video" alt="Camera feed" />
+      </div>
+      <div id="floor-panel">
+        <div id="floor-label">Floor (Bird's Eye)</div>
+        <img id="floor-feed" src="/floor-video" alt="Floor view" />
+      </div>
+      <div id="telemetry-panel">
+        <h3>Telemetry</h3>
+        <div class="tel-row">
+          <span class="tel-label">Status</span>
+          <span class="tel-value" id="tel-status">--</span>
         </div>
-        <div id="floor-panel">
-            <div id="floor-label">Floor (Bird's Eye)</div>
-            <img id="floor-feed" src="/floor-video" alt="Floor view"/>
+        <div class="tel-row">
+          <span class="tel-label">Battery</span>
+          <span class="tel-value" id="tel-battery">--</span>
         </div>
-        <div id="telemetry-panel">
-            <h3>Telemetry</h3>
-            <div class="tel-row">
-                <span class="tel-label">Status</span>
-                <span class="tel-value" id="tel-status">--</span>
-            </div>
-            <div class="tel-row">
-                <span class="tel-label">Battery</span>
-                <span class="tel-value" id="tel-battery">--</span>
-            </div>
-            <div class="tel-row">
-                <span class="tel-label">Speed</span>
-                <span class="tel-value" id="tel-speed">0 mm/s</span>
-            </div>
-            <div class="tel-row">
-                <span class="tel-label">Head</span>
-                <span class="tel-value" id="tel-head">--&deg;</span>
-            </div>
-            <div class="tel-row">
-                <span class="tel-label">Lift</span>
-                <span class="tel-value" id="tel-lift">-- mm</span>
-            </div>
-            <div class="tel-row">
-                <span class="tel-label">Wheel L</span>
-                <span class="tel-value" id="tel-wheel-l">0 mm/s</span>
-            </div>
-            <div class="tel-row">
-                <span class="tel-label">Wheel R</span>
-                <span class="tel-value" id="tel-wheel-r">0 mm/s</span>
-            </div>
-            <div class="tel-row">
-                <span class="tel-label">Cubes</span>
-                <span class="tel-value" id="tel-cubes">0</span>
-            </div>
-            <div class="tel-row">
-                <span class="tel-label">Path</span>
-                <span class="tel-value" id="tel-path">0 pts</span>
-            </div>
+        <div class="tel-row">
+          <span class="tel-label">Speed</span>
+          <span class="tel-value" id="tel-speed">0 mm/s</span>
         </div>
+        <div class="tel-row">
+          <span class="tel-label">Head</span>
+          <span class="tel-value" id="tel-head">--&deg;</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Lift</span>
+          <span class="tel-value" id="tel-lift">-- mm</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Wheel L</span>
+          <span class="tel-value" id="tel-wheel-l">0 mm/s</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Wheel R</span>
+          <span class="tel-value" id="tel-wheel-r">0 mm/s</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Cubes</span>
+          <span class="tel-value" id="tel-cubes">0</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Path</span>
+          <span class="tel-value" id="tel-path">0 pts</span>
+        </div>
+      </div>
     </div>
 
     <!-- Right column: status bar + 3D viewer -->
     <div id="viewer-panel">
-        <div id="status-bar">
-            <span class="status-dot disconnected" id="status-dot"></span>
-            <span class="status-label disconnected" id="status-text">disconnected</span>
-            <span class="stat" id="fps">-- FPS</span>
-        </div>
-        <div id="viewer-canvas-wrap"></div>
+      <div id="status-bar">
+        <span class="status-dot disconnected" id="status-dot"></span>
+        <span class="status-label disconnected" id="status-text">disconnected</span>
+        <span class="stat" id="fps">-- FPS</span>
+      </div>
+      <div id="viewer-canvas-wrap"></div>
 
-        <!-- Remote-control HUD -->
-        <div id="controls-hud">
-            <div id="controls-title">Remote control (click here to focus)</div>
-            <table id="controls-grid">
-                <tr>
-                    <td><span class="ctl-key" data-key="w">W</span></td>
-                    <td class="ctl-label">drive fwd</td>
-                    <td><span class="ctl-key" data-key="r">R</span></td>
-                    <td class="ctl-label">head up</td>
-                </tr>
-                <tr>
-                    <td>
-                        <span class="ctl-key" data-key="a">A</span>
-                        <span class="ctl-key" data-key="s">S</span>
-                        <span class="ctl-key" data-key="d">D</span>
-                    </td>
-                    <td class="ctl-label" colspan="3">spin left / reverse / spin right</td>
-                </tr>
-                <tr>
-                    <td>
-                        <span class="ctl-key" data-key="f">F</span>
-                        <span class="ctl-key" data-key="t">T</span>
-                        <span class="ctl-key" data-key="g">G</span>
-                    </td>
-                    <td class="ctl-label" colspan="3">head down / lift up / lift down</td>
-                </tr>
-                <tr>
-                    <td><span class="ctl-key ctl-key-wide" data-key=" ">SPACE</span></td>
-                    <td class="ctl-label" colspan="3">stop all motors</td>
-                </tr>
-            </table>
-        </div>
+      <!-- Remote-control HUD -->
+      <div id="controls-hud">
+        <div id="controls-title">Remote control (click here to focus)</div>
+        <table id="controls-grid">
+          <tr>
+            <td><span class="ctl-key" data-key="w">W</span></td>
+            <td class="ctl-label">drive fwd</td>
+            <td><span class="ctl-key" data-key="r">R</span></td>
+            <td class="ctl-label">head up</td>
+          </tr>
+          <tr>
+            <td>
+              <span class="ctl-key" data-key="a">A</span>
+              <span class="ctl-key" data-key="s">S</span>
+              <span class="ctl-key" data-key="d">D</span>
+            </td>
+            <td class="ctl-label" colspan="3">spin left / reverse / spin right</td>
+          </tr>
+          <tr>
+            <td>
+              <span class="ctl-key" data-key="f">F</span>
+              <span class="ctl-key" data-key="t">T</span>
+              <span class="ctl-key" data-key="g">G</span>
+            </td>
+            <td class="ctl-label" colspan="3">head down / lift up / lift down</td>
+          </tr>
+          <tr>
+            <td><span class="ctl-key ctl-key-wide" data-key=" ">SPACE</span></td>
+            <td class="ctl-label" colspan="3">stop all motors</td>
+          </tr>
+        </table>
+      </div>
     </div>
-</div>
+  </div>
 
-<script type="module">
+  <script type="module">
     import * as THREE from 'three';
-    import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     // -----------------------------------------------------------------------
     // Configuration
@@ -128,7 +128,7 @@
     // Renderer
     // -----------------------------------------------------------------------
     const viewerPanel = document.getElementById('viewer-canvas-wrap');
-    const renderer = new THREE.WebGLRenderer({antialias: true});
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setClearColor(0x0d1110);
     viewerPanel.appendChild(renderer.domElement);
@@ -140,7 +140,7 @@
     const scene = new THREE.Scene();
 
     const camera = new THREE.PerspectiveCamera(
-        45, viewerPanel.clientWidth / viewerPanel.clientHeight, 0.1, 5000
+      45, viewerPanel.clientWidth / viewerPanel.clientHeight, 0.1, 5000
     );
     camera.position.set(200, 100, 200);
     camera.lookAt(0, 0, 0);
@@ -161,8 +161,8 @@
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     const targetMarker = new THREE.Mesh(
-        new THREE.RingGeometry(15, 25, 32),
-        new THREE.MeshBasicMaterial({color: 0x9287d7, side: THREE.DoubleSide, transparent: true, opacity: 0.8})
+      new THREE.RingGeometry(15, 25, 32),
+      new THREE.MeshBasicMaterial({ color: 0x9287d7, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
     );
     targetMarker.rotation.x = -Math.PI / 2;
     targetMarker.position.y = 0.5;
@@ -170,8 +170,8 @@
     scene.add(targetMarker);
 
     const navLineGeo = new THREE.BufferGeometry();
-    navLineGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
-    const navLineMat = new THREE.LineDashedMaterial({color: 0x9287d7, dashSize: 10, gapSize: 5});
+    navLineGeo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 0,0,0], 3));
+    const navLineMat = new THREE.LineDashedMaterial({ color: 0x9287d7, dashSize: 10, gapSize: 5 });
     const navLine = new THREE.Line(navLineGeo, navLineMat);
     navLine.visible = false;
     scene.add(navLine);
@@ -182,127 +182,117 @@
     const DOUBLE_CLICK_MS = 350;
 
     function onViewerClick(event) {
-        const now = performance.now();
-        if (now - lastClickTime > DOUBLE_CLICK_MS) {
-            lastClickTime = now;
-            return;
-        }
-        lastClickTime = 0;
-        performNavigation(event);
+      const now = performance.now();
+      if (now - lastClickTime > DOUBLE_CLICK_MS) {
+        lastClickTime = now;
+        return;
+      }
+      lastClickTime = 0;
+      performNavigation(event);
     }
 
     function performNavigation(event) {
-        if (event.button !== 0) return;
+      if (event.button !== 0) return;
 
-        const panel = document.getElementById('viewer-canvas-wrap');
-        const rect = panel.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      const panel = document.getElementById('viewer-canvas-wrap');
+      const rect = panel.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        raycaster.setFromCamera(mouse, camera);
+      raycaster.setFromCamera(mouse, camera);
 
-        const cubeMeshes = [];
+      const cubeMeshes = [];
+      for (const [id, g] of Object.entries(cubeGroups)) {
+        g.traverse(child => {
+          if (child.isMesh) cubeMeshes.push(child);
+        });
+      }
+      const cubeHits = raycaster.intersectObjects(cubeMeshes);
+      if (cubeHits.length > 0) {
+        let hitObj = cubeHits[0].object;
         for (const [id, g] of Object.entries(cubeGroups)) {
-            g.traverse(child => {
-                if (child.isMesh) cubeMeshes.push(child);
-            });
+          if (g.children.includes(hitObj) || g === hitObj.parent) {
+            sendApproachCube(id);
+            return;
+          }
         }
-        const cubeHits = raycaster.intersectObjects(cubeMeshes);
-        if (cubeHits.length > 0) {
-            let hitObj = cubeHits[0].object;
-            for (const [id, g] of Object.entries(cubeGroups)) {
-                if (g.children.includes(hitObj) || g === hitObj.parent) {
-                    sendApproachCube(id);
-                    return;
-                }
-            }
-            let parent = hitObj.parent;
-            while (parent && !Object.values(cubeGroups).includes(parent)) {
-                parent = parent.parent;
-            }
-            if (parent) {
-                const cubeId = Object.keys(cubeGroups).find(k => cubeGroups[k] === parent);
-                if (cubeId) {
-                    sendApproachCube(cubeId);
-                    return;
-                }
-            }
+        let parent = hitObj.parent;
+        while (parent && !Object.values(cubeGroups).includes(parent)) {
+          parent = parent.parent;
         }
-
-        const hit = new THREE.Vector3();
-        const intersected = raycaster.ray.intersectPlane(groundPlane, hit);
-
-        if (intersected) {
-            hit.x = Math.max(-1000, Math.min(1000, hit.x));
-            hit.z = Math.max(-1000, Math.min(1000, hit.z));
-            hit.y = 0.5;
-
-            navTarget = hit.clone();
-            targetMarker.position.copy(hit);
-            targetMarker.visible = true;
-
-            const rp = robot.position;
-            const positions = navLine.geometry.attributes.position.array;
-            positions[0] = rp.x;
-            positions[1] = 0.5;
-            positions[2] = rp.z;
-            positions[3] = hit.x;
-            positions[4] = 0.5;
-            positions[5] = hit.z;
-            navLine.geometry.attributes.position.needsUpdate = true;
-            navLine.computeLineDistances();
-            navLine.visible = true;
-
-            sendNavigateTo(hit.x, hit.z);
+        if (parent) {
+          const cubeId = Object.keys(cubeGroups).find(k => cubeGroups[k] === parent);
+          if (cubeId) {
+            sendApproachCube(cubeId);
+            return;
+          }
         }
+      }
+
+      const hit = new THREE.Vector3();
+      const intersected = raycaster.ray.intersectPlane(groundPlane, hit);
+
+      if (intersected) {
+        hit.x = Math.max(-1000, Math.min(1000, hit.x));
+        hit.z = Math.max(-1000, Math.min(1000, hit.z));
+        hit.y = 0.5;
+
+        navTarget = hit.clone();
+        targetMarker.position.copy(hit);
+        targetMarker.visible = true;
+
+        const rp = robot.position;
+        const positions = navLine.geometry.attributes.position.array;
+        positions[0] = rp.x; positions[1] = 0.5; positions[2] = rp.z;
+        positions[3] = hit.x; positions[4] = 0.5; positions[5] = hit.z;
+        navLine.geometry.attributes.position.needsUpdate = true;
+        navLine.computeLineDistances();
+        navLine.visible = true;
+
+        sendNavigateTo(hit.x, hit.z);
+      }
     }
 
     function sendNavigateTo(sceneX, sceneZ) {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        try {
-            ws.send(JSON.stringify({type: 'navigate_to', x: sceneX, z: sceneZ}));
-        } catch (e) {
-            console.warn('navigate_to send failed', e);
-        }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'navigate_to', x: sceneX, z: sceneZ }));
+      } catch (e) {
+        console.warn('navigate_to send failed', e);
+      }
     }
 
     function sendApproachCube(cubeId) {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        try {
-            ws.send(JSON.stringify({type: 'approach_cube', cube_id: cubeId}));
-        } catch (e) {
-            console.warn('approach_cube send failed', e);
-        }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'approach_cube', cube_id: cubeId }));
+      } catch (e) {
+        console.warn('approach_cube send failed', e);
+      }
     }
 
     function sendDock() {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        try {
-            ws.send(JSON.stringify({type: 'dock'}));
-        } catch (e) {
-            console.warn('dock send failed', e);
-        }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'dock' }));
+      } catch (e) {
+        console.warn('dock send failed', e);
+      }
     }
 
     function cancelNavigation() {
-        navTarget = null;
-        targetMarker.visible = false;
-        navLine.visible = false;
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        try {
-            ws.send(JSON.stringify({type: 'navigate_cancel'}));
-        } catch (e) { /* ignore */
-        }
+      navTarget = null;
+      targetMarker.visible = false;
+      navLine.visible = false;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'navigate_cancel' }));
+      } catch (e) { /* ignore */ }
     }
 
     viewerPanel.addEventListener('click', onViewerClick);
-    viewerPanel.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        cancelNavigation();
-    });
-    window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') cancelNavigation();
-    });
+    viewerPanel.addEventListener('contextmenu', (e) => { e.preventDefault(); cancelNavigation(); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') cancelNavigation(); });
 
     // -----------------------------------------------------------------------
     // Lighting
@@ -336,7 +326,7 @@
     // Floor plane
     // -----------------------------------------------------------------------
     const floorGeo = new THREE.PlaneGeometry(4000, 4000);
-    const floorMat = new THREE.MeshLambertMaterial({color: 0x252c29, side: THREE.DoubleSide});
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0x252c29, side: THREE.DoubleSide });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.1;
@@ -346,41 +336,40 @@
     // Robot box
     // -----------------------------------------------------------------------
     function createRobot() {
-        const group = new THREE.Group();
+      const group = new THREE.Group();
 
-        const geo = new THREE.BoxGeometry(56, 70, 90);
-        const wire = new THREE.LineSegments(
-            new THREE.EdgesGeometry(geo),
-            new THREE.LineBasicMaterial({color: 0x9ea9a3})
-        );
-        group.add(wire);
-        const fill = new THREE.Mesh(
-            geo,
-            new THREE.MeshLambertMaterial({
-                color: 0x9287d7,
-                transparent: true,
-                opacity: 0.2,
-            })
-        );
-        group.add(fill);
+      const geo = new THREE.BoxGeometry(56, 70, 90);
+      const wire = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: 0x9ea9a3 })
+      );
+      group.add(wire);
+      const fill = new THREE.Mesh(
+        geo,
+        new THREE.MeshLambertMaterial({
+          color: 0x9287d7,
+          transparent: true,
+          opacity: 0.2,
+        })
+      );
+      group.add(fill);
 
-        fill.position.set(0, 35, -5);
-        wire.position.set(0, 35, -5);
+      fill.position.set(0, 35, -5);
+      wire.position.set(0, 35, -5);
 
-        const camGeo = new THREE.SphereGeometry(3, 12, 8);
-        const camMat = new THREE.MeshBasicMaterial({color: 0xe0a530});
-        const camMarker = new THREE.Mesh(camGeo, camMat);
-        camMarker.position.set(0, 38, 30);
-        group.add(camMarker);
+      const camGeo = new THREE.SphereGeometry(3, 12, 8);
+      const camMat = new THREE.MeshBasicMaterial({ color: 0xe0a530 });
+      const camMarker = new THREE.Mesh(camGeo, camMat);
+      camMarker.position.set(0, 38, 30);
+      group.add(camMarker);
 
-        return group;
+      return group;
     }
-
     const robot = createRobot();
     robot.userData = {
-        heading: 0, targetHeading: 0,
-        pos: new THREE.Vector3(0, 40, 0),
-        targetPos: new THREE.Vector3(0, 40, 0),
+      heading: 0, targetHeading: 0,
+      pos: new THREE.Vector3(0, 40, 0),
+      targetPos: new THREE.Vector3(0, 40, 0),
     };
     scene.add(robot);
 
@@ -401,58 +390,56 @@
 
     const floorOverlayGeo = new THREE.PlaneGeometry(floorW, floorH);
     const floorOverlayMat = new THREE.MeshBasicMaterial({
-        map: floorTex,
-        transparent: true,
-        opacity: 0.7,
-        side: THREE.DoubleSide,
-        depthWrite: false,
+      map: floorTex,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide,
+      depthWrite: false,
     });
     const floorOverlay = new THREE.Mesh(floorOverlayGeo, floorOverlayMat);
     floorOverlay.rotation.x = -Math.PI / 2;
-    floorOverlay.rotation.z = -Math.PI / 2;
+    floorOverlay.rotation.z = Math.PI;
     // Position: body (X forward, Y left) → robot local (Z forward, X lateral)
     floorOverlay.position.set(-floorCenterY, 2, floorCenterX);
     robot.add(floorOverlay);
 
     function applyFloorSize(size) {
-        if (!size || size.length < 2) return;
-        floorW = size[0];
-        floorH = size[1];
-        floorOverlay.geometry.dispose();
-        floorOverlay.geometry = new THREE.PlaneGeometry(floorW, floorH);
+      if (!size || size.length < 2) return;
+      floorW = size[0];
+      floorH = size[1];
+      floorOverlay.geometry.dispose();
+      floorOverlay.geometry = new THREE.PlaneGeometry(floorW, floorH);
     }
 
     function applyFloorCenter(center) {
-        if (!center || center.length < 2) return;
-        floorCenterX = center[0];
-        floorCenterY = center[1];
-        // Body (X forward, Y left) → robot local (Z forward, -X lateral)
-        floorOverlay.position.set(-floorCenterY, 2, floorCenterX);
+      if (!center || center.length < 2) return;
+      floorCenterX = center[0];
+      floorCenterY = center[1];
+      // Body (X forward, Y left) → robot local (Z forward, -X lateral)
+    floorOverlay.position.set(-floorCenterY, 2, floorCenterX);
     }
 
     // MJPEG stream — img auto-updates, we copy to canvas each frame
     const floorImg = new Image();
     floorImg.src = '/floor-video';
     floorImg.onload = () => {
-        // First frame arrived — match canvas to image size, start copying
-        floorCanvas.width = floorImg.naturalWidth || 120;
-        floorCanvas.height = floorImg.naturalHeight || 120;
-
-        function updateFloorTexture() {
-            if (floorImg.naturalWidth > 0) {
-                // Re-size canvas if image dimensions changed (e.g. different config)
-                if (floorCanvas.width !== floorImg.naturalWidth ||
-                    floorCanvas.height !== floorImg.naturalHeight) {
-                    floorCanvas.width = floorImg.naturalWidth;
-                    floorCanvas.height = floorImg.naturalHeight;
-                }
-                floorCtx.drawImage(floorImg, 0, 0, floorCanvas.width, floorCanvas.height);
-                floorTex.needsUpdate = true;
-            }
-            requestAnimationFrame(updateFloorTexture);
+      // First frame arrived — match canvas to image size, start copying
+      floorCanvas.width = floorImg.naturalWidth || 120;
+      floorCanvas.height = floorImg.naturalHeight || 120;
+      function updateFloorTexture() {
+        if (floorImg.naturalWidth > 0) {
+          // Re-size canvas if image dimensions changed (e.g. different config)
+          if (floorCanvas.width !== floorImg.naturalWidth ||
+              floorCanvas.height !== floorImg.naturalHeight) {
+            floorCanvas.width = floorImg.naturalWidth;
+            floorCanvas.height = floorImg.naturalHeight;
+          }
+          floorCtx.drawImage(floorImg, 0, 0, floorCanvas.width, floorCanvas.height);
+          floorTex.needsUpdate = true;
         }
-
-        updateFloorTexture();
+        requestAnimationFrame(updateFloorTexture);
+      }
+      updateFloorTexture();
     };
 
     // -----------------------------------------------------------------------
@@ -470,30 +457,30 @@
 
     const occOverlayGeo = new THREE.PlaneGeometry(OCC_GRID_SIZE, OCC_GRID_SIZE);
     const occOverlayMat = new THREE.MeshBasicMaterial({
-        map: occTex,
-        transparent: true,
-        opacity: 0.35,
-        side: THREE.DoubleSide,
-        depthWrite: false,
+      map: occTex,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
     });
     const occOverlay = new THREE.Mesh(occOverlayGeo, occOverlayMat);
     occOverlay.rotation.x = -Math.PI / 2;
-    occOverlay.rotation.z = Math.PI;
+    occOverlay.rotation.z = -Math.PI/2;
     occOverlay.position.set(0, 3, 0);
     robot.add(occOverlay);  // follows robot position + rotation
 
     function applyOccupancyPng(pngBase64) {
-        if (!pngBase64) return;
-        const img = new Image();
-        img.onload = () => {
-            if (occCanvas.width !== img.naturalWidth || occCanvas.height !== img.naturalHeight) {
-                occCanvas.width = img.naturalWidth;
-                occCanvas.height = img.naturalHeight;
-            }
-            occCtx.drawImage(img, 0, 0);
-            occTex.needsUpdate = true;
-        };
-        img.src = 'data:image/png;base64,' + pngBase64;
+      if (!pngBase64) return;
+      const img = new Image();
+      img.onload = () => {
+        if (occCanvas.width !== img.naturalWidth || occCanvas.height !== img.naturalHeight) {
+          occCanvas.width = img.naturalWidth;
+          occCanvas.height = img.naturalHeight;
+        }
+        occCtx.drawImage(img, 0, 0);
+        occTex.needsUpdate = true;
+      };
+      img.src = 'data:image/png;base64,' + pngBase64;
     }
 
     // -----------------------------------------------------------------------
@@ -505,7 +492,7 @@
     pathGeometry.setAttribute('position', new THREE.BufferAttribute(pathPositions, 3));
     pathGeometry.setDrawRange(0, 0);
 
-    const pathMaterial = new THREE.LineBasicMaterial({color: 0x4ade80});
+    const pathMaterial = new THREE.LineBasicMaterial({ color: 0x4ade80 });
     const pathLine = new THREE.Line(pathGeometry, pathMaterial);
     scene.add(pathLine);
     let pathPointCount = 0;
@@ -518,59 +505,59 @@
     let didInitialFrame = false;
 
     function createCube(id) {
-        const group = new THREE.Group();
-        const idx = parseInt(id.replace('cube_', ''), 10) - 1;
-        const color = CUBE_COLORS[idx] || 0x00ccaa;
+      const group = new THREE.Group();
+      const idx = parseInt(id.replace('cube_', ''), 10) - 1;
+      const color = CUBE_COLORS[idx] || 0x00ccaa;
 
-        const geo = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
-        const wire = new THREE.LineSegments(
-            new THREE.EdgesGeometry(geo),
-            new THREE.LineBasicMaterial({color: 0xe3e8e6})
-        );
-        group.add(wire);
+      const geo = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
+      const wire = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: 0xe3e8e6 })
+      );
+      group.add(wire);
 
-        const mat = new THREE.MeshLambertMaterial({
-            color,
-            transparent: true,
-            opacity: 0.45,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        group.add(mesh);
+      const mat = new THREE.MeshLambertMaterial({
+        color,
+        transparent: true,
+        opacity: 0.45,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
 
-        const axLen = CUBE_SIZE * 0.6;
-        const axGeo = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(axLen, 0, 0),
-        ]);
-        const redLine = new THREE.Line(axGeo, new THREE.LineBasicMaterial({color: 0xff0000}));
-        group.add(redLine);
+      const axLen = CUBE_SIZE * 0.6;
+      const axGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(axLen, 0, 0),
+      ]);
+      const redLine = new THREE.Line(axGeo, new THREE.LineBasicMaterial({ color: 0xff0000 }));
+      group.add(redLine);
 
-        const ayGeo = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, axLen, 0),
-        ]);
-        const greenLine = new THREE.Line(ayGeo, new THREE.LineBasicMaterial({color: 0x00ff00}));
-        group.add(greenLine);
+      const ayGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, axLen, 0),
+      ]);
+      const greenLine = new THREE.Line(ayGeo, new THREE.LineBasicMaterial({ color: 0x00ff00 }));
+      group.add(greenLine);
 
-        const azGeo = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(0, 0, axLen),
-        ]);
-        const blueLine = new THREE.Line(azGeo, new THREE.LineBasicMaterial({color: 0x0000ff}));
-        group.add(blueLine);
+      const azGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, axLen),
+      ]);
+      const blueLine = new THREE.Line(azGeo, new THREE.LineBasicMaterial({ color: 0x0000ff }));
+      group.add(blueLine);
 
-        group.userData = {targetPos: new THREE.Vector3(), targetQuat: new THREE.Quaternion()};
-        scene.add(group);
-        cubeGroups[id] = group;
-        return group;
+      group.userData = { targetPos: new THREE.Vector3(), targetQuat: new THREE.Quaternion() };
+      scene.add(group);
+      cubeGroups[id] = group;
+      return group;
     }
 
     function removeCube(id) {
-        const g = cubeGroups[id];
-        if (g) {
-            scene.remove(g);
-            delete cubeGroups[id];
-        }
+      const g = cubeGroups[id];
+      if (g) {
+        scene.remove(g);
+        delete cubeGroups[id];
+      }
     }
 
     // -----------------------------------------------------------------------
@@ -580,240 +567,236 @@
     let reconnectTimer;
 
     function connectWS() {
-        ws = new WebSocket(WS_URL);
-        ws.onopen = () => setStatus('connected');
-        ws.onclose = () => {
-            setStatus('disconnected');
-            reconnectTimer = setTimeout(connectWS, 2000);
-        };
-        ws.onerror = () => ws.close();
-        ws.onmessage = (evt) => {
-            try {
-                const state = JSON.parse(evt.data);
-                applyState(state);
-            } catch (e) {
-                console.warn('bad message', e);
-            }
-        };
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => setStatus('connected');
+      ws.onclose = () => {
+        setStatus('disconnected');
+        reconnectTimer = setTimeout(connectWS, 2000);
+      };
+      ws.onerror = () => ws.close();
+      ws.onmessage = (evt) => {
+        try {
+          const state = JSON.parse(evt.data);
+          applyState(state);
+        } catch (e) {
+          console.warn('bad message', e);
+        }
+      };
     }
 
     function applyState(state) {
-        const seen = new Set();
-        for (const c of state.cubes || []) {
-            seen.add(c.id);
-            let g = cubeGroups[c.id];
-            if (!g) g = createCube(c.id);
+      const seen = new Set();
+      for (const c of state.cubes || []) {
+        seen.add(c.id);
+        let g = cubeGroups[c.id];
+        if (!g) g = createCube(c.id);
 
-            g.userData.targetPos.set(c.position[0], c.position[1], c.position[2]);
+        g.userData.targetPos.set(c.position[0], c.position[1], c.position[2]);
 
-            const m = new THREE.Matrix4();
-            m.set(
-                c.rotation[0][0], c.rotation[0][1], c.rotation[0][2], 0,
-                c.rotation[1][0], c.rotation[1][1], c.rotation[1][2], 0,
-                c.rotation[2][0], c.rotation[2][1], c.rotation[2][2], 0,
-                0, 0, 0, 1
-            );
-            g.userData.targetQuat.setFromRotationMatrix(m);
+        const m = new THREE.Matrix4();
+        m.set(
+          c.rotation[0][0], c.rotation[0][1], c.rotation[0][2], 0,
+          c.rotation[1][0], c.rotation[1][1], c.rotation[1][2], 0,
+          c.rotation[2][0], c.rotation[2][1], c.rotation[2][2], 0,
+          0, 0, 0, 1
+        );
+        g.userData.targetQuat.setFromRotationMatrix(m);
+      }
+      for (const id of Object.keys(cubeGroups)) {
+        if (!seen.has(id)) removeCube(id);
+      }
+      document.getElementById('tel-cubes').textContent = seen.size;
+
+      // Path trail
+      if (state.path_points) {
+        const pts = state.path_points;
+        pathPointCount = Math.min(pts.length, PATH_MAX_POINTS);
+        for (let i = 0; i < pathPointCount; i++) {
+          pathPositions[i * 3]     = pts[i][0];
+          pathPositions[i * 3 + 1] = pts[i][1];
+          pathPositions[i * 3 + 2] = pts[i][2];
         }
-        for (const id of Object.keys(cubeGroups)) {
-            if (!seen.has(id)) removeCube(id);
-        }
-        document.getElementById('tel-cubes').textContent = seen.size;
+        pathGeometry.attributes.position.needsUpdate = true;
+        pathGeometry.setDrawRange(0, pathPointCount);
+        document.getElementById('tel-path').textContent = `${pathPointCount} pts`;
+      }
 
-        // Path trail
-        if (state.path_points) {
-            const pts = state.path_points;
-            pathPointCount = Math.min(pts.length, PATH_MAX_POINTS);
-            for (let i = 0; i < pathPointCount; i++) {
-                pathPositions[i * 3] = pts[i][0];
-                pathPositions[i * 3 + 1] = pts[i][1];
-                pathPositions[i * 3 + 2] = pts[i][2];
-            }
-            pathGeometry.attributes.position.needsUpdate = true;
-            pathGeometry.setDrawRange(0, pathPointCount);
-            document.getElementById('tel-path').textContent = `${pathPointCount} pts`;
-        }
-
-        // Robot pose
-        if (state.robot) {
-            robot.userData.targetHeading = state.robot.heading || 0;
-            const rp = state.robot.position || [0, 0, 0];
-            robot.userData.targetPos.set(rp[0], rp[1], rp[2]);
-            if (!hasRobotPose) {
-                robot.userData.heading = robot.userData.targetHeading;
-                robot.rotation.y = robot.userData.heading;
-                robot.position.copy(robot.userData.targetPos);
-                robot.userData.pos.copy(robot.userData.targetPos);
-                hasRobotPose = true;
-            }
-
-            if (navTarget) {
-                const dx = rp[0] - navTarget.x;
-                const dz = rp[2] - navTarget.z;
-                if (Math.sqrt(dx * dx + dz * dz) < 30) {
-                    navTarget = null;
-                    targetMarker.visible = false;
-                    navLine.visible = false;
-                }
-            }
+      // Robot pose
+      if (state.robot) {
+        robot.userData.targetHeading = state.robot.heading || 0;
+        const rp = state.robot.position || [0, 0, 0];
+        robot.userData.targetPos.set(rp[0], rp[1], rp[2]);
+        if (!hasRobotPose) {
+          robot.userData.heading = robot.userData.targetHeading;
+          robot.rotation.y = robot.userData.heading;
+          robot.position.copy(robot.userData.targetPos);
+          robot.userData.pos.copy(robot.userData.targetPos);
+          hasRobotPose = true;
         }
 
-        // Telemetry panel
-        if (state.telemetry) {
-            const t = state.telemetry;
+        if (navTarget) {
+          const dx = rp[0] - navTarget.x;
+          const dz = rp[2] - navTarget.z;
+          if (Math.sqrt(dx*dx + dz*dz) < 30) {
+            navTarget = null;
+            targetMarker.visible = false;
+            navLine.visible = false;
+          }
+        }
+      }
 
-            const statusEl = document.getElementById('tel-status');
-            if (t.on_charger || t.charging) {
-                statusEl.textContent = 'CHARGING';
-                statusEl.className = 'tel-value charging';
-            } else {
-                statusEl.textContent = 'IDLE';
-                statusEl.className = 'tel-value';
-            }
+      // Telemetry panel
+      if (state.telemetry) {
+        const t = state.telemetry;
 
-            const bat = t.battery_voltage;
-            const batEl = document.getElementById('tel-battery');
-            if (bat) {
-                batEl.textContent = `${bat.toFixed(2)}V`;
-                const pct = Math.round(((bat - 3.2) / (4.2 - 3.2)) * 100);
-                if (pct < 15) batEl.className = 'tel-value weak';
-                else if (pct < 40) batEl.className = 'tel-value warn';
-                else batEl.className = 'tel-value';
-            }
-
-            const speed = Math.max(
-                Math.abs(t.left_wheel_speed || 0),
-                Math.abs(t.right_wheel_speed || 0)
-            );
-            document.getElementById('tel-speed').textContent =
-                speed > 0.01 ? `${speed.toFixed(0)} mm/s` : '0 mm/s';
-
-            const head = t.head_angle;
-            document.getElementById('tel-head').textContent =
-                head != null ? `${head.toFixed(1)}\u00b0` : '--\u00b0';
-
-            const lift = t.lift_height;
-            document.getElementById('tel-lift').textContent =
-                lift != null ? `${lift.toFixed(1)} mm` : '-- mm';
-
-            document.getElementById('tel-wheel-l').textContent =
-                `${(t.left_wheel_speed || 0).toFixed(0)} mm/s`;
-            document.getElementById('tel-wheel-r').textContent =
-                `${(t.right_wheel_speed || 0).toFixed(0)} mm/s`;
+        const statusEl = document.getElementById('tel-status');
+        if (t.on_charger || t.charging) {
+          statusEl.textContent = 'CHARGING';
+          statusEl.className = 'tel-value charging';
+        } else {
+          statusEl.textContent = 'IDLE';
+          statusEl.className = 'tel-value';
         }
 
-        // Floor grid size
-        if (state.floor_size) applyFloorSize(state.floor_size);
-        if (state.floor_center) applyFloorCenter(state.floor_center);
+        const bat = t.battery_voltage;
+        const batEl = document.getElementById('tel-battery');
+        if (bat) {
+          batEl.textContent = `${bat.toFixed(2)}V`;
+          const pct = Math.round(((bat - 3.2) / (4.2 - 3.2)) * 100);
+          if (pct < 15) batEl.className = 'tel-value weak';
+          else if (pct < 40) batEl.className = 'tel-value warn';
+          else batEl.className = 'tel-value';
+        }
 
-        // Occupancy map overlay
-        if (state.occupancy_png) applyOccupancyPng(state.occupancy_png);
+        const speed = Math.max(
+          Math.abs(t.left_wheel_speed || 0),
+          Math.abs(t.right_wheel_speed || 0)
+        );
+        document.getElementById('tel-speed').textContent =
+          speed > 0.01 ? `${speed.toFixed(0)} mm/s` : '0 mm/s';
+
+        const head = t.head_angle;
+        document.getElementById('tel-head').textContent =
+          head != null ? `${head.toFixed(1)}\u00b0` : '--\u00b0';
+
+        const lift = t.lift_height;
+        document.getElementById('tel-lift').textContent =
+          lift != null ? `${lift.toFixed(1)} mm` : '-- mm';
+
+        document.getElementById('tel-wheel-l').textContent =
+          `${(t.left_wheel_speed || 0).toFixed(0)} mm/s`;
+        document.getElementById('tel-wheel-r').textContent =
+          `${(t.right_wheel_speed || 0).toFixed(0)} mm/s`;
+      }
+
+      // Floor grid size
+      if (state.floor_size) applyFloorSize(state.floor_size);
+      if (state.floor_center) applyFloorCenter(state.floor_center);
+
+      // Occupancy map overlay
+      if (state.occupancy_png) applyOccupancyPng(state.occupancy_png);
     }
 
     // -----------------------------------------------------------------------
     // Remote control (COZMO-25)
     // -----------------------------------------------------------------------
     const CONTROL_KEYS = {
-        w: 'drive fwd', s: 'drive rev', a: 'spin left', d: 'spin right',
-        r: 'head up', f: 'head down', t: 'lift up', g: 'lift down',
-        ' ': 'stop all',
+      w: 'drive fwd', s: 'drive rev', a: 'spin left', d: 'spin right',
+      r: 'head up', f: 'head down', t: 'lift up', g: 'lift down',
+      ' ': 'stop all',
     };
     const heldKeys = new Set();
     const controlKeyEls = document.querySelectorAll('.ctl-key');
 
     function sendControl() {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        try {
-            ws.send(JSON.stringify({type: 'control', keys: Array.from(heldKeys)}));
-        } catch (e) {
-            console.warn('control send failed', e);
-        }
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'control', keys: Array.from(heldKeys) }));
+      } catch (e) {
+        console.warn('control send failed', e);
+      }
     }
 
     setInterval(sendControl, 50);
 
     function describeKeys(keys) {
-        const names = [];
-        for (const k of keys) {
-            if (k === ' ') names.push('SPACE');
-            else names.push(k.toUpperCase());
-        }
-        return names;
+      const names = [];
+      for (const k of keys) {
+        if (k === ' ') names.push('SPACE');
+        else names.push(k.toUpperCase());
+      }
+      return names;
     }
 
     function updateControlHud() {
-        for (const el of controlKeyEls) {
-            const k = el.dataset.key;
-            if (k in CONTROL_KEYS) {
-                el.classList.toggle('active', heldKeys.has(k));
-            }
+      for (const el of controlKeyEls) {
+        const k = el.dataset.key;
+        if (k in CONTROL_KEYS) {
+          el.classList.toggle('active', heldKeys.has(k));
         }
-        const titleEl = document.getElementById('controls-title');
-        if (titleEl) {
-            titleEl.textContent =
-                heldKeys.size > 0
-                    ? `Driving: ${describeKeys(heldKeys).join(' + ')}`
-                    : 'Remote control — keys register while this tab is focused';
-        }
+      }
+      const titleEl = document.getElementById('controls-title');
+      if (titleEl) {
+        titleEl.textContent =
+          heldKeys.size > 0
+            ? `Driving: ${describeKeys(heldKeys).join(' + ')}`
+            : 'Remote control — keys register while this tab is focused';
+      }
     }
 
     function clearHeld() {
-        if (heldKeys.size === 0) return;
-        heldKeys.clear();
-        sendControl();
-        updateControlHud();
+      if (heldKeys.size === 0) return;
+      heldKeys.clear();
+      sendControl();
+      updateControlHud();
     }
 
     function normalizeKey(e) {
-        if (e.key === ' ') return ' ';
-        if (e.key.length === 1) return e.key.toLowerCase();
-        return e.key;
+      if (e.key === ' ') return ' ';
+      if (e.key.length === 1) return e.key.toLowerCase();
+      return e.key;
     }
 
     function onKeyDown(e) {
-        if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const norm = normalizeKey(e);
-        if (e.repeat) return;
-        if (norm === 'z') {
-            e.preventDefault();
-            sendDock();
-            return;
-        }
-        if (!(norm in CONTROL_KEYS)) return;
-        e.preventDefault();
-        heldKeys.add(norm);
-        sendControl();
-        updateControlHud();
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const norm = normalizeKey(e);
+      if (e.repeat) return;
+      if (norm === 'z') { e.preventDefault(); sendDock(); return; }
+      if (!(norm in CONTROL_KEYS)) return;
+      e.preventDefault();
+      heldKeys.add(norm);
+      sendControl();
+      updateControlHud();
     }
 
     function onKeyUp(e) {
-        const norm = normalizeKey(e);
-        if (!(norm in CONTROL_KEYS)) return;
-        heldKeys.delete(norm);
-        sendControl();
-        updateControlHud();
+      const norm = normalizeKey(e);
+      if (!(norm in CONTROL_KEYS)) return;
+      heldKeys.delete(norm);
+      sendControl();
+      updateControlHud();
     }
 
-    window.addEventListener('keydown', onKeyDown, {capture: true});
-    window.addEventListener('keyup', onKeyUp, {capture: true});
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    window.addEventListener('keyup', onKeyUp, { capture: true });
     window.addEventListener('blur', clearHeld);
     document.addEventListener('visibilitychange', () => {
-        if (document.hidden) clearHeld();
+      if (document.hidden) clearHeld();
     });
     window.addEventListener('beforeunload', () => {
-        heldKeys.clear();
-        sendControl();
+      heldKeys.clear();
+      sendControl();
     });
 
     // -----------------------------------------------------------------------
     // HUD helpers
     // -----------------------------------------------------------------------
     function setStatus(s) {
-        const dot = document.getElementById('status-dot');
-        const label = document.getElementById('status-text');
-        dot.className = `status-dot ${s}`;
-        label.className = `status-label ${s}`;
-        label.textContent = s;
+      const dot = document.getElementById('status-dot');
+      const label = document.getElementById('status-text');
+      dot.className = `status-dot ${s}`;
+      label.className = `status-label ${s}`;
+      label.textContent = s;
     }
 
     // -----------------------------------------------------------------------
@@ -826,74 +809,74 @@
     const _tmpQuat = new THREE.Quaternion();
 
     function frameAlongHeading() {
-        const h = robot.userData.heading || 0;
-        const sinH = Math.sin(h);
-        const cosH = Math.cos(h);
-        const fwd = new THREE.Vector3(sinH, 0, cosH);
-        const back = fwd.clone().multiplyScalar(-1);
+      const h = robot.userData.heading || 0;
+      const sinH = Math.sin(h);
+      const cosH = Math.cos(h);
+      const fwd = new THREE.Vector3(sinH, 0, cosH);
+      const back = fwd.clone().multiplyScalar(-1);
 
-        const target = robot.position.clone();
-        const dist = 300;
-        const height = 120;
-        camera.position.copy(robot.position).add(back.multiplyScalar(dist));
-        camera.position.y = target.y + height;
-        camera.lookAt(target);
-        controls.target.copy(target);
-        controls.update();
-        didInitialFrame = true;
+      const target = robot.position.clone();
+      const dist = 300;
+      const height = 120;
+      camera.position.copy(robot.position).add(back.multiplyScalar(dist));
+      camera.position.y = target.y + height;
+      camera.lookAt(target);
+      controls.target.copy(target);
+      controls.update();
+      didInitialFrame = true;
     }
 
     function animate() {
-        requestAnimationFrame(animate);
+      requestAnimationFrame(animate);
 
-        for (const g of Object.values(cubeGroups)) {
-            const lerp = 0.35;
-            _tmpPos.copy(g.userData.targetPos);
-            g.position.lerp(_tmpPos, lerp);
-            _tmpQuat.copy(g.userData.targetQuat);
-            g.quaternion.slerp(_tmpQuat, lerp);
-        }
+      for (const g of Object.values(cubeGroups)) {
+        const lerp = 0.35;
+        _tmpPos.copy(g.userData.targetPos);
+        g.position.lerp(_tmpPos, lerp);
+        _tmpQuat.copy(g.userData.targetQuat);
+        g.quaternion.slerp(_tmpQuat, lerp);
+      }
 
-        if (hasRobotPose) {
-            const tgt = robot.userData.targetHeading;
-            let cur = robot.userData.heading;
-            let diff = tgt - cur;
-            while (diff > Math.PI) diff -= 2 * Math.PI;
-            while (diff < -Math.PI) diff += 2 * Math.PI;
-            robot.userData.heading = cur + diff * 0.25;
-            robot.rotation.y = robot.userData.heading;
+      if (hasRobotPose) {
+        const tgt = robot.userData.targetHeading;
+        let cur = robot.userData.heading;
+        let diff = tgt - cur;
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+        robot.userData.heading = cur + diff * 0.25;
+        robot.rotation.y = robot.userData.heading;
 
-            _tmpPos.copy(robot.userData.targetPos);
-            robot.position.lerp(_tmpPos, 0.25);
-            robot.userData.pos.copy(robot.position);
-        }
+        _tmpPos.copy(robot.userData.targetPos);
+        robot.position.lerp(_tmpPos, 0.25);
+        robot.userData.pos.copy(robot.position);
+      }
 
-        if (hasRobotPose && !didInitialFrame) {
-            frameAlongHeading();
-        }
+      if (hasRobotPose && !didInitialFrame) {
+        frameAlongHeading();
+      }
 
-        controls.update();
-        renderer.render(scene, camera);
+      controls.update();
+      renderer.render(scene, camera);
 
-        frameCount++;
-        const now = performance.now();
-        if (now - lastFpsTime >= 1000) {
-            document.getElementById('fps').textContent = `${frameCount} FPS`;
-            frameCount = 0;
-            lastFpsTime = now;
-        }
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        document.getElementById('fps').textContent = `${frameCount} FPS`;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
     }
 
     // -----------------------------------------------------------------------
     // Resize
     // -----------------------------------------------------------------------
     window.addEventListener('resize', () => {
-        const panel = document.getElementById('viewer-canvas-wrap');
-        const w = panel.clientWidth;
-        const h = panel.clientHeight;
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-        renderer.setSize(w, h);
+      const panel = document.getElementById('viewer-canvas-wrap');
+      const w = panel.clientWidth;
+      const h = panel.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
     });
 
     // -----------------------------------------------------------------------
@@ -901,6 +884,6 @@
     // -----------------------------------------------------------------------
     connectWS();
     animate();
-</script>
+  </script>
 </body>
 </html>
