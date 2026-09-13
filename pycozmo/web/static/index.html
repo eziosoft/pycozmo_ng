@@ -15,67 +15,99 @@
   </script>
 </head>
 <body>
-  <!-- UI overlays -->
-  <div id="hud">
-    <span id="fps">-- FPS</span>
-    <span id="status" class="disconnected">disconnected</span>
-    <span id="cube-count">0 cubes</span>
-    <span id="path-count"></span>
-  </div>
-
-  <!-- Telemetry HUD. Populated from the broadcast state's "telemetry"
-       field, updated on every RobotState packet. (COZMO-28) -->
-  <div id="telemetry-hud">
-    <span class="tel-charge" id="tel-charge">⏻ --</span>
-    <span id="tel-battery">🔋 --</span>
-    <span id="tel-speed">── mm/s</span>
-    <span id="tel-head">cam --°</span>
-    <span id="tel-lift">fork --mm</span>
-  </div>
-
-  <!-- Remote-control HUD. Keys light up while held; keys register
-       whenever the browser tab itself is focused. (COZMO-25) -->
-  <div id="controls-hud">
-    <div id="controls-title">Remote control (click here to focus)</div>
-    <table id="controls-grid">
-      <tr>
-        <td><span class="ctl-key" data-key="w">W</span></td>
-        <td class="ctl-label">drive fwd</td>
-        <td><span class="ctl-key" data-key="r">R</span></td>
-        <td class="ctl-label">head up</td>
-      </tr>
-      <tr>
-        <td>
-          <span class="ctl-key" data-key="a">A</span>
-          <span class="ctl-key" data-key="s">S</span>
-          <span class="ctl-key" data-key="d">D</span>
-        </td>
-        <td class="ctl-label" colspan="3">spin left / reverse / spin right</td>
-      </tr>
-      <tr>
-        <td>
-          <span class="ctl-key" data-key="f">F</span>
-          <span class="ctl-key" data-key="t">T</span>
-          <span class="ctl-key" data-key="g">G</span>
-        </td>
-        <td class="ctl-label" colspan="3">head down / lift up / lift down</td>
-      </tr>
-      <tr>
-        <td><span class="ctl-key ctl-key-wide" data-key=" ">SPACE</span></td>
-        <td class="ctl-label" colspan="3">stop all motors</td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- Split layout: camera | 3D -->
+  <!-- Split layout: left (camera + telemetry) | right (status + 3D) -->
   <div id="layout">
-    <div id="camera-panel">
-      <div id="camera-label">Cozmo Camera</div>
-      <img id="camera-feed" src="/video" alt="Camera feed" />
-
-      <!-- Camera tuning moved to Cozmo's auto-exposure — see COZMO-24 -->
+    <!-- Left column: camera feed on top, telemetry below -->
+    <div id="left-col">
+      <div id="camera-panel">
+        <div id="camera-label">Cozmo Camera</div>
+        <img id="camera-feed" src="/video" alt="Camera feed" />
+      </div>
+      <div id="telemetry-panel">
+        <h3>Telemetry</h3>
+        <div class="tel-row">
+          <span class="tel-label">Status</span>
+          <span class="tel-value" id="tel-status">--</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Battery</span>
+          <span class="tel-value" id="tel-battery">--</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Speed</span>
+          <span class="tel-value" id="tel-speed">0 mm/s</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Head</span>
+          <span class="tel-value" id="tel-head">--&deg;</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Lift</span>
+          <span class="tel-value" id="tel-lift">-- mm</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Wheel L</span>
+          <span class="tel-value" id="tel-wheel-l">0 mm/s</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Wheel R</span>
+          <span class="tel-value" id="tel-wheel-r">0 mm/s</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Cubes</span>
+          <span class="tel-value" id="tel-cubes">0</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Path</span>
+          <span class="tel-value" id="tel-path">0 pts</span>
+        </div>
+      </div>
     </div>
-    <div id="viewer-panel"></div>
+
+    <!-- Right column: status bar + 3D viewer -->
+    <div id="viewer-panel">
+      <div id="status-bar">
+        <span class="status-dot disconnected" id="status-dot"></span>
+        <span class="status-label disconnected" id="status-text">disconnected</span>
+        <span class="stat" id="fps">-- FPS</span>
+        <span class="stat" id="cube-count">0 cubes</span>
+        <span class="stat" id="path-count"></span>
+      </div>
+      <div id="viewer-canvas-wrap"></div>
+
+      <!-- Remote-control HUD -->
+      <div id="controls-hud">
+        <div id="controls-title">Remote control (click here to focus)</div>
+        <table id="controls-grid">
+          <tr>
+            <td><span class="ctl-key" data-key="w">W</span></td>
+            <td class="ctl-label">drive fwd</td>
+            <td><span class="ctl-key" data-key="r">R</span></td>
+            <td class="ctl-label">head up</td>
+          </tr>
+          <tr>
+            <td>
+              <span class="ctl-key" data-key="a">A</span>
+              <span class="ctl-key" data-key="s">S</span>
+              <span class="ctl-key" data-key="d">D</span>
+            </td>
+            <td class="ctl-label" colspan="3">spin left / reverse / spin right</td>
+          </tr>
+          <tr>
+            <td>
+              <span class="ctl-key" data-key="f">F</span>
+              <span class="ctl-key" data-key="t">T</span>
+              <span class="ctl-key" data-key="g">G</span>
+            </td>
+            <td class="ctl-label" colspan="3">head down / lift up / lift down</td>
+          </tr>
+          <tr>
+            <td><span class="ctl-key ctl-key-wide" data-key=" ">SPACE</span></td>
+            <td class="ctl-label" colspan="3">stop all motors</td>
+          </tr>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script type="module">
@@ -87,16 +119,16 @@
     // -----------------------------------------------------------------------
     const WS_PORT = 8765;
     const WS_URL = `ws://${location.hostname || 'localhost'}:${WS_PORT}`;
-    const CUBE_SIZE = 44;  // mm
-    const CUBE_COLORS = [0xff4444, 0x4444ff, 0x44cc44]; // red, blue, green
+    const CUBE_SIZE = 44;
+    const CUBE_COLORS = [0xff4444, 0x4444ff, 0x44cc44];
 
     // -----------------------------------------------------------------------
     // Renderer
     // -----------------------------------------------------------------------
-    const viewerPanel = document.getElementById('viewer-panel');
+    const viewerPanel = document.getElementById('viewer-canvas-wrap');
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setClearColor(0x1a1a2e);
+    renderer.setClearColor(0x0d1110);
     viewerPanel.appendChild(renderer.domElement);
     renderer.setSize(viewerPanel.clientWidth, viewerPanel.clientHeight);
 
@@ -104,7 +136,7 @@
     // Scene + camera
     // -----------------------------------------------------------------------
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x1a1a2e, 1500, 4000);
+    scene.fog = new THREE.Fog(0x0d1110, 1500, 4000);
 
     const camera = new THREE.PerspectiveCamera(
       45, viewerPanel.clientWidth / viewerPanel.clientHeight, 0.1, 5000
@@ -125,30 +157,26 @@
     // -----------------------------------------------------------------------
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Y=0 plane
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
-    // Target marker (ring on ground)
     const targetMarker = new THREE.Mesh(
       new THREE.RingGeometry(15, 25, 32),
-      new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
+      new THREE.MeshBasicMaterial({ color: 0x9287d7, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
     );
     targetMarker.rotation.x = -Math.PI / 2;
     targetMarker.position.y = 0.5;
     targetMarker.visible = false;
     scene.add(targetMarker);
 
-    // Line from robot to target
     const navLineGeo = new THREE.BufferGeometry();
     navLineGeo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 0,0,0], 3));
-    const navLineMat = new THREE.LineDashedMaterial({ color: 0x00ff88, dashSize: 10, gapSize: 5 });
+    const navLineMat = new THREE.LineDashedMaterial({ color: 0x9287d7, dashSize: 10, gapSize: 5 });
     const navLine = new THREE.Line(navLineGeo, navLineMat);
     navLine.visible = false;
     scene.add(navLine);
 
-    let navTarget = null; // scene-frame Vector3 of clicked point
+    let navTarget = null;
 
-    // (COZMO-28) Double-click triggers navigation — a single click is too
-    // easy to register by accident when orbiting/panning the camera.
     let lastClickTime = 0;
     const DOUBLE_CLICK_MS = 350;
 
@@ -163,17 +191,15 @@
     }
 
     function performNavigation(event) {
-      // Only handle left click, ignore if orbiting (right-click/middle)
       if (event.button !== 0) return;
 
-      const panel = document.getElementById('viewer-panel');
+      const panel = document.getElementById('viewer-canvas-wrap');
       const rect = panel.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
 
-      // First: check if a cube was clicked
       const cubeMeshes = [];
       for (const [id, g] of Object.entries(cubeGroups)) {
         g.traverse(child => {
@@ -182,7 +208,6 @@
       }
       const cubeHits = raycaster.intersectObjects(cubeMeshes);
       if (cubeHits.length > 0) {
-        // Find which cube group was hit
         let hitObj = cubeHits[0].object;
         for (const [id, g] of Object.entries(cubeGroups)) {
           if (g.children.includes(hitObj) || g === hitObj.parent) {
@@ -190,7 +215,6 @@
             return;
           }
         }
-        // Fallback: walk up to find cube group
         let parent = hitObj.parent;
         while (parent && !Object.values(cubeGroups).includes(parent)) {
           parent = parent.parent;
@@ -204,12 +228,10 @@
         }
       }
 
-      // Second: ground plane click — navigate to point
       const hit = new THREE.Vector3();
       const intersected = raycaster.ray.intersectPlane(groundPlane, hit);
 
       if (intersected) {
-        // Clamp to grid bounds (±1000mm)
         hit.x = Math.max(-1000, Math.min(1000, hit.x));
         hit.z = Math.max(-1000, Math.min(1000, hit.z));
         hit.y = 0.5;
@@ -218,7 +240,6 @@
         targetMarker.position.copy(hit);
         targetMarker.visible = true;
 
-        // Draw dashed line from robot to target
         const rp = robot.position;
         const positions = navLine.geometry.attributes.position.array;
         positions[0] = rp.x; positions[1] = 0.5; positions[2] = rp.z;
@@ -227,7 +248,6 @@
         navLine.computeLineDistances();
         navLine.visible = true;
 
-        // Send navigate_to (scene coords — server converts to world)
         sendNavigateTo(hit.x, hit.z);
       }
     }
@@ -259,7 +279,6 @@
       }
     }
 
-    // Right-click or Escape cancels navigation
     function cancelNavigation() {
       navTarget = null;
       targetMarker.visible = false;
@@ -289,10 +308,10 @@
     scene.add(backLight);
 
     // -----------------------------------------------------------------------
-    // Grid  (2000mm, 20 divisions = 100mm spacing)
+    // Grid (2000mm, 20 divisions = 100mm spacing)
     // -----------------------------------------------------------------------
-    const grid = new THREE.GridHelper(2000, 20, 0x555555, 0x333333);
-    grid.material.opacity = 0.4;
+    const grid = new THREE.GridHelper(2000, 20, 0x3d4842, 0x252c29);
+    grid.material.opacity = 0.5;
     grid.material.transparent = true;
     scene.add(grid);
 
@@ -306,53 +325,41 @@
     // Floor plane
     // -----------------------------------------------------------------------
     const floorGeo = new THREE.PlaneGeometry(4000, 4000);
-    const floorMat = new THREE.MeshLambertMaterial({ color: 0x888888, side: THREE.DoubleSide });
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0x252c29, side: THREE.DoubleSide });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.1;
     scene.add(floor);
 
     // -----------------------------------------------------------------------
-    // Robot box  (Cozmo: 90 L x 56 W x 70 H mm — BoxGeometry(x=W, y=H, z=L))
-    // Camera: 30 mm back from front, 38 mm high. Rotation point: 50 mm from front.
-    // (COZMO-28, user-measured)
+    // Robot box
     // -----------------------------------------------------------------------
     function createRobot() {
       const group = new THREE.Group();
 
-      // Cozmo dimensions: 90 mm long, 56 mm wide, 70 mm high.
-      // Width along scene X, height along scene Y, length along scene Z
-      // (forward), so BoxGeometry(width=56, height=70, depth=90).
       const geo = new THREE.BoxGeometry(56, 70, 90);
-      // Wireframe
       const wire = new THREE.LineSegments(
         new THREE.EdgesGeometry(geo),
-        new THREE.LineBasicMaterial({ color: 0xcccccc })
+        new THREE.LineBasicMaterial({ color: 0x9ea9a3 })
       );
       group.add(wire);
-      // Semi-transparent fill
       const fill = new THREE.Mesh(
         geo,
         new THREE.MeshLambertMaterial({
-          color: 0x888888,
+          color: 0x9287d7,
           transparent: true,
-          opacity: 0.25,
+          opacity: 0.2,
         })
       );
       group.add(fill);
 
-      // The group origin is the robot's yaw rotation point (50 mm from front,
-      // on the ground). Camera is 30 mm back from front, 38 mm up.
-      // Box front is at Z = +40 (50 mm forward of rotation point).
-      // Box center: (0, 35, -5) — half-height up, half-length shifted back.
       fill.position.set(0, 35, -5);
       wire.position.set(0, 35, -5);
 
-      // Camera origin marker (yellow dot) — 30 mm back, 38 mm up
       const camGeo = new THREE.SphereGeometry(3, 12, 8);
-      const camMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
+      const camMat = new THREE.MeshBasicMaterial({ color: 0xe0a530 });
       const camMarker = new THREE.Mesh(camGeo, camMat);
-      camMarker.position.set(0, 38, 20); // 20 = 50-30, forward of rotation point
+      camMarker.position.set(0, 38, 20);
       group.add(camMarker);
 
       return group;
@@ -366,8 +373,7 @@
     scene.add(robot);
 
     // -----------------------------------------------------------------------
-    // Path trail. (COZMO-27) Points arrive already in scene coordinates —
-    // the library (WorldMap + WebViewerServer) does all frame math.
+    // Path trail (COZMO-27)
     // -----------------------------------------------------------------------
     const PATH_MAX_POINTS = 5000;
     const pathPositions = new Float32Array(PATH_MAX_POINTS * 3);
@@ -375,7 +381,7 @@
     pathGeometry.setAttribute('position', new THREE.BufferAttribute(pathPositions, 3));
     pathGeometry.setDrawRange(0, 0);
 
-    const pathMaterial = new THREE.LineBasicMaterial({ color: 0x00ff88 });
+    const pathMaterial = new THREE.LineBasicMaterial({ color: 0x4ade80 });
     const pathLine = new THREE.Line(pathGeometry, pathMaterial);
     scene.add(pathLine);
     let pathPointCount = 0;
@@ -383,27 +389,22 @@
     // -----------------------------------------------------------------------
     // Cube management
     // -----------------------------------------------------------------------
-    const cubeGroups = {};  // cube_id → THREE.Group
-
-    // Cubes arrive in scene coordinates (library does the frame math).
+    const cubeGroups = {};
     let hasRobotPose = false;
-    let didInitialFrame = false;  // one-shot: re-frame camera on first pose
+    let didInitialFrame = false;
 
     function createCube(id) {
       const group = new THREE.Group();
-
       const idx = parseInt(id.replace('cube_', ''), 10) - 1;
       const color = CUBE_COLORS[idx] || 0x00ccaa;
 
-      // Wireframe edges
       const geo = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
       const wire = new THREE.LineSegments(
         new THREE.EdgesGeometry(geo),
-        new THREE.LineBasicMaterial({ color: 0xffffff })
+        new THREE.LineBasicMaterial({ color: 0xe3e8e6 })
       );
       group.add(wire);
 
-      // Semi-transparent colored faces
       const mat = new THREE.MeshLambertMaterial({
         color,
         transparent: true,
@@ -412,7 +413,6 @@
       const mesh = new THREE.Mesh(geo, mat);
       group.add(mesh);
 
-      // Small axes at cube center
       const axLen = CUBE_SIZE * 0.6;
       const axGeo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(0, 0, 0),
@@ -457,16 +457,12 @@
 
     function connectWS() {
       ws = new WebSocket(WS_URL);
-      ws.onopen = () => {
-        setStatus('connected');
-      };
+      ws.onopen = () => setStatus('connected');
       ws.onclose = () => {
         setStatus('disconnected');
         reconnectTimer = setTimeout(connectWS, 2000);
       };
-      ws.onerror = () => {
-        ws.close();
-      };
+      ws.onerror = () => ws.close();
       ws.onmessage = (evt) => {
         try {
           const state = JSON.parse(evt.data);
@@ -478,7 +474,6 @@
     }
 
     function applyState(state) {
-      // Cubes
       const seen = new Set();
       for (const c of state.cubes || []) {
         seen.add(c.id);
@@ -487,7 +482,6 @@
 
         g.userData.targetPos.set(c.position[0], c.position[1], c.position[2]);
 
-        // Rotation matrix → quaternion
         const m = new THREE.Matrix4();
         m.set(
           c.rotation[0][0], c.rotation[0][1], c.rotation[0][2], 0,
@@ -497,13 +491,13 @@
         );
         g.userData.targetQuat.setFromRotationMatrix(m);
       }
-      // Remove cubes no longer present
       for (const id of Object.keys(cubeGroups)) {
         if (!seen.has(id)) removeCube(id);
       }
       document.getElementById('cube-count').textContent = `${seen.size} cubes`;
+      document.getElementById('tel-cubes').textContent = seen.size;
 
-      // Path trail. Points arrive in scene coordinates (library does the math).
+      // Path trail
       if (state.path_points) {
         const pts = state.path_points;
         pathPointCount = Math.min(pts.length, PATH_MAX_POINTS);
@@ -514,12 +508,11 @@
         }
         pathGeometry.attributes.position.needsUpdate = true;
         pathGeometry.setDrawRange(0, pathPointCount);
-        const pathEl = document.getElementById('path-count');
-        if (pathEl) pathEl.textContent = `${pathPointCount} pts`;
+        document.getElementById('path-count').textContent = `${pathPointCount} pts`;
+        document.getElementById('tel-path').textContent = `${pathPointCount} pts`;
       }
 
-      // Robot pose — position and heading arrive already in scene frame
-      // (heading is a scene rotation.y). (COZMO-27)
+      // Robot pose
       if (state.robot) {
         robot.userData.targetHeading = state.robot.heading || 0;
         const rp = state.robot.position || [0, 0, 0];
@@ -532,7 +525,6 @@
           hasRobotPose = true;
         }
 
-        // Hide nav markers when robot is close to target (within 30mm)
         if (navTarget) {
           const dx = rp[0] - navTarget.x;
           const dz = rp[2] - navTarget.z;
@@ -544,61 +536,62 @@
         }
       }
 
-      // Telemetry HUD (COZMO-28)
+      // Telemetry panel
       if (state.telemetry) {
         const t = state.telemetry;
-        const chargeEl = document.getElementById('tel-charge');
+
+        const statusEl = document.getElementById('tel-status');
         if (t.on_charger || t.charging) {
-          chargeEl.textContent = '⏻ CHARGING';
-          chargeEl.className = 'tel-charge on';
+          statusEl.textContent = 'CHARGING';
+          statusEl.className = 'tel-value charging';
         } else {
-          chargeEl.textContent = '⏻ --';
-          chargeEl.className = 'tel-charge';
+          statusEl.textContent = 'IDLE';
+          statusEl.className = 'tel-value';
         }
+
         const bat = t.battery_voltage;
-        document.getElementById('tel-battery').textContent =
-          bat ? `🔋 ${bat.toFixed(2)}V` : '🔋 --';
+        const batEl = document.getElementById('tel-battery');
+        if (bat) {
+          batEl.textContent = `${bat.toFixed(2)}V`;
+          const pct = Math.round(((bat - 3.2) / (4.2 - 3.2)) * 100);
+          if (pct < 15) batEl.className = 'tel-value weak';
+          else if (pct < 40) batEl.className = 'tel-value warn';
+          else batEl.className = 'tel-value';
+        }
+
         const speed = Math.max(
           Math.abs(t.left_wheel_speed || 0),
           Math.abs(t.right_wheel_speed || 0)
         );
         document.getElementById('tel-speed').textContent =
-          speed > 0.01 ? `🚗 ${speed.toFixed(0)} mm/s` : '🚗 0 mm/s';
+          speed > 0.01 ? `${speed.toFixed(0)} mm/s` : '0 mm/s';
+
         const head = t.head_angle;
         document.getElementById('tel-head').textContent =
-          head != null ? `🎥 ${head.toFixed(0)}°` : '🎥 --°';
+          head != null ? `${head.toFixed(1)}\u00b0` : '--\u00b0';
+
         const lift = t.lift_height;
         document.getElementById('tel-lift').textContent =
-          lift != null ? `🍴 ${lift.toFixed(0)}mm` : '🍴 --mm';
+          lift != null ? `${lift.toFixed(1)} mm` : '-- mm';
+
+        document.getElementById('tel-wheel-l').textContent =
+          `${(t.left_wheel_speed || 0).toFixed(0)} mm/s`;
+        document.getElementById('tel-wheel-r').textContent =
+          `${(t.right_wheel_speed || 0).toFixed(0)} mm/s`;
       }
     }
 
     // -----------------------------------------------------------------------
-    // Remote control — keyboard → Cozmo motors via WebSocket. (COZMO-25)
-    //
-    // Keys register whenever the page has focus (the natural
-    // expectation: tab focus follows the click). The on-screen HUD
-    // shows what's held; pressing the keys without ever clicking the
-    // HUD will also work as long as the tab itself is the focused
-    // browser tab.
+    // Remote control (COZMO-25)
     // -----------------------------------------------------------------------
     const CONTROL_KEYS = {
-      w: 'drive fwd',
-      s: 'drive rev',
-      a: 'spin left',
-      d: 'spin right',
-      r: 'head up',
-      f: 'head down',
-      t: 'lift up',
-      g: 'lift down',
+      w: 'drive fwd', s: 'drive rev', a: 'spin left', d: 'spin right',
+      r: 'head up', f: 'head down', t: 'lift up', g: 'lift down',
       ' ': 'stop all',
     };
     const heldKeys = new Set();
     const controlKeyEls = document.querySelectorAll('.ctl-key');
 
-    // Send current key state to the server. Called on every key event
-    // AND by a periodic heartbeat so the server always has the latest
-    // state even if a keyup event is swallowed by the browser.
     function sendControl() {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       try {
@@ -608,10 +601,6 @@
       }
     }
 
-    // Heartbeat: re-send held keys every 50 ms. This is the primary
-    // mechanism for keeping Cozmo driving — individual keyup events
-    // may be unreliable (e.g. browser focus quirks), but the heartbeat
-    // guarantees the server always sees the correct key state.
     setInterval(sendControl, 50);
 
     function describeKeys(keys) {
@@ -656,11 +645,7 @@
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const norm = normalizeKey(e);
       if (e.repeat) return;
-      if (norm === 'z') {
-        e.preventDefault();
-        sendDock();
-        return;
-      }
+      if (norm === 'z') { e.preventDefault(); sendDock(); return; }
       if (!(norm in CONTROL_KEYS)) return;
       e.preventDefault();
       heldKeys.add(norm);
@@ -691,9 +676,11 @@
     // HUD helpers
     // -----------------------------------------------------------------------
     function setStatus(s) {
-      const el = document.getElementById('status');
-      el.textContent = s;
-      el.className = s === 'connected' ? 'connected' : 'disconnected';
+      const dot = document.getElementById('status-dot');
+      const label = document.getElementById('status-text');
+      dot.className = `status-dot ${s}`;
+      label.className = `status-label ${s}`;
+      label.textContent = s;
     }
 
     // -----------------------------------------------------------------------
@@ -705,22 +692,14 @@
     const _tmpPos = new THREE.Vector3();
     const _tmpQuat = new THREE.Quaternion();
 
-    // (COZMO-31) One-shot camera framing: place the camera behind the
-    // robot along its heading axis so the user sees the scene along
-    // Cozmo's actual viewing direction on page load. Subsequent user
-    // drags on OrbitControls override this — we don't fight them.
     function frameAlongHeading() {
       const h = robot.userData.heading || 0;
       const sinH = Math.sin(h);
       const cosH = Math.cos(h);
-      // Heading rotation around world Z (= scene +Y) takes scene +Z
-      // (the robot's drawn forward) to (sin h, 0, cos h).
       const fwd = new THREE.Vector3(sinH, 0, cosH);
       const back = fwd.clone().multiplyScalar(-1);
 
       const target = robot.position.clone();
-      target.y += 0;  // eye line at camera origin
-
       const dist = 300;
       const height = 120;
       camera.position.copy(robot.position).add(back.multiplyScalar(dist));
@@ -734,7 +713,6 @@
     function animate() {
       requestAnimationFrame(animate);
 
-      // Lerp cubes toward target poses
       for (const g of Object.values(cubeGroups)) {
         const lerp = 0.35;
         _tmpPos.copy(g.userData.targetPos);
@@ -743,7 +721,6 @@
         g.quaternion.slerp(_tmpQuat, lerp);
       }
 
-      // Lerp robot heading toward target (unwrap to avoid 359° → 1° flips).
       if (hasRobotPose) {
         const tgt = robot.userData.targetHeading;
         let cur = robot.userData.heading;
@@ -753,7 +730,6 @@
         robot.userData.heading = cur + diff * 0.25;
         robot.rotation.y = robot.userData.heading;
 
-        // Lerp robot position toward target
         _tmpPos.copy(robot.userData.targetPos);
         robot.position.lerp(_tmpPos, 0.25);
         robot.userData.pos.copy(robot.position);
@@ -766,7 +742,6 @@
       controls.update();
       renderer.render(scene, camera);
 
-      // FPS counter
       frameCount++;
       const now = performance.now();
       if (now - lastFpsTime >= 1000) {
@@ -780,7 +755,7 @@
     // Resize
     // -----------------------------------------------------------------------
     window.addEventListener('resize', () => {
-      const panel = document.getElementById('viewer-panel');
+      const panel = document.getElementById('viewer-canvas-wrap');
       const w = panel.clientWidth;
       const h = panel.clientHeight;
       camera.aspect = w / h;
@@ -789,21 +764,9 @@
     });
 
     // -----------------------------------------------------------------------
-    // Camera tuning moved to Cozmo's auto-exposure — see COZMO-24
-    // -----------------------------------------------------------------------
-    function initControls() {
-      // No-op: brightness/gamma sliders removed. The browser now shows
-      // the raw Cozmo feed; let Cozmo's auto-exposure pick the right
-      // gain and shutter speed for the scene.
-    }
-
-    // (legacy initControls body — kept referenced above as a no-op)
-
-    // -----------------------------------------------------------------------
     // Start
     // -----------------------------------------------------------------------
     connectWS();
-    initControls();
     animate();
   </script>
 </body>
