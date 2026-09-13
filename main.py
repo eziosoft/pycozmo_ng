@@ -114,12 +114,12 @@ def main():
         ),
     )
     parser.add_argument(
-        "--floor-projection",
+        "--no-floor-projection",
         action="store_true",
         help=(
-            "Enable the floor-projected (bird's-eye) camera view. "
-            "Projects the camera image onto the floor plane for occupancy "
-            "mapping. Displayed as a third panel in the vision window."
+            "Disable the floor-projected (bird's-eye) camera view. "
+            "Enabled by default — projects the camera image onto the "
+            "floor plane for occupancy mapping."
         ),
     )
     parser.add_argument(
@@ -195,7 +195,7 @@ def main():
             print(
                 f"   Undistortion: {'ENABLED' if undistort_enabled else 'DISABLED (default - undistortion may cause warping)'}"
             )
-            floor_enabled = args.floor_projection
+            floor_enabled = not args.no_floor_projection
             vision_processor = vision.AnnotatedVisionProcessor(
                 client=cli,
                 camera_calibration=camera_calibration,

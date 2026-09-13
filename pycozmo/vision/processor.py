@@ -431,7 +431,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         camera_calibration: CameraCalibration,
         process_every_n_frames: int = 1,
         undistort: bool = False,
-        enable_floor_projection: bool = False,
+        enable_floor_projection: bool = True,
         floor_center_mm: tuple[float, float] = (200.0, 0.0),
         floor_size_mm: tuple[float, float] = (600.0, 600.0),
         mm_per_pixel: float = 5.0,
