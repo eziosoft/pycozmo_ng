@@ -113,6 +113,27 @@ def main():
             "so leave at 0 (default) until COZMO-22 is fixed. (COZMO-20)"
         ),
     )
+    parser.add_argument(
+        "--floor-projection",
+        action="store_true",
+        help=(
+            "Enable the floor-projected (bird's-eye) camera view. "
+            "Projects the camera image onto the floor plane for occupancy "
+            "mapping. Displayed as a third panel in the vision window."
+        ),
+    )
+    parser.add_argument(
+        "--floor-size",
+        type=float,
+        default=600.0,
+        help="Floor grid size in mm (default: 600, centred 200 mm ahead).",
+    )
+    parser.add_argument(
+        "--floor-resolution",
+        type=float,
+        default=5.0,
+        help="Floor grid resolution in mm/pixel (default: 5).",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -174,11 +195,16 @@ def main():
             print(
                 f"   Undistortion: {'ENABLED' if undistort_enabled else 'DISABLED (default - undistortion may cause warping)'}"
             )
+            floor_enabled = args.floor_projection
             vision_processor = vision.AnnotatedVisionProcessor(
                 client=cli,
                 camera_calibration=camera_calibration,
                 process_every_n_frames=max(1, args.process_every_n_frames),
                 undistort=undistort_enabled,
+                enable_floor_projection=floor_enabled,
+                floor_center_mm=(200.0, 0.0),
+                floor_size_mm=(args.floor_size, args.floor_size),
+                mm_per_pixel=args.floor_resolution,
             )
 
             print("Cube detector initialized with camera calibration")
@@ -197,6 +223,13 @@ def main():
             cli.add_handler(
                 pycozmo.event.EvtCubeDetectorDebugImages, brain.vision.on_debug_images
             )
+
+            if floor_enabled:
+                cli.add_handler(
+                    pycozmo.event.EvtFloorProjectedImage,
+                    brain.vision.on_floor_projected_image,
+                )
+                print("Floor projection ENABLED")
 
             cli.add_handler(
                 pycozmo.protocol_encoder.ObjectConnectionState,

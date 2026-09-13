@@ -16,10 +16,14 @@ from PIL import Image, ImageDraw, ImageFont
 
 from pycozmo import logger
 from pycozmo.vision.camera_calibration import CameraCalibration
+from pycozmo.vision.floor_projector import FloorProjector
 
 # Import CubeFusionTracker
 try:
-    from pycozmo.vision.cube_detector.cube_detector import CozmoCubeDetector, CubeFusionTracker
+    from pycozmo.vision.cube_detector.cube_detector import (
+        CozmoCubeDetector,
+        CubeFusionTracker,
+    )
 
     CUBE_DETECTOR_AVAILABLE = True
 except ImportError:
@@ -427,6 +431,10 @@ class AnnotatedVisionProcessor(VisionProcessor):
         camera_calibration: CameraCalibration,
         process_every_n_frames: int = 1,
         undistort: bool = False,
+        enable_floor_projection: bool = False,
+        floor_center_mm: tuple[float, float] = (200.0, 0.0),
+        floor_size_mm: tuple[float, float] = (600.0, 600.0),
+        mm_per_pixel: float = 5.0,
     ):
         """
         Initialize the annotated vision processor.
@@ -438,6 +446,10 @@ class AnnotatedVisionProcessor(VisionProcessor):
                                    2 = every other frame, etc.)
             undistort: Whether to undistort images using camera calibration
                        (default: False, as undistortion may not be needed or coefficients may be incorrect)
+            enable_floor_projection: Enable floor-projected (bird's-eye) view.
+            floor_center_mm: World-frame (x, y) centre of the floor grid in mm.
+            floor_size_mm: (width, height) of the floor grid in mm.
+            mm_per_pixel: Millimetres per output pixel for the floor view.
         """
         super().__init__(camera_calibration=camera_calibration)
 
@@ -445,6 +457,24 @@ class AnnotatedVisionProcessor(VisionProcessor):
         self.process_every_n_frames = process_every_n_frames
         self.undistort = undistort
         self._frame_counter = 0
+
+        # Floor projector (optional)
+        self.floor_projector: FloorProjector | None = None
+        self.latest_floor_image = None
+        self.latest_occupancy_grid = None
+        if enable_floor_projection:
+            self.floor_projector = FloorProjector(
+                camera_calibration.camera_matrix,
+                camera_calibration.image_width,
+                camera_calibration.image_height,
+                floor_center_mm=floor_center_mm,
+                floor_size_mm=floor_size_mm,
+                mm_per_pixel=mm_per_pixel,
+            )
+            logger.info(
+                f"Floor projection enabled: "
+                f"{floor_size_mm[0]}x{floor_size_mm[1]}mm @ {mm_per_pixel} mm/px"
+            )
 
         # Import here to avoid circular dependency
         from pycozmo import event
@@ -520,6 +550,18 @@ class AnnotatedVisionProcessor(VisionProcessor):
 
             # Also handle cube detection events
             self._dispatch_cube_events(cli, detections)
+
+            # Floor projection (optional)
+            if self.floor_projector is not None:
+                img_array_for_floor = np.array(undistorted_image)
+                img_bgr_for_floor = cv2.cvtColor(img_array_for_floor, cv2.COLOR_RGB2BGR)
+                floor_img = self.floor_projector.project(
+                    img_bgr_for_floor, head_angle_rad
+                )
+                occ_grid = self.floor_projector.compute_occupancy_grid(floor_img)
+                self.latest_floor_image = floor_img
+                self.latest_occupancy_grid = occ_grid
+                cli.dispatch(event.EvtFloorProjectedImage, cli, floor_img, occ_grid)
 
             # NOTE: do NOT call ``gc.collect()`` here. Periodic forced GC
             # runs synchronously on the pycozmo event-dispatcher thread,

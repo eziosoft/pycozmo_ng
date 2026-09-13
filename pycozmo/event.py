@@ -24,6 +24,7 @@ __all__ = [
     "EvtCubeDetectorDebugImages",
     "EvtCubeLost",
     "EvtCubeObserved",
+    "EvtFloorProjectedImage",
     "EvtNewRawCameraImage",
     "EvtPacketReceived",
     "EvtReactionTrigger",
@@ -85,6 +86,16 @@ class EvtAnnotatedCameraImage(Event):
     Attributes:
         image: PIL Image with detection boxes and labels
         detections: List of CubeDetection objects
+    """
+
+
+class EvtFloorProjectedImage(Event):
+    """
+    Triggered when a new floor-projected (bird's-eye) image is available.
+
+    Attributes:
+        image: numpy array (BGR) of the floor-projected camera frame
+        occupancy_grid: int8 array — 0 occupied, 1 free, -1 unknown
     """
 
 

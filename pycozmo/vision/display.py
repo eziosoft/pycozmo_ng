@@ -49,6 +49,11 @@ class VisionDisplay:
         """Handler for debug images from cube detection pipeline."""
         self.brain.latest_debug_images = debug_images
 
+    def on_floor_projected_image(self, cli, floor_image, occupancy_grid):
+        """Handler for floor-projected (bird's-eye) images."""
+        self.brain.latest_floor_image = floor_image
+        self.brain.latest_occupancy_grid = occupancy_grid
+
     def pil_to_cv2(self, pil_image):
         """Convert PIL Image to OpenCV format."""
         if pil_image is None:
@@ -77,7 +82,7 @@ class VisionDisplay:
             )
 
     def display_frames(self):
-        """Display both raw and annotated frames side by side."""
+        """Display raw, annotated, and floor-projected frames."""
         if self.brain.headless:
             return
 
@@ -146,7 +151,36 @@ class VisionDisplay:
                     det_lines.append(f"  ID:{det.cube_id} Conf:{det.confidence:.2f}")
                 self.add_text_overlay(annotated_labeled, det_lines, (10, height - 90))
 
-        combined = np.hstack([raw_labeled, annotated_labeled])
+        panels = [raw_labeled, annotated_labeled]
+
+        # Floor-projected view (third panel when available)
+        floor_cv2 = self.brain.latest_floor_image
+        if floor_cv2 is not None:
+            # Scale floor image up for visibility (it's small: ~120x120 at 5mm/px)
+            fh, fw = floor_cv2.shape[:2]
+            scale = max(1, min(height, width) // max(fw, fh))
+            if scale > 1:
+                floor_cv2 = cv2.resize(
+                    floor_cv2, (fw * scale, fh * scale), interpolation=cv2.INTER_NEAREST
+                )
+            floor_labeled = floor_cv2.copy()
+            fh_scaled, fw_scaled = floor_labeled.shape[:2]
+            cv2.rectangle(floor_labeled, (0, 0), (fw_scaled, 30), (0, 0, 0), -1)
+            cv2.putText(
+                floor_labeled,
+                "Floor (Bird's Eye)",
+                (10, 22),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 200, 255),
+                2,
+            )
+            # Resize to match other panels' height for clean stacking
+            if fh_scaled != height:
+                floor_labeled = cv2.resize(floor_labeled, (width, height))
+            panels.append(floor_labeled)
+
+        combined = np.hstack(panels)
         cv2.imshow(self.brain.window_name, combined)
 
         for name, img in self.brain.latest_debug_images.items():

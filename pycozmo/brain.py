@@ -69,6 +69,8 @@ class Brain:
         self.latest_annotated_frame = None
         self.latest_detections: list = []
         self.latest_debug_images: dict = {}
+        self.latest_floor_image = None
+        self.latest_occupancy_grid = None
 
         # Cube tracking
         self.cube_factory_id_map: dict[int, int] = {}
