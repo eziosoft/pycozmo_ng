@@ -60,6 +60,9 @@ class VisionDisplay:
             self.brain.web_viewer.set_floor_size(
                 fp._floor_size[0], fp._floor_size[1]
             )
+            self.brain.web_viewer.set_floor_center(
+                fp._floor_center[0], fp._floor_center[1]
+            )
 
     def pil_to_cv2(self, pil_image):
         """Convert PIL Image to OpenCV format."""

@@ -361,7 +361,7 @@
       const camGeo = new THREE.SphereGeometry(3, 12, 8);
       const camMat = new THREE.MeshBasicMaterial({ color: 0xe0a530 });
       const camMarker = new THREE.Mesh(camGeo, camMat);
-      camMarker.position.set(0, 38, 20);
+      camMarker.position.set(0, 38, 30);
       group.add(camMarker);
 
       return group;
@@ -378,6 +378,7 @@
     // Floor camera overlay — canvas texture parented to robot
     // -----------------------------------------------------------------------
     let floorW = 600, floorH = 600;
+    let floorCenterX = 200, floorCenterY = 0;
     const floorCanvas = document.createElement('canvas');
     // Start square; resized to match actual floor image on first frame
     floorCanvas.width = 120;
@@ -398,7 +399,8 @@
     });
     const floorOverlay = new THREE.Mesh(floorOverlayGeo, floorOverlayMat);
     floorOverlay.rotation.x = -Math.PI / 2;
-    floorOverlay.position.set(floorW / 2, 1, 0);
+    // Position: body (X forward, Y left) → robot local (Z forward, X lateral)
+    floorOverlay.position.set(-floorCenterY, 1, floorCenterX);
     robot.add(floorOverlay);
 
     function applyFloorSize(size) {
@@ -407,7 +409,14 @@
       floorH = size[1];
       floorOverlay.geometry.dispose();
       floorOverlay.geometry = new THREE.PlaneGeometry(floorW, floorH);
-      floorOverlay.position.set(floorW / 2, 1, 0);
+    }
+
+    function applyFloorCenter(center) {
+      if (!center || center.length < 2) return;
+      floorCenterX = center[0];
+      floorCenterY = center[1];
+      // Body (X forward, Y left) → robot local (Z forward, -X lateral)
+      floorOverlay.position.set(-floorCenterY, 1, floorCenterX);
     }
 
     // MJPEG stream — img auto-updates, we copy to canvas each frame
@@ -641,6 +650,7 @@
 
       // Floor grid size
       if (state.floor_size) applyFloorSize(state.floor_size);
+      if (state.floor_center) applyFloorCenter(state.floor_center);
     }
 
     // -----------------------------------------------------------------------

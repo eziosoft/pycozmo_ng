@@ -107,6 +107,7 @@ class WebViewerServer:
 
         # Floor grid dimensions (mm) — set from FloorProjector config
         self._floor_size_mm: tuple[float, float] = (600.0, 600.0)
+        self._floor_center_mm: tuple[float, float] = (200.0, 0.0)
 
         # Broadcast coalescing: the loop thread keeps a queue and always
         # sends the latest state — broadcasts never pile up.
@@ -295,6 +296,10 @@ class WebViewerServer:
         """Set the floor grid dimensions (mm) for the browser overlay."""
         self._floor_size_mm = (width_mm, height_mm)
 
+    def set_floor_center(self, center_x_mm: float, center_y_mm: float) -> None:
+        """Set the floor grid center (mm, body frame) for the browser overlay."""
+        self._floor_center_mm = (center_x_mm, center_y_mm)
+
     def close(self):
         """Stop the background server."""
         if self._loop and self._loop.is_running():
@@ -404,6 +409,7 @@ class WebViewerServer:
             "path_points": path_scene,
             "telemetry": dict(self._telemetry),
             "floor_size": list(self._floor_size_mm),
+            "floor_center": list(self._floor_center_mm),
             "timestamp": int((time.time() - self._start_time) * 1000),
         }
         return json.dumps(state)
