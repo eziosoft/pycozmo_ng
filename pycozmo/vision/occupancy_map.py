@@ -29,6 +29,14 @@ class OccupancyMap:
         free_threshold: Brightness above this (and no edge) → free.
         edge_low: Canny low threshold.
         edge_high: Canny high threshold.
+        vote_decay: Exponential decay applied to accumulated votes every frame
+            (0.0-1.0). <1 makes the map react when the robot moves away or a
+            region stops being observed; older observations fade out.
+        valid_min_brightness: Grey value below which a floor pixel is treated
+            as unseen (excludes the black unmapped border and the dim 1-2px
+            interpolation ring along the projection boundary).
+        valid_erosion: Erode the seen mask by this many pixels so the Canny
+            edge ring at the projection boundary is not voted as occupied.
     """
 
     def __init__(
@@ -39,6 +47,9 @@ class OccupancyMap:
         free_threshold: int = 60,
         edge_low: int = 50,
         edge_high: int = 150,
+        vote_decay: float = 0.95,
+        valid_min_brightness: int = 8,
+        valid_erosion: int = 1,
     ):
         self._grid_size_mm = grid_size_mm
         self._cell_size_mm = cell_size_mm
@@ -67,6 +78,10 @@ class OccupancyMap:
         self._free_threshold = free_threshold
         self._edge_low = edge_low
         self._edge_high = edge_high
+        self._vote_decay = float(min(1.0, max(0.0, vote_decay)))
+        self._vote_epsilon = 1e-3  # below this a decayed vote is forgotten
+        self._valid_min_brightness = valid_min_brightness
+        self._valid_erosion = int(max(0, valid_erosion))
 
         logger.info(
             f"OccupancyMap: {self._grid_cells}x{self._grid_cells} cells, "
@@ -120,9 +135,18 @@ class OccupancyMap:
             kernel = np.ones((3, 3), np.uint8)
             edges = cv2.dilate(edges, kernel, iterations=self._inflation_radius)
 
+        # Seen mask: drop black (unmapped) areas and the dim interpolation ring
+        # along the projection boundary, then erode so the Canny edge at the
+        # silhouette of the projection is not treated as an obstacle.
+        seen = ((gray >= self._valid_min_brightness).astype(np.uint8)) * 255
+        if self._valid_erosion > 0:
+            seen = cv2.erode(
+                seen, np.ones((3, 3), np.uint8), iterations=self._valid_erosion
+            )
+
         # Masks (same shape as gray, flattened to 1-D)
-        is_valid = (gray > 0).ravel()
-        edge_flat = (edges > 0).ravel()
+        is_valid = (seen > 0).ravel()
+        edge_flat = (edges > 0).ravel() & is_valid
         gray_flat = gray.ravel()
 
         is_occupied = is_valid & edge_flat
@@ -146,6 +170,16 @@ class OccupancyMap:
         )
 
         # --- Accumulate votes --------------------------------------------
+        # Fade old votes so the map reacts when the robot moves away or a
+        # region changes; otherwise a single stale vote sticks forever.
+        # Fully-decayed votes are zeroed so cells return to UNKNOWN instead of
+        # asymptoting above the vote threshold forever.
+        if self._vote_decay < 1.0:
+            self._free_votes *= self._vote_decay
+            self._occupied_votes *= self._vote_decay
+            self._free_votes[self._free_votes < self._vote_epsilon] = 0.0
+            self._occupied_votes[self._occupied_votes < self._vote_epsilon] = 0.0
+
         np.add.at(
             self._free_votes,
             (row[in_bounds], col[in_bounds]),
