@@ -35,8 +35,11 @@ class OccupancyMap:
         valid_min_brightness: Grey value below which a floor pixel is treated
             as unseen (excludes the black unmapped border and the dim 1-2px
             interpolation ring along the projection boundary).
-        valid_erosion: Erode the seen mask by this many pixels so the Canny
-            edge ring at the projection boundary is not voted as occupied.
+        edge_margin_px: Erode the *edge* mask near the projection silhouette by
+            this many pixels (dilated from the invalid/black region) so the
+            Canny ring at the silhouette is not voted as occupied. Must be
+            > inflation_radius or a residual ring remains. Only edges adjacent
+            to the silhouette get suppressed; interior obstacle edges survive.
     """
 
     def __init__(
@@ -47,9 +50,9 @@ class OccupancyMap:
         free_threshold: int = 60,
         edge_low: int = 50,
         edge_high: int = 150,
-        vote_decay: float = 0.95,
+vote_decay: float = 0.95,
         valid_min_brightness: int = 8,
-        valid_erosion: int = 1,
+        edge_margin_px: int = 3,
     ):
         self._grid_size_mm = grid_size_mm
         self._cell_size_mm = cell_size_mm
@@ -81,7 +84,7 @@ class OccupancyMap:
         self._vote_decay = float(min(1.0, max(0.0, vote_decay)))
         self._vote_epsilon = 1e-3  # below this a decayed vote is forgotten
         self._valid_min_brightness = valid_min_brightness
-        self._valid_erosion = int(max(0, valid_erosion))
+        self._edge_margin_px = int(max(0, edge_margin_px))
 
         logger.info(
             f"OccupancyMap: {self._grid_cells}x{self._grid_cells} cells, "
@@ -126,23 +129,31 @@ class OccupancyMap:
             self._origin_y = robot_y
             self._origin_set = True
 
-        # --- Classify body-frame image -----------------------------------
+        # ---- Classify body-frame image ----------------------------------
         gray = cv2.cvtColor(floor_image, cv2.COLOR_BGR2GRAY)
 
-        # Edge detection → obstacle boundaries
+        # Seen mask: black/dim areas (unmapped + interpolation ring along the
+        # projection boundary) are not observations.
+        seen = (gray >= self._valid_min_brightness).astype(np.uint8)
+
+        # Edge detection → obstacle boundaries.
         edges = cv2.Canny(gray, self._edge_low, self._edge_high)
+
+        # The projection silhouette is a hard black→floor transition, so Canny
+        # fires all along it and would mark the whole border as an obstacle.
+        # Mask out edges whose distance to the silhouette is <= edge_margin_px
+        # (dilate the invalid region then zero edges under it) before inflation.
+        # Interior object edges are untouched — they sit away from the silhouette.
+        if self._edge_margin_px > 0:
+            silhouette = (gray < self._valid_min_brightness).astype(np.uint8)
+            silhouette = cv2.dilate(
+                silhouette, np.ones((3, 3), np.uint8), iterations=self._edge_margin_px
+            )
+            edges[(silhouette > 0)] = 0
+
         if self._inflation_radius > 0:
             kernel = np.ones((3, 3), np.uint8)
             edges = cv2.dilate(edges, kernel, iterations=self._inflation_radius)
-
-        # Seen mask: drop black (unmapped) areas and the dim interpolation ring
-        # along the projection boundary, then erode so the Canny edge at the
-        # silhouette of the projection is not treated as an obstacle.
-        seen = ((gray >= self._valid_min_brightness).astype(np.uint8)) * 255
-        if self._valid_erosion > 0:
-            seen = cv2.erode(
-                seen, np.ones((3, 3), np.uint8), iterations=self._valid_erosion
-            )
 
         # Masks (same shape as gray, flattened to 1-D)
         is_valid = (seen > 0).ravel()

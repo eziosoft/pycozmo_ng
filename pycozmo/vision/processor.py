@@ -442,7 +442,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         occupancy_inflation_radius: int = 2,
         occupancy_vote_decay: float = 0.95,
         occupancy_valid_min_brightness: int = 8,
-        occupancy_valid_erosion: int = 1,
+        occupancy_edge_margin_px: int = 3,
         floor_edge_margin_px: int = 4,
     ):
         """
@@ -469,8 +469,10 @@ class AnnotatedVisionProcessor(VisionProcessor):
                 votes every frame so the map reacts to changes/unobserved areas.
             occupancy_valid_min_brightness: Minimum grey value for a floor pixel
                 to count as seen (drops the black border + dim edge ring).
-            occupancy_valid_erosion: Erode the seen mask this many pixels so the
-                projection-boundary Canny ring isn't voted as occupied.
+            occupancy_edge_margin_px: Suppress Canny edges within this many
+                pixels of the projection silhouette (must be > inflation radius
+                so the boundary ring isn't voted as occupied; interior edges
+                survive).
         """
         super().__init__(camera_calibration=camera_calibration)
 
@@ -508,7 +510,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
                 inflation_radius=occupancy_inflation_radius,
                 vote_decay=occupancy_vote_decay,
                 valid_min_brightness=occupancy_valid_min_brightness,
-                valid_erosion=occupancy_valid_erosion,
+                edge_margin_px=occupancy_edge_margin_px,
             )
 
         # Import here to avoid circular dependency
