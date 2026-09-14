@@ -171,12 +171,13 @@ class OccupancyMap:
         """Convert grid to a BGR image for visualization / WebSocket transmission.
 
         Colors: unknown = dark gray (40), free = green, occupied = red.
-        Image is flipped so row 0 (top) = world Y max (most left in body).
+        Transposed so image rows = world X (forward) and cols = world Y (left),
+        matching the scene plane orientation (local X=right, local Z=forward).
         """
         img = np.full((self._grid_cells, self._grid_cells, 3), 40, dtype=np.uint8)
         img[self._grid == FREE] = [0, 200, 0]
         img[self._grid == OCCUPIED] = [0, 0, 200]
-        return np.flipud(img)
+        return np.flipud(img.T)
 
     @property
     def grid(self) -> np.ndarray:
