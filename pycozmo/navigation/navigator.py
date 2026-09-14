@@ -217,6 +217,42 @@ class Navigator:
         finally:
             cli.stop_all_motors()
 
+    def _move_forward(self, dist_mm: float, timeout_s: float = 6.0) -> bool:
+        """Drive straight ahead ``dist_mm`` using the onboard planner.
+
+        ``go_to_pose`` (relative to the robot) is used instead of the Python
+        closed loop (``_drive_to_point``) for these very short moves: right
+        after a ``go_to_pose`` the robot can still be finalizing its path and
+        ignores raw ``drive_wheels`` commands. (COZMO-37)
+
+        Returns True if the robot actually arrived within ~4mm.
+        """
+        cli = self.brain.cli
+        if cli is None:
+            return False
+        start_x = cli.pose.position.x
+        start_y = cli.pose.position.y
+        start_yaw = cli.pose.rotation.angle_z.radians
+        cli.go_to_pose(
+            Pose(
+                dist_mm,
+                0,
+                0,
+                angle_z=Angle(radians=0.0),
+            ),
+            relative_to_robot=True,
+        )
+        t0 = time.monotonic()
+        while time.monotonic() - t0 <= timeout_s:
+            rp = cli.pose
+            moved = math.hypot(rp.position.x - start_x, rp.position.y - start_y)
+            err = abs(wrap_pi(start_yaw - rp.rotation.angle_z.radians))
+            if moved >= dist_mm - 4.0 and err <= math.radians(3.0):
+                return True
+            time.sleep(0.05)
+        print(f"Forward move of {dist_mm:.0f}mm not reached")
+        return False
+
     # ------------------------------------------------------------------
     # Cube approach (COZMO-28)
     # ------------------------------------------------------------------
@@ -595,18 +631,12 @@ class Navigator:
                         break
 
                     attempts += 1
-                    rp = self.brain.cli.pose
-                    yaw = rp.rotation.angle_z.radians
-                    rcx = rp.position.x + GRAB_RECHECK_MM * math.cos(yaw)
-                    rcy = rp.position.y + GRAB_RECHECK_MM * math.sin(yaw)
                     print(
                         f"Misaligned by {math.degrees(facing_err_rad):.1f} deg "
                         f"- creeping {GRAB_RECHECK_MM:.0f}mm closer "
                         f"({attempts}/{GRAB_MAX_RECHECKS})"
                     )
-                    self._drive_to_point(
-                        rcx, rcy, stop_mm=4.0, timeout_s=6.0, speed_mmps=30.0
-                    )
+                    self._move_forward(GRAB_RECHECK_MM)
                     time.sleep(0.3)  # let pose settle + a fresh measurement fuse
 
                 if not aligned:
@@ -618,13 +648,7 @@ class Navigator:
                     f"+{GRAB_FORWARD_MM:.0f}mm, lift to "
                     f"{pycozmo.MAX_LIFT_HEIGHT.mm:.0f}mm"
                 )
-                rp = self.brain.cli.pose
-                yaw = rp.rotation.angle_z.radians
-                gx = rp.position.x + GRAB_FORWARD_MM * math.cos(yaw)
-                gy = rp.position.y + GRAB_FORWARD_MM * math.sin(yaw)
-                self._drive_to_point(
-                    gx, gy, stop_mm=4.0, timeout_s=6.0, speed_mmps=30.0
-                )
+                self._move_forward(GRAB_FORWARD_MM)
                 # Bump contact with the cube before lifting, then raise the
                 # forks gently so the lift mechanics aren't stressed. (COZMO-37)
                 self.brain.cli.set_lift_height(
