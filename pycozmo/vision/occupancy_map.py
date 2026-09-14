@@ -177,7 +177,7 @@ class OccupancyMap:
         img = np.full((self._grid_cells, self._grid_cells, 3), 40, dtype=np.uint8)
         img[self._grid == FREE] = [0, 200, 0]
         img[self._grid == OCCUPIED] = [0, 0, 200]
-        return np.flipud(img.T)
+        return np.flipud(np.transpose(img, (1, 0, 2)))
 
     @property
     def grid(self) -> np.ndarray:

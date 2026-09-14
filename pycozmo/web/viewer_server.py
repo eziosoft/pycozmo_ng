@@ -302,7 +302,7 @@ class WebViewerServer:
         import cv2
 
         _, buf = cv2.imencode(".png", grid_image)
-        self._latest_occupancy_png = base64.b64encode(buf).decode("ascii")
+        self._latest_occupancy_png = base64.b64encode(buf.tobytes()).decode("ascii")
         self._occupancy_origin = [origin_x, origin_y]
 
     def set_floor_size(self, width_mm: float, height_mm: float) -> None:
