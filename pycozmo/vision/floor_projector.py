@@ -29,6 +29,11 @@ class FloorProjector:
         floor_center_mm: World-frame (x, y) centre of the output grid (mm).
         floor_size_mm: (width, height) of the output grid in mm.
         mm_per_pixel: Millimetres per output pixel (lower = finer).
+        edge_margin_px: Number of pixels to cut from the camera image edges.
+            Edge pixels carry sensor/JPEG noise that gets magnified when
+            re-sampled into the denser floor grid; masking them to black
+            keeps the stretched-noise bands out of the occupancy map and the
+            3D overlay (black is treated as transparent there).
     """
 
     def __init__(
@@ -39,6 +44,7 @@ class FloorProjector:
         floor_center_mm: tuple[float, float] = (200.0, 0.0),
         floor_size_mm: tuple[float, float] = (600.0, 600.0),
         mm_per_pixel: float = 5.0,
+        edge_margin_px: int = 4,
     ):
         self._K = np.asarray(camera_matrix, dtype=np.float64)
         self._K_inv = np.linalg.inv(self._K)
@@ -48,6 +54,7 @@ class FloorProjector:
         self._floor_center = np.array(floor_center_mm, dtype=np.float64)
         self._floor_size = np.array(floor_size_mm, dtype=np.float64)
         self._mm_per_pixel = float(mm_per_pixel)
+        self._edge_margin_px = int(max(0, edge_margin_px))
 
         self._out_w = int(np.ceil(self._floor_size[0] / self._mm_per_pixel))
         self._out_h = int(np.ceil(self._floor_size[1] / self._mm_per_pixel))
@@ -125,13 +132,14 @@ class FloorProjector:
         u[valid] = (self._K[0, 0] * cam_x[valid] * inv_z[valid]) + self._K[0, 2]
         v[valid] = (self._K[1, 1] * cam_y[valid] * inv_z[valid]) + self._K[1, 2]
 
-        # Mark out-of-bounds pixels as invalid
+        # Mark out-of-bounds or near-edge pixels (edge noise) as invalid
+        m = self._edge_margin_px
         in_bounds = (
             valid
-            & (u >= 0)
-            & (u < self._image_width)
-            & (v >= 0)
-            & (v < self._image_height)
+            & (u >= m)
+            & (u < self._image_width - m)
+            & (v >= m)
+            & (v < self._image_height - m)
         )
         u[~in_bounds] = -1.0
         v[~in_bounds] = -1.0

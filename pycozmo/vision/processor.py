@@ -440,6 +440,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         occupancy_grid_size_mm: float = 2000.0,
         occupancy_cell_size_mm: float = 5.0,
         occupancy_inflation_radius: int = 2,
+        floor_edge_margin_px: int = 4,
     ):
         """
         Initialize the annotated vision processor.
@@ -459,6 +460,8 @@ class AnnotatedVisionProcessor(VisionProcessor):
             occupancy_grid_size_mm: Physical extent of the occupancy grid (mm).
             occupancy_cell_size_mm: Millimetres per occupancy grid cell.
             occupancy_inflation_radius: Dilate edge mask by this many iterations.
+            floor_edge_margin_px: Cut this many pixels off the camera-frame
+                edges before projecting (drops stretched edge noise).
         """
         super().__init__(camera_calibration=camera_calibration)
 
@@ -480,6 +483,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
                 floor_center_mm=floor_center_mm,
                 floor_size_mm=floor_size_mm,
                 mm_per_pixel=mm_per_pixel,
+                edge_margin_px=floor_edge_margin_px,
             )
             logger.info(
                 f"Floor projection enabled: "
