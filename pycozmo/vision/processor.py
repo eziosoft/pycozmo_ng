@@ -440,7 +440,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         occupancy_grid_size_mm: float = 2000.0,
         occupancy_cell_size_mm: float = 5.0,
         occupancy_inflation_radius: int = 2,
-        occupancy_vote_decay: float = 0.95,
+        occupancy_vote_cap: int = 10,
         occupancy_valid_min_brightness: int = 8,
         occupancy_edge_margin_px: int = 3,
         floor_edge_margin_px: int = 4,
@@ -465,8 +465,9 @@ class AnnotatedVisionProcessor(VisionProcessor):
             occupancy_inflation_radius: Dilate edge mask by this many iterations.
             floor_edge_margin_px: Cut this many pixels off the camera-frame
                 edges before projecting (drops stretched edge noise).
-            occupancy_vote_decay: Exponential decay (0-1) applied to occupancy
-                votes every frame so the map reacts to changes/unobserved areas.
+            occupancy_vote_cap: Saturation cap on each cell's vote accumulator.
+                Votes never decay (map persists); the cap bounds how fast a
+                cell flips between free/occupied.
             occupancy_valid_min_brightness: Minimum grey value for a floor pixel
                 to count as seen (drops the black border + dim edge ring).
             occupancy_edge_margin_px: Suppress Canny edges within this many
@@ -508,7 +509,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
                 grid_size_mm=occupancy_grid_size_mm,
                 cell_size_mm=occupancy_cell_size_mm,
                 inflation_radius=occupancy_inflation_radius,
-                vote_decay=occupancy_vote_decay,
+                vote_cap=occupancy_vote_cap,
                 valid_min_brightness=occupancy_valid_min_brightness,
                 edge_margin_px=occupancy_edge_margin_px,
             )

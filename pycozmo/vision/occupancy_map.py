@@ -29,9 +29,11 @@ class OccupancyMap:
         free_threshold: Brightness above this (and no edge) → free.
         edge_low: Canny low threshold.
         edge_high: Canny high threshold.
-        vote_decay: Exponential decay applied to accumulated votes every frame
-            (0.0-1.0). <1 makes the map react when the robot moves away or a
-            region stops being observed; older observations fade out.
+        vote_cap: Saturation cap on each cell's vote accumulator. Votes are
+            never decayed, so the map persists forever; each free/occupied
+            observation moves a cell's accumulator toward ±cap, which bounds
+            how long it takes to *flip* a cell (reacting to a new obstacle or
+            a freed path) no matter how long the previous state was held.
         valid_min_brightness: Grey value below which a floor pixel is treated
             as unseen (excludes the black unmapped border and the dim 1-2px
             interpolation ring along the projection boundary).
@@ -50,7 +52,7 @@ class OccupancyMap:
         free_threshold: int = 60,
         edge_low: int = 50,
         edge_high: int = 150,
-vote_decay: float = 0.95,
+        vote_cap: int = 10,
         valid_min_brightness: int = 8,
         edge_margin_px: int = 3,
     ):
@@ -58,12 +60,10 @@ vote_decay: float = 0.95,
         self._cell_size_mm = cell_size_mm
         self._grid_cells = int(grid_size_mm / cell_size_mm)
 
-        # Vote accumulators
-        self._free_votes: np.ndarray = np.zeros(
-            (self._grid_cells, self._grid_cells), dtype=np.float64
-        )
-        self._occupied_votes: np.ndarray = np.zeros(
-            (self._grid_cells, self._grid_cells), dtype=np.float64
+        # Vote accumulator: signed per-cell counter, clamped to [-cap, +cap].
+        # positive = occupied, negative = free, 0 = unknown.
+        self._votes: np.ndarray = np.zeros(
+            (self._grid_cells, self._grid_cells), dtype=np.int32
         )
 
         # Classified grid: -1 = unknown, 0 = occupied, 1 = free
@@ -81,8 +81,7 @@ vote_decay: float = 0.95,
         self._free_threshold = free_threshold
         self._edge_low = edge_low
         self._edge_high = edge_high
-        self._vote_decay = float(min(1.0, max(0.0, vote_decay)))
-        self._vote_epsilon = 1e-3  # below this a decayed vote is forgotten
+        self._vote_cap = int(max(1, vote_cap))
         self._valid_min_brightness = valid_min_brightness
         self._edge_margin_px = int(max(0, edge_margin_px))
 
@@ -98,8 +97,7 @@ vote_decay: float = 0.95,
 
     def reset(self) -> None:
         """Clear all votes and reset grid to unknown."""
-        self._free_votes[:] = 0
-        self._occupied_votes[:] = 0
+        self._votes[:] = 0
         self._grid[:] = UNKNOWN
         self._origin_set = False
         logger.info("OccupancyMap reset")
@@ -181,32 +179,27 @@ vote_decay: float = 0.95,
         )
 
         # --- Accumulate votes --------------------------------------------
-        # Fade old votes so the map reacts when the robot moves away or a
-        # region changes; otherwise a single stale vote sticks forever.
-        # Fully-decayed votes are zeroed so cells return to UNKNOWN instead of
-        # asymptoting above the vote threshold forever.
-        if self._vote_decay < 1.0:
-            self._free_votes *= self._vote_decay
-            self._occupied_votes *= self._vote_decay
-            self._free_votes[self._free_votes < self._vote_epsilon] = 0.0
-            self._occupied_votes[self._occupied_votes < self._vote_epsilon] = 0.0
-
+        # Votes are never decayed — the map persists forever. Each observation
+        # nudges the cell's signed counter toward ±cap; the cap is what bounds
+        # flip latency (how soon a cell reacts to a new obstacle / freed path),
+        # independent of how long the previous state was held.
+        vote_delta = np.zeros_like(self._votes)
         np.add.at(
-            self._free_votes,
+            vote_delta,
             (row[in_bounds], col[in_bounds]),
-            is_free[in_bounds].astype(np.float64),
+            is_occupied[in_bounds].astype(np.int32),
         )
         np.add.at(
-            self._occupied_votes,
+            vote_delta,
             (row[in_bounds], col[in_bounds]),
-            is_occupied[in_bounds].astype(np.float64),
+            -is_free[in_bounds].astype(np.int32),
         )
+        self._votes = np.clip(self._votes + vote_delta, -self._vote_cap, self._vote_cap)
 
         # --- Reclassify --------------------------------------------------
-        has_votes = (self._free_votes + self._occupied_votes) > 0
-        self._grid[~has_votes] = UNKNOWN
-        self._grid[has_votes & (self._occupied_votes > self._free_votes)] = OCCUPIED
-        self._grid[has_votes & (self._free_votes >= self._occupied_votes)] = FREE
+        self._grid[self._votes == 0] = UNKNOWN
+        self._grid[self._votes > 0] = OCCUPIED
+        self._grid[self._votes < 0] = FREE
 
     # ------------------------------------------------------------------
     # Output
