@@ -465,6 +465,7 @@
     });
     const occOverlay = new THREE.Mesh(occOverlayGeo, occOverlayMat);
     occOverlay.rotation.x = -Math.PI / 2;
+    occOverlay.rotation.z = Math.PI;  // match floor overlay; image rows already forward-up/left-left
     occOverlay.position.set(0, 3, 0);
     scene.add(occOverlay);  // world frame — stationary, does not rotate with robot
 
