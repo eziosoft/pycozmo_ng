@@ -18,6 +18,7 @@ Usage:
 
 import asyncio
 import json
+import math
 import os
 import threading
 import time
@@ -47,6 +48,17 @@ from pycozmo.navigation.world_map import WorldMap
 # small offset it z-fights / clips the grid floor in the browser. This is a
 # pure display artifact — it is NOT applied to world-frame data or cubes/robot.
 PATH_SCENE_LIFT_MM: float = 3.0
+
+# The world map can hold thousands of path points; serializing all of them on
+# every broadcast makes each state message bigger as the session runs, which
+# pushes the viewer further and further behind. Decimate before sending — the
+# browser can't visually tell the difference above this many points.
+MAX_PATH_POINTS_SENT: int = 800
+
+# Occupancy changes incrementally (a few cells per frame); re-encoding and
+# re-sending the full PNG that often is wasted bandwidth. Encode at most this
+# often and only embed the PNG in a state message when it actually changed.
+OCCUPANCY_SEND_INTERVAL_S: float = 0.2
 
 
 def _encode_jpeg(image, quality: int = 70) -> bytes:
@@ -112,6 +124,9 @@ class WebViewerServer:
         # Occupancy grid (base64-encoded PNG for WebSocket)
         self._latest_occupancy_png: str | None = None
         self._occupancy_origin: list[float] | None = None
+        self._occupancy_seq: int = 0
+        self._occupancy_seq_sent: int = -1
+        self._last_occupancy_encode_time: float = 0.0
 
         # Broadcast coalescing: the loop thread keeps a queue and always
         # sends the latest state — broadcasts never pile up.
@@ -296,14 +311,28 @@ class WebViewerServer:
         self._latest_floor_image = Image.fromarray(rgb)
         self._floor_image_id += 1
 
-    def push_occupancy_grid(self, grid_image, origin_x: float = 0.0, origin_y: float = 0.0) -> None:
-        """Publish the occupancy grid as a base64-encoded PNG for WebSocket."""
+    def push_occupancy_grid(
+        self, grid_image, origin_x: float = 0.0, origin_y: float = 0.0
+    ) -> None:
+        """Publish the occupancy grid as a base64-encoded PNG for WebSocket.
+
+        Re-encoding is throttled to ``OCCUPANCY_SEND_INTERVAL_S`` — the map
+        changes only a few cells per frame, so anything faster just wastes
+        CPU (and the caller runs on the pycozmo packet thread). The PNG is
+        only embedded in a broadcast when its sequence bumps.
+        """
         import base64
         import cv2
+
+        now = time.time()
+        if now - self._last_occupancy_encode_time < OCCUPANCY_SEND_INTERVAL_S:
+            return
+        self._last_occupancy_encode_time = now
 
         _, buf = cv2.imencode(".png", grid_image)
         self._latest_occupancy_png = base64.b64encode(buf.tobytes()).decode("ascii")
         self._occupancy_origin = [origin_x, origin_y]
+        self._occupancy_seq += 1
 
     def set_floor_size(self, width_mm: float, height_mm: float) -> None:
         """Set the floor grid dimensions (mm) for the browser overlay."""
@@ -384,7 +413,7 @@ class WebViewerServer:
 
     # -- internal -----------------------------------------------------------
 
-    def _build_state_json(self) -> str:
+    def _build_state_json(self, force_occupancy: bool = False) -> str:
         world = self.world_map.get_world_state()
 
         # Robot: world frame -> scene frame, with yaw mapped to scene rotation.y.
@@ -406,12 +435,20 @@ class WebViewerServer:
             )
 
         # Path: world frame -> scene frame, lifted just above the ground so the
-        # zero-thickness trail doesn't z-fight the grid floor.
+        # zero-thickness trail doesn't z-fight the grid floor. Decimated so the
+        # payload size doesn't grow with session length (see
+        # MAX_PATH_POINTS_SENT).
+        path_world = world["path_points"]
+        if len(path_world) > MAX_PATH_POINTS_SENT:
+            step = math.ceil(len(path_world) / MAX_PATH_POINTS_SENT)
+            # Align sampling to the END of the trail so the most recent
+            # position (robot nose of the trail) is always included.
+            offset = (len(path_world) - 1) % step
+            path_world = path_world[offset::step]
         path_scene = [
-            [float(v) for v in coords.world_to_scene_point(p)]
-            for p in world["path_points"]
+            [fx, fy + PATH_SCENE_LIFT_MM, fz]
+            for (fx, fy, fz) in (coords.world_to_scene_point(p) for p in path_world)
         ]
-        path_scene = [[x, y + PATH_SCENE_LIFT_MM, z] for x, y, z in path_scene]
 
         state = {
             "cubes": cube_list,
@@ -426,11 +463,14 @@ class WebViewerServer:
             "timestamp": int((time.time() - self._start_time) * 1000),
         }
 
-        # Include occupancy grid PNG if available
-        if self._latest_occupancy_png is not None:
+        # Include occupancy grid PNG if available — and only when it actually
+        # changed (or the receiver needs a full snapshot, e.g. on connect).
+        if self._latest_occupancy_png is not None and (
+            force_occupancy or self._occupancy_seq != self._occupancy_seq_sent
+        ):
             state["occupancy_png"] = self._latest_occupancy_png
-        if self._occupancy_origin is not None:
             state["occupancy_origin"] = self._occupancy_origin
+            self._occupancy_seq_sent = self._occupancy_seq
 
         return json.dumps(state)
 
@@ -469,7 +509,7 @@ class WebViewerServer:
         self._fire_active_clients_change()
         try:
             # Send current state immediately on connect
-            await websocket.send(self._build_state_json())
+            await websocket.send(self._build_state_json(force_occupancy=True))
             async for raw in websocket:
                 try:
                     msg = json.loads(raw)
