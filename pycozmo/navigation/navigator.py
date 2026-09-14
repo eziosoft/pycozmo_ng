@@ -324,6 +324,15 @@ class Navigator:
         GRAB_RANGE_MM = (50.0, 150.0)
         GRAB_CENTER_TOL_MM = 30.0
         GRAB_HEADING_TOL_RAD = math.radians(5.0)
+        # Small facing error: creep forward 1cm and re-check (up to N times) —
+        # the face-normal estimate sharpens as the camera gets closer, so a
+        # few mm of approach often fixes a borderline 5-10° miss. (COZMO-37)
+        GRAB_RETRY_ANGLE_RAD = math.radians(12.0)
+        GRAB_RECHECK_MM = 10.0
+        GRAB_MAX_RECHECKS = 3
+        # Raise the lift gently so we don't stress the lift mechanics.
+        LIFT_UP_ACCEL = 3.0
+        LIFT_UP_SPEED = 3.0
         FRESH_TOL_S = 1.5
         ARRIVE_POS_MM = 8.0
         ARRIVE_ANG_RAD = math.radians(2.0)
@@ -358,7 +367,9 @@ class Navigator:
 
         # Forks down first so the lift is ready to slide under the cube.
         self.brain.cli.set_lift_height(
-            pycozmo.MIN_LIFT_HEIGHT.mm, accel=30.0, max_speed=30.0
+            pycozmo.MIN_LIFT_HEIGHT.mm,
+            accel=LIFT_UP_ACCEL,
+            max_speed=LIFT_UP_SPEED,
         )
         print(f"Lift lowered ({pycozmo.MIN_LIFT_HEIGHT.mm:.0f}mm)")
 
@@ -443,7 +454,9 @@ class Navigator:
                         return
                 time.sleep(0.05)
 
-        def _verify_grab_alignment(cube_idx: int) -> tuple[bool, list[str]]:
+        def _verify_grab_alignment(
+            cube_idx: int,
+        ) -> tuple[bool, list[str], float | None, float, float, bool, bool]:
             """Three checks that the robot is positioned to grab the cube.
 
             Re-reads the live fused cube pose and verifies, in order:
@@ -451,12 +464,15 @@ class Navigator:
               2. facing — the robot heads square onto the cube face; and
               3. centered — the cube is directly ahead, in grabbing range.
 
-            Returns ``(passed, messages)`` with a message per check.
+            Returns ``(passed, messages, facing_err_rad, forward, lateral,
+            centered, fresh)`` — the raw measurements are needed by the
+            caller's retry loop to decide whether creeping forward another
+            1cm could recover alignment.
             """
             s = _cube_state(cube_idx)
             msgs: list[str] = []
             if s is None:
-                return False, ["no cube in world map"]
+                return False, ["no cube in world map"], None, 0.0, 0.0, False, False
             rp = self.brain.cli.pose
             rpos = (rp.position.x, rp.position.y)
             ryaw = rp.rotation.angle_z.radians
@@ -495,7 +511,15 @@ class Navigator:
                 f"(fwd {forward:.0f}mm in {GRAB_RANGE_MM[0]:.0f}-{GRAB_RANGE_MM[1]:.0f}mm)"
             )
 
-            return fresh and facing and centered and in_range, msgs
+            return (
+                fresh and facing and centered and in_range,
+                msgs,
+                facing_err_rad,
+                forward,
+                lateral,
+                centered,
+                fresh,
+            )
 
         def _nav_thread():
             try:
@@ -547,16 +571,52 @@ class Navigator:
 
                 print(f"Aligned with cube {cube_idx + 1}")
 
-                aligned, checks = _verify_grab_alignment(cube_idx)
-                for msg in checks:
-                    print(f"  check: {msg}")
+                # Verify alignment; a small facing error recovers by creeping
+                # 1cm closer (the face normal sharpens with distance) and
+                # re-checking, up to GRAB_MAX_RECHECKS times.
+                attempts = 0
+                while True:
+                    (aligned, checks, facing_err_rad, forward, lateral, _, fresh) = (
+                        _verify_grab_alignment(cube_idx)
+                    )
+                    for msg in checks:
+                        print(f"  check: {msg}")
+
+                    recoverable = (
+                        not aligned
+                        and fresh
+                        and facing_err_rad is not None
+                        and facing_err_rad <= GRAB_RETRY_ANGLE_RAD
+                        and abs(lateral) <= GRAB_CENTER_TOL_MM
+                        and forward - GRAB_RECHECK_MM >= GRAB_RANGE_MM[0]
+                        and attempts < GRAB_MAX_RECHECKS
+                    )
+                    if not recoverable:
+                        break
+
+                    attempts += 1
+                    rp = self.brain.cli.pose
+                    yaw = rp.rotation.angle_z.radians
+                    rcx = rp.position.x + GRAB_RECHECK_MM * math.cos(yaw)
+                    rcy = rp.position.y + GRAB_RECHECK_MM * math.sin(yaw)
+                    print(
+                        f"Misaligned by {math.degrees(facing_err_rad):.1f} deg "
+                        f"- creeping {GRAB_RECHECK_MM:.0f}mm closer "
+                        f"({attempts}/{GRAB_MAX_RECHECKS})"
+                    )
+                    self._drive_to_point(
+                        rcx, rcy, stop_mm=4.0, timeout_s=6.0, speed_mmps=30.0
+                    )
+                    time.sleep(0.3)  # let pose settle + a fresh measurement fuse
+
                 if not aligned:
                     print("Alignment check FAILED - not grabbing")
                     return
 
                 print(
                     f"Aligned - grabbing cube {cube_idx + 1}: "
-                    f"+{GRAB_FORWARD_MM:.0f}mm, lift to {pycozmo.MAX_LIFT_HEIGHT.mm:.0f}mm"
+                    f"+{GRAB_FORWARD_MM:.0f}mm, lift to "
+                    f"{pycozmo.MAX_LIFT_HEIGHT.mm:.0f}mm"
                 )
                 rp = self.brain.cli.pose
                 yaw = rp.rotation.angle_z.radians
@@ -565,10 +625,14 @@ class Navigator:
                 self._drive_to_point(
                     gx, gy, stop_mm=4.0, timeout_s=6.0, speed_mmps=30.0
                 )
+                # Bump contact with the cube before lifting, then raise the
+                # forks gently so the lift mechanics aren't stressed. (COZMO-37)
                 self.brain.cli.set_lift_height(
-                    pycozmo.MAX_LIFT_HEIGHT.mm, accel=30.0, max_speed=30.0
+                    pycozmo.MAX_LIFT_HEIGHT.mm,
+                    accel=LIFT_UP_ACCEL,
+                    max_speed=LIFT_UP_SPEED,
                 )
-                print(f"Cube {cube_idx + 1} grabbed")
+                print(f"Cube {cube_idx + 1} grabbed (lift up)")
             except Exception as e:
                 print(f"Approach error: {e}")
 
