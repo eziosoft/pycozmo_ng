@@ -318,6 +318,16 @@ class Navigator:
         NEAR_TILT_DIST_MM = 100.0
         NEAR_TILT_DEG = -20.0
 
+        # Grab: lower the forks on approach, then after the alignment checks
+        # creep forward onto the cube and raise the lift to carry it. (COZMO-37)
+        GRAB_FORWARD_MM = 20.0
+        GRAB_RANGE_MM = (50.0, 150.0)
+        GRAB_CENTER_TOL_MM = 30.0
+        GRAB_HEADING_TOL_RAD = math.radians(5.0)
+        FRESH_TOL_S = 1.5
+        ARRIVE_POS_MM = 8.0
+        ARRIVE_ANG_RAD = math.radians(2.0)
+
         world_map = self.brain.web_viewer.world_map
 
         def _cube_state(cube_idx: int):
@@ -345,6 +355,12 @@ class Navigator:
             f"Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f}) "
             f"face normal=({nx:.2f}, {ny:.2f})"
         )
+
+        # Forks down first so the lift is ready to slide under the cube.
+        self.brain.cli.set_lift_height(
+            pycozmo.MIN_LIFT_HEIGHT.mm, accel=30.0, max_speed=30.0
+        )
+        print(f"Lift lowered ({pycozmo.MIN_LIFT_HEIGHT.mm:.0f}mm)")
 
         self.brain.cli.set_head_angle(
             math.radians(HEAD_TILT_DEG), accel=30.0, max_speed=30.0
@@ -427,6 +443,60 @@ class Navigator:
                         return
                 time.sleep(0.05)
 
+        def _verify_grab_alignment(cube_idx: int) -> tuple[bool, list[str]]:
+            """Three checks that the robot is positioned to grab the cube.
+
+            Re-reads the live fused cube pose and verifies, in order:
+              1. fresh — the cube was re-detected recently (trustworthy);
+              2. facing — the robot heads square onto the cube face; and
+              3. centered — the cube is directly ahead, in grabbing range.
+
+            Returns ``(passed, messages)`` with a message per check.
+            """
+            s = _cube_state(cube_idx)
+            msgs: list[str] = []
+            if s is None:
+                return False, ["no cube in world map"]
+            rp = self.brain.cli.pose
+            rpos = (rp.position.x, rp.position.y)
+            ryaw = rp.rotation.angle_z.radians
+
+            age = time.monotonic() - s.updated_at
+            fresh = age <= FRESH_TOL_S
+            msgs.append(
+                f"fresh={'ok' if fresh else 'STALE'} "
+                f"(age {age:.1f}s, conf {s.confidence:.2f})"
+            )
+
+            f = self._pick_face_normal(s.position, s.rotation_matrix, rpos, ryaw)
+            facing_err_rad = None if f is None else abs(wrap_pi(f[2] - ryaw))
+            facing = (
+                facing_err_rad is not None and facing_err_rad <= GRAB_HEADING_TOL_RAD
+            )
+            if facing_err_rad is None:
+                msgs.append("facing=FAIL (no face normal resolved)")
+            else:
+                msgs.append(
+                    f"facing={'ok' if facing else 'WRONG'} "
+                    f"(err {math.degrees(facing_err_rad):.1f} deg)"
+                )
+
+            dx = s.position[0] - rpos[0]
+            dy = s.position[1] - rpos[1]
+            fwdx, fwdy = math.cos(ryaw), math.sin(ryaw)
+            forward = dx * fwdx + dy * fwdy
+            lateral = dx * -fwdy + dy * fwdx
+            centered = abs(lateral) <= GRAB_CENTER_TOL_MM
+            in_range = GRAB_RANGE_MM[0] <= forward <= GRAB_RANGE_MM[1]
+            msgs.append(
+                f"centered={'ok' if centered else 'OFF'} "
+                f"(lat {lateral:.0f}mm <= {GRAB_CENTER_TOL_MM:.0f}mm), "
+                f"range={'ok' if in_range else 'OUT'} "
+                f"(fwd {forward:.0f}mm in {GRAB_RANGE_MM[0]:.0f}-{GRAB_RANGE_MM[1]:.0f}mm)"
+            )
+
+            return fresh and facing and centered and in_range, msgs
+
         def _nav_thread():
             try:
                 dist_to_cube = math.hypot(cube_x - rx, cube_y - ry)
@@ -464,7 +534,41 @@ class Navigator:
                     relative_to_robot=False,
                 )
 
+                # go_to_pose returns once the path *starts*; wait until the
+                # robot has actually arrived at the standoff before judging.
+                t_arrive = time.monotonic()
+                while time.monotonic() - t_arrive < 10.0:
+                    rp = self.brain.cli.pose
+                    pos_err = math.hypot(s2x - rp.position.x, s2y - rp.position.y)
+                    ang_err = abs(wrap_pi(heading2 - rp.rotation.angle_z.radians))
+                    if pos_err <= ARRIVE_POS_MM and ang_err <= ARRIVE_ANG_RAD:
+                        break
+                    time.sleep(0.05)
+
                 print(f"Aligned with cube {cube_idx + 1}")
+
+                aligned, checks = _verify_grab_alignment(cube_idx)
+                for msg in checks:
+                    print(f"  check: {msg}")
+                if not aligned:
+                    print("Alignment check FAILED - not grabbing")
+                    return
+
+                print(
+                    f"Aligned - grabbing cube {cube_idx + 1}: "
+                    f"+{GRAB_FORWARD_MM:.0f}mm, lift to {pycozmo.MAX_LIFT_HEIGHT.mm:.0f}mm"
+                )
+                rp = self.brain.cli.pose
+                yaw = rp.rotation.angle_z.radians
+                gx = rp.position.x + GRAB_FORWARD_MM * math.cos(yaw)
+                gy = rp.position.y + GRAB_FORWARD_MM * math.sin(yaw)
+                self._drive_to_point(
+                    gx, gy, stop_mm=4.0, timeout_s=6.0, speed_mmps=30.0
+                )
+                self.brain.cli.set_lift_height(
+                    pycozmo.MAX_LIFT_HEIGHT.mm, accel=30.0, max_speed=30.0
+                )
+                print(f"Cube {cube_idx + 1} grabbed")
             except Exception as e:
                 print(f"Approach error: {e}")
 
