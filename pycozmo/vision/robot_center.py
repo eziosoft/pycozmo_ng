@@ -107,8 +107,9 @@ class RobotCenterDetector:
         spots = []
         for i in range(1, num_labels):  # skip background (0)
             area = stats[i, cv2.CC_STAT_AREA]
-            if area < 500:  # rings are small; cable is large
-                cx, cy = centroids[i]
+            cx, cy = centroids[i]
+            # Filter: small spots only, exclude image edges
+            if area < 500 and cx > 20 and cx < w - 20:
                 spots.append((cx, cy + y_start))
 
         if len(spots) < 2:
