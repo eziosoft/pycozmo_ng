@@ -91,6 +91,26 @@ class FloorProjector:
     def mm_per_pixel(self) -> float:
         return self._mm_per_pixel
 
+    @property
+    def floor_center(self) -> np.ndarray:
+        """World-frame (x, y) centre of the floor grid (mm)."""
+        return self._floor_center
+
+    @property
+    def floor_size(self) -> np.ndarray:
+        """(width, height) of the floor grid in mm."""
+        return self._floor_size
+
+    @property
+    def floor_x(self) -> np.ndarray:
+        """Flattened body-X (forward) coordinates of the floor grid (mm)."""
+        return self._floor_x
+
+    @property
+    def floor_y(self) -> np.ndarray:
+        """Flattened body-Y (left) coordinates of the floor grid (mm)."""
+        return self._floor_y
+
     # ------------------------------------------------------------------
     # LUT computation
     # ------------------------------------------------------------------

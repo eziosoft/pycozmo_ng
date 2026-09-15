@@ -1,12 +1,7 @@
-import os
-import sys
 from collections import defaultdict
 
 import cv2
 import numpy as np
-
-# Add the tests directory to path so we can import world_3d_viewer
-sys.path.append(os.path.dirname(__file__))
 
 
 class CubeFusionTracker:
@@ -21,32 +16,23 @@ class CubeFusionTracker:
     drives.
     """
 
-    def __init__(self, cube_size_mm=44.0, smoothing_alpha=0.3, max_age_frames=10):
+    def __init__(self, cube_size_mm: float = 44.0):
         """
-        :param cube_size_mm: Physical size of the cube (44mm for Cozmo cubes)
-        :param smoothing_alpha: Kept for API compatibility — unused (smoothing
-            moved to WorldMap).
-        :param max_age_frames: Kept for API compatibility — unused (no temporal
-            state is kept here anymore).
+        :param cube_size_mm: Physical size of the cube (44mm for Cozmo cubes).
         """
         self.cube_size = cube_size_mm
-        self.smoothing_alpha = smoothing_alpha
-        self.smoothing_complement = 1.0 - smoothing_alpha
-        self.max_age_frames = max_age_frames
 
         # Precompute half size for cube center calculations
         self.half_size = cube_size_mm / 2.0
 
-    def update(self, detections, head_angle_rad=0.0):
+    def update(self, detections):
         """
         Fuse all face detections from one frame into per-cube camera-frame poses.
 
         :param detections: List of detection dicts with 'cube_id', 'face_type',
             'position', 'rotation_matrix', etc. (camera frame).
-        :param head_angle_rad: Ignored — head-tilt compensation moved to WorldMap.
         :return: Dict of {cube_id: fused_cube_state} in camera frame.
         """
-        del head_angle_rad
 
         # Group detections by cube_id
         detections_by_cube = defaultdict(list)
@@ -58,10 +44,6 @@ class CubeFusionTracker:
             fused[cube_id] = self._fuse_detections(cube_detections)
 
         return fused
-
-    def forget_cube(self, cube_id):
-        """No-op — kept for API compatibility (temporal state lives in WorldMap)."""
-        return
 
     def _fuse_detections(self, detections):
         """
@@ -303,35 +285,16 @@ class CozmoCubeDetector:
         self.face_type_lookup = ["wall", "wall", "wall", "wall", "bottom", "top"]
         self.rotation_lookup = [0, 90, 180, 270, 0, 0]
 
-        # Debug mode
-        self.debug = False
-        self.debug_images = {}
-
-    def set_debug(self, enabled):
-        """Enable or disable debug mode for saving intermediate images."""
-        self.debug = enabled
-
     def detect(self, frame):
         """Processes a frame to find cubes."""
-        if self.debug:
-            self.debug_images = {}
-            self.debug_images["processed"] = frame.copy()
-
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        if self.debug:
-            self.debug_images["grayscale"] = gray.copy()
 
         # Apply noise reduction if enabled
         if self.denoise_strength > 0:
             gray = self._denoise_image(gray)
-            if self.debug:
-                self.debug_images["denoised"] = gray.copy()
 
         # Apply CLAHE if enabled
         enhanced = self.clahe.apply(gray) if self.use_clahe else gray
-        if self.debug:
-            self.debug_images["enhanced"] = enhanced.copy()
 
         return self._run_detection_pass(enhanced)
 
@@ -366,9 +329,6 @@ class CozmoCubeDetector:
         _, binary = cv2.threshold(
             blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
         )
-
-        if self.debug:
-            self.debug_images["binary"] = binary.copy()
 
         # Find contours
         contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -612,7 +572,3 @@ class CozmoCubeDetector:
         rotation = self.rotation_lookup[face_idx]
 
         return cube_id, face_type, rotation
-
-    def get_debug_images(self):
-        """Get the current debug images dictionary."""
-        return self.debug_images.copy()

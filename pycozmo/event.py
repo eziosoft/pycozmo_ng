@@ -21,7 +21,6 @@ __all__ = [
     "EvtChargerOOSChange",
     "EvtCliffDetectedChange",
     "EvtCubeDetected",
-    "EvtCubeDetectorDebugImages",
     "EvtCubeLost",
     "EvtCubeObserved",
     "EvtFloorProjectedImage",
@@ -96,16 +95,6 @@ class EvtFloorProjectedImage(Event):
     Attributes:
         image: numpy array (BGR) of the floor-projected camera frame
         occupancy_grid: int8 array — 0 occupied, 1 free, -1 unknown
-    """
-
-
-class EvtCubeDetectorDebugImages(Event):
-    """
-    Triggered when debug images from cube detection pipeline are available.
-
-    Attributes:
-        debug_images: Dict of {step_name: image_array} containing intermediate images
-        detections: List of CubeDetection objects
     """
 
 

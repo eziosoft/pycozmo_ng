@@ -16,8 +16,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from pycozmo import logger
 from pycozmo.vision.camera_calibration import CameraCalibration
-from pycozmo.vision.floor_projector import FloorProjector
-from pycozmo.vision.occupancy_map import OccupancyMap
+from pycozmo.vision.floor_pipeline import FloorPipeline
 
 # Import CubeFusionTracker
 try:
@@ -135,14 +134,12 @@ class VisionProcessor:
             denoise_strength=0,  # 0 disables noise reduction (denoise is off)
         )
 
-        # self.cube_detector.set_debug(True)
-
         # Create fusion tracker
         # max_age_frames is set very high so cubes persist at their last
         # known position indefinitely after detection, rather than
         # vanishing when temporarily out of view. (COZMO-27)
         self.cube_tracker = CubeFusionTracker(
-            cube_size_mm=44.0, smoothing_alpha=0.3, max_age_frames=999999
+            cube_size_mm=44.0,
         )
 
         logger.info("Cube detector initialized successfully")
@@ -190,8 +187,10 @@ class VisionProcessor:
         Called when the cube's IMU detects movement — the old position is
         stale and the cube will be placed fresh on the next camera frame.
         (COZMO-27)
+
+        CubeFusionTracker is stateless; temporal cube state lives in
+        WorldMap, so there is nothing to do here.
         """
-        self.cube_tracker.forget_cube(cube_id)
 
     def detect_cubes(
         self, image: Image.Image, head_angle_rad: float = 0.0
@@ -236,15 +235,11 @@ class VisionProcessor:
             # Convert RGB to BGR for OpenCV
             img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
-            # Save raw frame for debug
-            if self.cube_detector.debug:
-                self.cube_detector.debug_images["original"] = img_bgr.copy()
-
             # Detect marker faces
             results = self.cube_detector.detect(img_bgr)
 
             # Fuse detections into coherent cube poses with head tilt compensation
-            self.fused_cubes = self.cube_tracker.update(results, head_angle_rad)
+            self.fused_cubes = self.cube_tracker.update(results)
 
             # Convert to CubeDetection format
             detections = []
@@ -481,37 +476,25 @@ class AnnotatedVisionProcessor(VisionProcessor):
         self.process_every_n_frames = process_every_n_frames
         self.undistort = undistort
         self._frame_counter = 0
-
-        # Floor projector (optional)
-        self.floor_projector: FloorProjector | None = None
-        self.latest_floor_image = None
-        self.latest_occupancy_grid = None
         self.latest_occupancy_map_image: np.ndarray | None = None
+
+        # Floor pipeline (optional)
+        self.floor_pipeline: FloorPipeline | None = None
         if enable_floor_projection:
-            self.floor_projector = FloorProjector(
-                camera_calibration.camera_matrix,
-                camera_calibration.image_width,
-                camera_calibration.image_height,
+            self.floor_pipeline = FloorPipeline(
+                camera_calibration=camera_calibration,
+                enable_floor_projection=True,
                 floor_center_mm=floor_center_mm,
                 floor_size_mm=floor_size_mm,
                 mm_per_pixel=mm_per_pixel,
-                edge_margin_px=floor_edge_margin_px,
-            )
-            logger.info(
-                f"Floor projection enabled: "
-                f"{floor_size_mm[0]}x{floor_size_mm[1]}mm @ {mm_per_pixel} mm/px"
-            )
-
-        # Occupancy map (optional, requires floor projector)
-        self.occupancy_map: OccupancyMap | None = None
-        if enable_floor_projection and enable_occupancy_map:
-            self.occupancy_map = OccupancyMap(
-                grid_size_mm=occupancy_grid_size_mm,
-                cell_size_mm=occupancy_cell_size_mm,
-                inflation_radius=occupancy_inflation_radius,
-                vote_cap=occupancy_vote_cap,
-                valid_min_brightness=occupancy_valid_min_brightness,
-                edge_margin_px=occupancy_edge_margin_px,
+                enable_occupancy_map=enable_occupancy_map,
+                occupancy_grid_size_mm=occupancy_grid_size_mm,
+                occupancy_cell_size_mm=occupancy_cell_size_mm,
+                occupancy_inflation_radius=occupancy_inflation_radius,
+                occupancy_vote_cap=occupancy_vote_cap,
+                occupancy_valid_min_brightness=occupancy_valid_min_brightness,
+                occupancy_edge_margin_px=occupancy_edge_margin_px,
+                floor_edge_margin_px=floor_edge_margin_px,
             )
 
         # Import here to avoid circular dependency
@@ -580,41 +563,21 @@ class AnnotatedVisionProcessor(VisionProcessor):
                 event.EvtAnnotatedCameraImage, cli, annotated_image, detections
             )
 
-            # Dispatch debug images event
-            debug_images = self.cube_detector.get_debug_images()
-            self.client.dispatch(
-                event.EvtCubeDetectorDebugImages, cli, debug_images, detections
-            )
-
             # Also handle cube detection events
             self._dispatch_cube_events(cli, detections)
 
             # Floor projection (optional)
-            if self.floor_projector is not None:
-                img_array_for_floor = np.array(undistorted_image)
-                img_bgr_for_floor = cv2.cvtColor(img_array_for_floor, cv2.COLOR_RGB2BGR)
-                floor_img = self.floor_projector.project(
-                    img_bgr_for_floor, head_angle_rad
+            if self.floor_pipeline is not None:
+                robot_pose = cli.pose if hasattr(cli, "pose") else None
+                floor_img, occ_grid, occ_map_image = self.floor_pipeline.process(
+                    undistorted_image, head_angle_rad, robot_pose
                 )
-                occ_grid = self.floor_projector.compute_occupancy_grid(floor_img)
-                self.latest_floor_image = floor_img
-                self.latest_occupancy_grid = occ_grid
-                cli.dispatch(event.EvtFloorProjectedImage, cli, floor_img, occ_grid)
-
-                # Accumulate into world-frame occupancy map
-                if self.occupancy_map is not None and hasattr(cli, "pose"):
-                    pose = cli.pose
-                    self.occupancy_map.update(
-                        floor_img,
-                        self.floor_projector._floor_x,
-                        self.floor_projector._floor_y,
-                        pose.position.x,
-                        pose.position.y,
-                        pose.rotation.angle_z.radians,
+                if floor_img is not None:
+                    self.client.dispatch(
+                        event.EvtFloorProjectedImage, cli, floor_img, occ_grid
                     )
-                    self.latest_occupancy_map_image = (
-                        self.occupancy_map.to_color_image()
-                    )
+                # Store occupancy map image for web viewer
+                self.latest_occupancy_map_image = occ_map_image
 
             # NOTE: do NOT call ``gc.collect()`` here. Periodic forced GC
             # runs synchronously on the pycozmo event-dispatcher thread,
