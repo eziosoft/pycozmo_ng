@@ -1,12 +1,13 @@
-"""Robot center detection via two ring-shaped markers on the robot body.
+"""Robot center detection via two ring markers on the robot body.
 
 When the head is tilted fully down (MIN_HEAD_ANGLE = -25 deg), two small
 black rings with white centres are visible near the bottom of the image on
 the robot's chassis. The distance between their centres is 20 mm, and the
 midpoint between them is the true centre of the robot in width.
 
-Detection uses a narrow horizontal band at the bottom of the frame and
-Hough circle detection on the inverted image (rings become bright circles).
+Detection inverts the image (rings become bright), thresholds to find dark
+regions, then uses connected-component analysis with an area filter to
+isolate the small ring spots from the wide centre cable.
 """
 
 from dataclasses import dataclass
@@ -43,10 +44,13 @@ class RobotCenterDetector:
     approximately ``MIN_HEAD_ANGLE`` (-25 deg), because only then are the
     rings visible near the bottom of the camera image.
 
-    The rings are small black circles with white centres, located on the
-    robot's chassis at the very bottom of the frame.  Detection scans a
-    narrow band (y 70%-93% of image height) and uses Hough circle detection
-    on the inverted image where rings appear as bright circles.
+    Algorithm:
+    1. Invert the image (black rings become bright spots).
+    2. Take the bottom band (y 77%-92% of image height).
+    3. Threshold at 60 to find dark regions on the inverted image.
+    4. Connected-component analysis with area < 500 to isolate small
+       ring spots from the wide centre cable.
+    5. Take the two smallest components (left and right ring).
     """
 
     MIN_HEAD_ANGLE_RAD = np.radians(-25.0)
@@ -77,66 +81,55 @@ class RobotCenterDetector:
         )
 
     def _find_circles(self, gray: np.ndarray) -> list[tuple[float, float]]:
-        """Find two ring markers using Hough detection on inverted band.
-
-        The rings sit in a narrow horizontal band near the bottom of the
-        frame.  Inverting the image turns the black rings into bright
-        circles that HoughCircles can detect reliably.
+        """Find two ring markers using connected-component analysis on inverted image.
 
         Returns a list of (cx, cy) pixel coordinates, sorted left-to-right.
         """
         h, w = gray.shape[:2]
-        img_center_x = w / 2.0
 
-        # Narrow band at the bottom where rings sit (y 70%-93%)
-        y_start = int(h * 0.70)
-        y_end = int(h * 0.93)
-        band = gray[y_start:y_end, :]
+        # Invert: black rings become bright, white centres become dark
+        neg = cv2.bitwise_not(gray)
 
-        # Invert: black rings become bright circles
-        inv_band = cv2.bitwise_not(band)
-        blurred = cv2.GaussianBlur(inv_band, (5, 5), 0)
+        # Bottom band where rings sit (y 77%-92%)
+        y_start = int(h * 0.77)
+        y_end = int(h * 0.92)
+        band = neg[y_start:y_end, :]
 
-        # Hough detection with conservative parameters
-        circles = cv2.HoughCircles(
-            blurred,
-            cv2.HOUGH_GRADIENT,
-            dp=1.2,
-            minDist=50,
-            param1=50,
-            param2=8,
-            minRadius=3,
-            maxRadius=10,
-        )
+        blurred = cv2.GaussianBlur(band, (3, 3), 0)
 
-        if circles is None or len(circles[0]) < 2:
+        # Threshold: dark regions on the inverted image
+        _, dark = cv2.threshold(blurred, 60, 255, cv2.THRESH_BINARY_INV)
+
+        # Connected components — filter by area to keep only small spots
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dark, 8)
+
+        spots = []
+        for i in range(1, num_labels):  # skip background (0)
+            area = stats[i, cv2.CC_STAT_AREA]
+            if area < 500:  # rings are small; cable is large
+                cx, cy = centroids[i]
+                spots.append((cx, cy + y_start))
+
+        if len(spots) < 2:
             return []
 
-        # Sort by x coordinate (left-to-right)
-        detected = []
-        for cx, cy, r in circles[0]:
-            detected.append((cx, cy + y_start))
+        # Sort left-to-right and take the two smallest (most ring-like)
+        spots.sort(key=lambda p: p[0])
 
-        detected.sort(key=lambda p: p[0])
+        # If more than 2, pick the pair with most symmetric midpoint
+        if len(spots) == 2:
+            return spots
 
-        # Take the two most symmetric candidates about image centre
-        if len(detected) == 2:
-            return detected
-
-        # More than 2 — pick the most symmetric pair
+        img_center_x = w / 2.0
         best_pair = None
         best_score = float("inf")
-        for i in range(len(detected)):
-            for j in range(i + 1, len(detected)):
-                cx_a, cy_a = detected[i]
-                cx_b, cy_b = detected[j]
-                mid_x = (cx_a + cx_b) / 2.0
-                symmetry = abs(mid_x - img_center_x)
-                y_diff = abs(cy_a - cy_b)
-                score = symmetry + y_diff * 0.5
+        for i in range(len(spots)):
+            for j in range(i + 1, len(spots)):
+                mid_x = (spots[i][0] + spots[j][0]) / 2.0
+                score = abs(mid_x - img_center_x)
                 if score < best_score:
                     best_score = score
-                    best_pair = (detected[i], detected[j])
+                    best_pair = (spots[i], spots[j])
 
         return list(best_pair) if best_pair else []
 
