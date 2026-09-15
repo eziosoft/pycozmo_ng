@@ -266,18 +266,20 @@ def main():
                 # Robot center calibration: enable camera, tilt head, detect
                 if args.detect_robot_center:
                     print("Calibrating robot center (head to max-down)...")
-                    # Temporarily enable camera for calibration
+                    # Temporarily enable camera for calibration with manual
+                    # exposure — auto-exposure makes the image too dark when
+                    # head is at max-down (robot body fills the frame).
                     cli.enable_camera(
                         enable=True,
                         color=False,
                         resolution=resolution,
                     )
                     cli.set_camera_params(
-                        gain=0.0,
-                        exposure_ms=100,
-                        auto_exposure_enabled=True,
+                        gain=8.0,
+                        exposure_ms=300,
+                        auto_exposure_enabled=False,
                     )
-                    time.sleep(1.0)  # Let camera warm up
+                    time.sleep(2.0)  # Let camera warm up
 
                     cli.set_head_angle(
                         pycozmo.robot.MIN_HEAD_ANGLE.radians,
