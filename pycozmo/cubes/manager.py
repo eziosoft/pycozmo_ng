@@ -4,6 +4,7 @@ import time
 
 import pycozmo
 from pycozmo.cubes.cube_imu import CubeMoveDetector
+from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.cubes.cycler import CubeCycler
 from pycozmo.logger import logger_cubes
 
@@ -11,11 +12,11 @@ from pycozmo.logger import logger_cubes
 class CubeManager:
     """Manages cube discovery, BLE connection cycling, and state tracking.
 
-    References shared state on ``self.brain`` (the :class:`App` core).
+    Uses :class:`CubeTrackingState` for all cube state.
     """
 
-    def __init__(self, app):
-        self.brain = app
+    def __init__(self, cube_tracking: CubeTrackingState):
+        self.ct = cube_tracking
 
     # ------------------------------------------------------------------
     # Cube connection state (COZMO-20, COZMO-23)
@@ -34,8 +35,8 @@ class CubeManager:
             )
             return
         if pkt.connected:
-            self.brain._cube_object_id_map[cube_id] = pkt.object_id
-            self.brain._cube_move_detectors.setdefault(
+            self.ct.object_id_map[cube_id] = pkt.object_id
+            self.ct.move_detectors.setdefault(
                 cube_id, CubeMoveDetector()
             ).on_connection(time.time())
             logger_cubes.debug(
@@ -44,7 +45,7 @@ class CubeManager:
                 pkt.object_id,
             )
         else:
-            self.brain._cube_object_id_map.pop(cube_id, None)
+            self.ct.object_id_map.pop(cube_id, None)
             logger_cubes.debug(
                 "Cube %d disconnected (object_id=%s)",
                 cube_id,
@@ -53,7 +54,7 @@ class CubeManager:
 
     def _cube_id_for_factory(self, factory_id: int) -> int | None:
         """Reverse lookup: factory_id -> detected cube_id (1..3)."""
-        for cube_id, fid in self.brain.cube_factory_id_map.items():
+        for cube_id, fid in self.ct.cube_factory_id_map.items():
             if fid == factory_id:
                 return cube_id
         return None
@@ -118,14 +119,14 @@ class CubeManager:
             else:
                 continue
 
-            self.brain.cube_factory_id_map[detected_cube_id] = factory_id
+            self.ct.cube_factory_id_map[detected_cube_id] = factory_id
             print(
                 f"   Detected cube_id {detected_cube_id} -> Factory ID 0x{factory_id:08x} ({obj_type.name})"
             )
 
-        print(f"\nDiscovered {len(self.brain.cube_factory_id_map)} cube(s)")
-        print(f"Cube mapping: {self.brain.cube_factory_id_map}")
-        logger_cubes.info("Cube factory_id map: %s", self.brain.cube_factory_id_map)
+        print(f"\nDiscovered {len(self.ct.cube_factory_id_map)} cube(s)")
+        print(f"Cube mapping: {self.ct.cube_factory_id_map}")
+        logger_cubes.info("Cube factory_id map: %s", self.ct.cube_factory_id_map)
 
         self.start_cube_cycler(cli)
 
@@ -133,23 +134,23 @@ class CubeManager:
 
     def start_cube_cycler(self, cli):
         """Start the rapid cube cycler."""
-        if not self.brain.cube_factory_id_map:
+        if not self.ct.cube_factory_id_map:
             return
-        self.brain._cube_cycler = CubeCycler(cycle_ms=150)
-        self.brain._cube_cycler.start(cli, self.brain.cube_factory_id_map)
+        self.ct.cycler = CubeCycler(cycle_ms=150)
+        self.ct.cycler.start(cli, self.ct.cube_factory_id_map)
         print(
-            f"Cube cycler started - cycling {len(self.brain.cube_factory_id_map)} cubes"
+            f"Cube cycler started - cycling {len(self.ct.cube_factory_id_map)} cubes"
         )
 
     def stop_cube_cycler(self):
         """Stop the rapid cube cycler."""
-        if self.brain._cube_cycler:
-            self.brain._cube_cycler.stop()
-            stats = self.brain._cube_cycler.stats
+        if self.ct.cycler:
+            self.ct.cycler.stop()
+            stats = self.ct.cycler.stats
             print(
                 f"Cube cycler stopped - {stats['cycles']} cycles, {stats['errors']} errors"
             )
-            self.brain._cube_cycler = None
+            self.ct.cycler = None
 
     # Legacy aliases kept for compatibility
     def start_cube_light_worker(self, cli):

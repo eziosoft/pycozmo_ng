@@ -7,6 +7,8 @@ import time
 import numpy as np
 
 import pycozmo
+from pycozmo.navigation.cube_approach import CubeApproach
+from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.steering import steer_velocities, wrap_pi
 from pycozmo.util import Angle, Pose
 
@@ -14,11 +16,15 @@ from pycozmo.util import Angle, Pose
 class Navigator:
     """Robot navigation: point-to-point drive, cube approach, docking.
 
-    References shared state on ``self.brain`` (the :class:`App` core).
+    Uses :class:`DockState` for charger/dock data. Receives ``cli`` and
+    ``web_viewer`` via methods rather than holding a Brain reference.
     """
 
-    def __init__(self, app):
-        self.brain = app
+    def __init__(self, dock_state: DockState):
+        self.ds = dock_state
+        # Set by Brain after construction (cross-domain references)
+        self.cli = None
+        self.web_viewer = None
 
     # ------------------------------------------------------------------
     # Charger / origin handlers (COZMO-28)
@@ -27,8 +33,8 @@ class Navigator:
     def _on_charger_change(self, cli, state: bool) -> None:
         """Record whether the robot is physically on the charger."""
         del cli
-        with self.brain._dock_lock:
-            self.brain._on_charger = state
+        with self.ds.lock:
+            self.ds.on_charger = state
         if state:
             print("On charger detected")
             threading.Thread(target=self._reset_pose_origin, daemon=True).start()
@@ -36,8 +42,8 @@ class Navigator:
     def _on_charging_change(self, cli, state: bool) -> None:
         """Record whether the robot is actively charging."""
         del cli
-        with self.brain._dock_lock:
-            self.brain._charging = state
+        with self.ds.lock:
+            self.ds.charging = state
         if state:
             print("Charging detected")
             threading.Thread(target=self._reset_pose_origin, daemon=True).start()
@@ -48,11 +54,11 @@ class Navigator:
         Sends SetOrigin so the robot's current pose becomes the new
         world frame (0,0,0) and records it as the dock pose. (COZMO-28)
         """
-        cli = self.brain.cli
+        cli = self.cli
         if cli is None:
             return
-        with self.brain._dock_lock:
-            if self.brain._origin_reset_origin_id == cli.pose.origin_id:
+        with self.ds.lock:
+            if self.ds.origin_reset_origin_id == cli.pose.origin_id:
                 return
 
         reset_pkt = pycozmo.protocol_encoder.SetOrigin(
@@ -61,9 +67,9 @@ class Navigator:
         )
         cli.conn.send(reset_pkt)
         time.sleep(0.5)
-        with self.brain._dock_lock:
-            self.brain._origin_reset_origin_id = cli.pose.origin_id
-            self.brain._dock_pose = cli.pose
+        with self.ds.lock:
+            self.ds.origin_reset_origin_id = cli.pose.origin_id
+            self.ds.dock_pose = cli.pose
         print("Pose origin reset - current pose is now origin")
 
     # ------------------------------------------------------------------
@@ -76,18 +82,18 @@ class Navigator:
         world_forward = X (Anki frame), world_left = Y (Anki frame).
         """
         if world_forward is None:
-            if self.brain.cli:
-                self.brain.cli.stop_all_motors()
+            if self.cli:
+                self.cli.stop_all_motors()
             print("Navigation cancelled")
             return
 
-        if not self.brain.cli:
+        if not self.cli:
             print("Navigation: no robot connected")
             return
 
         SHORT_DIST_MM = 100.0
 
-        robot_pose = self.brain.cli.pose
+        robot_pose = self.cli.pose
         robot_x = robot_pose.position.x
         robot_y = robot_pose.position.y
 
@@ -111,7 +117,7 @@ class Navigator:
                         0,
                         angle_z=Angle(radians=heading),
                     )
-                    self.brain.cli.go_to_pose(target_pose, relative_to_robot=False)
+                    self.cli.go_to_pose(target_pose, relative_to_robot=False)
                     print("Arrived at target")
             except Exception as e:
                 print(f"Navigation error: {e}")
@@ -155,7 +161,7 @@ class Navigator:
             True if the target was reached (within tolerance), False on
             timeout.
         """
-        cli = self.brain.cli
+        cli = self.cli
         if cli is None:
             print("Drive: no robot connected")
             return False
@@ -200,7 +206,7 @@ class Navigator:
         turn_speed_mmps: float = 45.0,
     ) -> None:
         """Turn in place to ``target_heading`` (world frame, radians)."""
-        cli = self.brain.cli
+        cli = self.cli
         if cli is None:
             return
 
@@ -227,7 +233,7 @@ class Navigator:
 
         Returns True if the robot actually arrived within ~4mm.
         """
-        cli = self.brain.cli
+        cli = self.cli
         if cli is None:
             return False
         start_x = cli.pose.position.x
@@ -254,8 +260,22 @@ class Navigator:
         return False
 
     # ------------------------------------------------------------------
-    # Cube approach (COZMO-28)
+    # Cube approach (COZMO-28 / COZMO-40)
     # ------------------------------------------------------------------
+
+    def _get_cube_approach(self) -> CubeApproach:
+        """Lazily create the CubeApproach instance with DI callbacks."""
+        if not hasattr(self, "_cube_approach"):
+            world_map = self.web_viewer.world_map
+            self._cube_approach = CubeApproach(
+                cli=self.cli,
+                get_cube_state=lambda idx: world_map.get_cubes().get(idx),
+                drive_to_point=self._drive_to_point,
+                move_forward=self._move_forward,
+            )
+        # Refresh cli reference (may reconnect)
+        self._cube_approach.cli = self.cli
+        return self._cube_approach
 
     @staticmethod
     def _pick_face_normal(
@@ -264,404 +284,16 @@ class Navigator:
         robot_pos: tuple[float, float],
         robot_yaw: float,
     ) -> tuple[float, float, float] | None:
-        """Pick the cube face to approach and the heading that faces it.
-
-        The cube always rests on one face, so exactly one of its three body
-        axes is vertical (aligned with world Z); the four wall faces' outward
-        normals are the ± of the two body axes that lie in the ground plane.
-        Those two axes are the rotation-matrix columns with the largest
-        horizontal (XY) component. Using all four ±X/±Y columns and
-        normalizing their plan view was wrong: for a cube resting flat, one
-        of those columns *is* the vertical axis, and its small horizontal
-        noise normalizes into a plausible-looking but arbitrary ~45°
-        direction — ending up "aligned to the corner" instead of a wall.
-
-        The best face is the one whose normal most points toward the robot
-        (so Cozmo sees the marker frontally). When the robot is roughly
-        diagonal to the cube the two adjacent faces score about equally —
-        ties are broken deterministically by the smallest heading change.
-
-        Args:
-            cube_pos: Cube center (mm, world frame; z ignored).
-            cube_rot: 3x3 cube rotation matrix in world frame.
-            robot_pos: Robot (x, y) in world frame (mm).
-            robot_yaw: Robot heading (rad, world frame).
-
-        Returns:
-            ``(nx, ny, heading)``: the outward face normal (unit, 2D) and the
-            world heading (rad) that faces the cube along that normal, or
-            ``None`` if no face can be resolved (e.g. cube at the robot).
-        """
-        cx, cy = float(cube_pos[0]), float(cube_pos[1])
-        rx, ry = robot_pos
-        dx, dy = rx - cx, ry - cy
-        d = math.hypot(dx, dy)
-        if d < 1e-3:
-            return None
-        ux, uy = dx / d, dy / d
-
-        # Wall normals: ± of the two most-horizontal cube axes. The vertical
-        # axis (near-zero horizontal length) is excluded even when noise gives
-        # it a small nonzero XY component.
-        plan = []
-        for col in range(3):
-            nx, ny = float(cube_rot[0, col]), float(cube_rot[1, col])
-            length = math.hypot(nx, ny)
-            if length > 1e-3:
-                plan.append((nx / length, ny / length, length))
-        if not plan:
-            return None
-        plan.sort(key=lambda p: p[2], reverse=True)
-        wall_axes = [p for p in plan if p[2] >= 0.5 * plan[0][2]][:2]
-
-        normals: list[tuple[float, float]] = []
-        for axis in wall_axes:
-            normals.append((axis[0], axis[1]))
-            normals.append((-axis[0], -axis[1]))
-
-        best: tuple[float, float, float] | None = None
-        best_key: tuple[float, float] | None = None
-        for n in normals:
-            nx, ny = n
-            dot = nx * ux + ny * uy
-            heading = math.atan2(-ny, -nx)  # robot at cube + n faces the cube
-            turn = abs(wrap_pi(heading - robot_yaw))
-            key = (-dot, turn)
-            if best_key is None or key < best_key:
-                best_key = key
-                best = (nx, ny, heading)
-        return best
+        """Pick the cube face to approach — delegates to CubeApproach."""
+        return CubeApproach.pick_face_normal(cube_pos, cube_rot, robot_pos, robot_yaw)
 
     def _on_approach_cube(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
-        """Handle cube click from browser — two-step approach & align.
-
-        Both steps use Cozmo's onboard path planner (``go_to_pose``): step 1
-        drives to a standoff along the best face normal where Cozmo sees the
-        marker frontally and the world-map pose sharpens; step 2 re-reads the
-        **corrected** fused cube pose and drives to a closer standoff,
-        aligned with the face. The Python closed loop (``_drive_to_point``)
-        is only used to back away when the robot starts too close.
-        """
-        if not self.brain.cli:
+        """Handle cube click from browser — delegates to CubeApproach."""
+        if not self.cli:
             print("Approach: no robot connected")
             return
-
-        STEP1_DIST = 160.0
-        STEP2_DIST = 90.0
-        BACK_AWAY_DIST = 220.0
-        TOO_CLOSE = 120.0
-        HEAD_TILT_DEG = -10.0
-        NEAR_TILT_DIST_MM = 100.0
-        NEAR_TILT_DEG = -20.0
-
-        # Grab: lower the forks on approach, then after the alignment checks
-        # creep forward onto the cube and raise the lift to carry it. (COZMO-37)
-        GRAB_FORWARD_MM = 20.0
-        GRAB_RANGE_MM = (50.0, 150.0)
-        GRAB_CENTER_TOL_MM = 30.0
-        GRAB_HEADING_TOL_RAD = math.radians(5.0)
-        # Small facing error: creep forward 1cm and re-check (up to N times) —
-        # the face-normal estimate sharpens as the camera gets closer, so a
-        # few mm of approach often fixes a borderline 5-10° miss. (COZMO-37)
-        GRAB_RETRY_ANGLE_RAD = math.radians(12.0)
-        GRAB_RECHECK_MM = 10.0
-        GRAB_MAX_RECHECKS = 3
-        # Raise the lift gently so we don't stress the lift mechanics.
-        LIFT_UP_ACCEL = 3.0
-        LIFT_UP_SPEED = 3.0
-        FRESH_TOL_S = 1.5
-        ARRIVE_POS_MM = 8.0
-        ARRIVE_ANG_RAD = math.radians(2.0)
-
-        world_map = self.brain.web_viewer.world_map
-
-        def _cube_state(cube_idx: int):
-            cubes = world_map.get_cubes()
-            return cubes.get(cube_idx)
-
-        state = _cube_state(cube_idx)
-        if state is None:
-            print(f"Cube {cube_idx + 1} not in world map")
-            return
-
-        robot_pose = self.brain.cli.pose
-        rx, ry = robot_pose.position.x, robot_pose.position.y
-        robot_yaw = robot_pose.rotation.angle_z.radians
-
-        face = self._pick_face_normal(
-            state.position, state.rotation_matrix, (rx, ry), robot_yaw
-        )
-        if face is None:
-            print("Could not determine approach face")
-            return
-        nx, ny, heading = face
-
-        print(
-            f"Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f}) "
-            f"face normal=({nx:.2f}, {ny:.2f})"
-        )
-
-        # Forks down first so the lift is ready to slide under the cube.
-        self.brain.cli.set_lift_height(
-            pycozmo.MIN_LIFT_HEIGHT.mm,
-            accel=LIFT_UP_ACCEL,
-            max_speed=LIFT_UP_SPEED,
-        )
-        print(f"Lift lowered ({pycozmo.MIN_LIFT_HEIGHT.mm:.0f}mm)")
-
-        self.brain.cli.set_head_angle(
-            math.radians(HEAD_TILT_DEG), accel=30.0, max_speed=30.0
-        )
-        print(f"Head tilt {HEAD_TILT_DEG:.0f} deg")
-
-        def _standoff(dist_mm: float, n: tuple[float, float]) -> tuple[float, float]:
-            """Cube center + ``n * dist_mm`` from the state snapshot at
-            click time (horizontal plane only)."""
-            p = state.position
-            if p is None:
-                return (cube_x, cube_y)
-            return (
-                float(p[0]) + n[0] * dist_mm,
-                float(p[1]) + n[1] * dist_mm,
-            )
-
-        def _corrected_target(dist_mm: float):
-            """Recompute the approach line from the corrected cube pose.
-
-            Called after step 1: re-reads the fresh fused cube position and
-            rotation, re-picks the best face from the robot's new pose, and
-            returns ``(x, y, heading)`` for ``go_to_pose`` — or ``None`` if
-            the cube was lost.
-            """
-            s = _cube_state(cube_idx)
-            rp = self.brain.cli.pose
-            if s is None:
-                return None
-            f = self._pick_face_normal(
-                s.position,
-                s.rotation_matrix,
-                (rp.position.x, rp.position.y),
-                rp.rotation.angle_z.radians,
-            )
-            if f is None:
-                return None
-            nx2, ny2, heading2 = f
-            return (
-                float(s.position[0]) + nx2 * dist_mm,
-                float(s.position[1]) + ny2 * dist_mm,
-                heading2,
-            )
-
-        def _wait_for_fresh(timeout_s: float = 3.0) -> None:
-            """Block until a camera measurement newer than now is fused."""
-            before = _cube_state(cube_idx)
-            base_ts = before.updated_at if before is not None else None
-            t0 = time.monotonic()
-            while time.monotonic() - t0 < timeout_s:
-                s = _cube_state(cube_idx)
-                ts = s.updated_at if s is not None else None
-                if ts is not None and (base_ts is None or ts > base_ts + 0.05):
-                    return
-                time.sleep(0.05)
-            print("Cube not re-detected at standoff - using last known pose")
-
-        def _watch_near_tilt() -> None:
-            """Drop the head to ``NEAR_TILT_DEG`` once within proximity.
-
-            Runs alongside the (blocking) ``go_to_pose`` drives, polling the
-            live fused cube pose so the camera looks down at the cube as we
-            close in below ``NEAR_TILT_DIST_MM``.
-            """
-            while True:
-                s = _cube_state(cube_idx)
-                if s is not None:
-                    rp = self.brain.cli.pose
-                    d = math.hypot(
-                        s.position[0] - rp.position.x,
-                        s.position[1] - rp.position.y,
-                    )
-                    if d < NEAR_TILT_DIST_MM:
-                        self.brain.cli.set_head_angle(
-                            math.radians(NEAR_TILT_DEG),
-                            accel=30.0,
-                            max_speed=30.0,
-                        )
-                        print(f"Head tilt {NEAR_TILT_DEG:.0f} deg (dist {d:.0f}mm)")
-                        return
-                time.sleep(0.05)
-
-        def _verify_grab_alignment(
-            cube_idx: int,
-        ) -> tuple[bool, list[str], float | None, float, float, bool, bool]:
-            """Three checks that the robot is positioned to grab the cube.
-
-            Re-reads the live fused cube pose and verifies, in order:
-              1. fresh — the cube was re-detected recently (trustworthy);
-              2. facing — the robot heads square onto the cube face; and
-              3. centered — the cube is directly ahead, in grabbing range.
-
-            Returns ``(passed, messages, facing_err_rad, forward, lateral,
-            centered, fresh)`` — the raw measurements are needed by the
-            caller's retry loop to decide whether creeping forward another
-            1cm could recover alignment.
-            """
-            s = _cube_state(cube_idx)
-            msgs: list[str] = []
-            if s is None:
-                return False, ["no cube in world map"], None, 0.0, 0.0, False, False
-            rp = self.brain.cli.pose
-            rpos = (rp.position.x, rp.position.y)
-            ryaw = rp.rotation.angle_z.radians
-
-            age = time.monotonic() - s.updated_at
-            fresh = age <= FRESH_TOL_S
-            msgs.append(
-                f"fresh={'ok' if fresh else 'STALE'} "
-                f"(age {age:.1f}s, conf {s.confidence:.2f})"
-            )
-
-            f = self._pick_face_normal(s.position, s.rotation_matrix, rpos, ryaw)
-            facing_err_rad = None if f is None else abs(wrap_pi(f[2] - ryaw))
-            facing = (
-                facing_err_rad is not None and facing_err_rad <= GRAB_HEADING_TOL_RAD
-            )
-            if facing_err_rad is None:
-                msgs.append("facing=FAIL (no face normal resolved)")
-            else:
-                msgs.append(
-                    f"facing={'ok' if facing else 'WRONG'} "
-                    f"(err {math.degrees(facing_err_rad):.1f} deg)"
-                )
-
-            dx = s.position[0] - rpos[0]
-            dy = s.position[1] - rpos[1]
-            fwdx, fwdy = math.cos(ryaw), math.sin(ryaw)
-            forward = dx * fwdx + dy * fwdy
-            lateral = dx * -fwdy + dy * fwdx
-            centered = abs(lateral) <= GRAB_CENTER_TOL_MM
-            in_range = GRAB_RANGE_MM[0] <= forward <= GRAB_RANGE_MM[1]
-            msgs.append(
-                f"centered={'ok' if centered else 'OFF'} "
-                f"(lat {lateral:.0f}mm <= {GRAB_CENTER_TOL_MM:.0f}mm), "
-                f"range={'ok' if in_range else 'OUT'} "
-                f"(fwd {forward:.0f}mm in {GRAB_RANGE_MM[0]:.0f}-{GRAB_RANGE_MM[1]:.0f}mm)"
-            )
-
-            return (
-                fresh and facing and centered and in_range,
-                msgs,
-                facing_err_rad,
-                forward,
-                lateral,
-                centered,
-                fresh,
-            )
-
-        def _nav_thread():
-            try:
-                dist_to_cube = math.hypot(cube_x - rx, cube_y - ry)
-                if dist_to_cube < TOO_CLOSE:
-                    bx = cube_x + (rx - cube_x) / dist_to_cube * BACK_AWAY_DIST
-                    by = cube_y + (ry - cube_y) / dist_to_cube * BACK_AWAY_DIST
-                    print(f"Too close ({dist_to_cube:.0f}mm) - backing away")
-                    self._drive_to_point(bx, by, timeout_s=8.0)
-
-                time.sleep(0.3)  # let the head settle before the first shot
-
-                threading.Thread(target=_watch_near_tilt, daemon=True).start()
-
-                s1x, s1y = _standoff(STEP1_DIST, (nx, ny))
-                print(f"Step 1: go_to_pose to view standoff ({s1x:.0f}, {s1y:.0f})")
-                self.brain.cli.go_to_pose(
-                    Pose(s1x, s1y, 0, angle_z=Angle(radians=heading)),
-                    relative_to_robot=False,
-                )
-
-                _wait_for_fresh()
-
-                target2 = _corrected_target(STEP2_DIST)
-                if target2 is None:
-                    print("Cube lost after step 1 - keeping last standoff")
-                    s2x, s2y, heading2 = s1x, s1y, heading
-                else:
-                    s2x, s2y, heading2 = target2
-                print(
-                    f"Step 2: go_to_pose to {STEP2_DIST:.0f}mm standoff "
-                    f"({s2x:.0f}, {s2y:.0f})"
-                )
-                self.brain.cli.go_to_pose(
-                    Pose(s2x, s2y, 0, angle_z=Angle(radians=heading2)),
-                    relative_to_robot=False,
-                )
-
-                # go_to_pose returns once the path *starts*; wait until the
-                # robot has actually arrived at the standoff before judging.
-                t_arrive = time.monotonic()
-                while time.monotonic() - t_arrive < 10.0:
-                    rp = self.brain.cli.pose
-                    pos_err = math.hypot(s2x - rp.position.x, s2y - rp.position.y)
-                    ang_err = abs(wrap_pi(heading2 - rp.rotation.angle_z.radians))
-                    if pos_err <= ARRIVE_POS_MM and ang_err <= ARRIVE_ANG_RAD:
-                        break
-                    time.sleep(0.05)
-
-                print(f"Aligned with cube {cube_idx + 1}")
-
-                # Verify alignment; a small facing error recovers by creeping
-                # 1cm closer (the face normal sharpens with distance) and
-                # re-checking, up to GRAB_MAX_RECHECKS times.
-                attempts = 0
-                while True:
-                    (aligned, checks, facing_err_rad, forward, lateral, _, fresh) = (
-                        _verify_grab_alignment(cube_idx)
-                    )
-                    for msg in checks:
-                        print(f"  check: {msg}")
-
-                    recoverable = (
-                        not aligned
-                        and fresh
-                        and facing_err_rad is not None
-                        and facing_err_rad <= GRAB_RETRY_ANGLE_RAD
-                        and abs(lateral) <= GRAB_CENTER_TOL_MM
-                        and forward - GRAB_RECHECK_MM >= GRAB_RANGE_MM[0]
-                        and attempts < GRAB_MAX_RECHECKS
-                    )
-                    if not recoverable:
-                        break
-
-                    attempts += 1
-                    print(
-                        f"Misaligned by {math.degrees(facing_err_rad):.1f} deg "
-                        f"- creeping {GRAB_RECHECK_MM:.0f}mm closer "
-                        f"({attempts}/{GRAB_MAX_RECHECKS})"
-                    )
-                    self._move_forward(GRAB_RECHECK_MM)
-                    time.sleep(0.3)  # let pose settle + a fresh measurement fuse
-
-                if not aligned:
-                    print("Alignment check FAILED - not grabbing")
-                    return
-
-                print(
-                    f"Aligned - grabbing cube {cube_idx + 1}: "
-                    f"+{GRAB_FORWARD_MM:.0f}mm, lift to "
-                    f"{pycozmo.MAX_LIFT_HEIGHT.mm:.0f}mm"
-                )
-                self._move_forward(GRAB_FORWARD_MM)
-                # Bump contact with the cube before lifting, then raise the
-                # forks gently so the lift mechanics aren't stressed. (COZMO-37)
-                self.brain.cli.set_lift_height(
-                    pycozmo.MAX_LIFT_HEIGHT.mm,
-                    accel=LIFT_UP_ACCEL,
-                    max_speed=LIFT_UP_SPEED,
-                )
-                print(f"Cube {cube_idx + 1} grabbed (lift up)")
-            except Exception as e:
-                print(f"Approach error: {e}")
-
-        t = threading.Thread(target=_nav_thread, daemon=True)
-        t.start()
+        ca = self._get_cube_approach()
+        ca.approach(cube_idx, cube_x, cube_y)
 
     # ------------------------------------------------------------------
     # Docking (COZMO-28)
@@ -669,10 +301,10 @@ class Navigator:
 
     def _on_dock(self) -> None:
         """Handle 'z' keypress - drive robot back into the dock."""
-        if not self.brain.cli:
+        if not self.cli:
             print("Dock: no robot connected")
             return
-        if self.brain._dock_pose is None:
+        if self.ds.dock_pose is None:
             print("Dock: no start pose recorded")
             return
 
@@ -685,7 +317,7 @@ class Navigator:
         DOCK_RETRY_DRIVE = 40.0
         DOCK_STALL_ITERS = 20
 
-        dock = self.brain._dock_pose
+        dock = self.ds.dock_pose
         dock_x = dock.position.x
         dock_y = dock.position.y
         dock_heading = dock.rotation.angle_z.radians
@@ -697,11 +329,11 @@ class Navigator:
         aim_y = dock_y - DOCK_AIM_BEHIND * math.sin(dock_heading)
 
         def _is_charging() -> bool:
-            with self.brain._dock_lock:
-                return self.brain._on_charger or self.brain._charging
+            with self.ds.lock:
+                return self.ds.on_charger or self.ds.charging
 
         def _dist_to_dock() -> float:
-            rp = self.brain.cli.pose
+            rp = self.cli.pose
             dx = aim_x - rp.position.x
             dy = aim_y - rp.position.y
             return math.sqrt(dx * dx + dy * dy)
@@ -726,7 +358,7 @@ class Navigator:
                     stall = 0
                 prev_dist = dist
 
-                self.brain.cli.drive_wheels(
+                self.cli.drive_wheels(
                     lwheel_speed=-DOCK_REVERSE_SPEED,
                     rwheel_speed=-DOCK_REVERSE_SPEED,
                 )
@@ -736,7 +368,7 @@ class Navigator:
             try:
                 turn_pose = Pose(turn_x, turn_y, 0, angle_z=Angle(radians=dock_heading))
                 print("Driving to 150mm in front of dock")
-                self.brain.cli.go_to_pose(turn_pose, relative_to_robot=False)
+                self.cli.go_to_pose(turn_pose, relative_to_robot=False)
                 time.sleep(0.3)
 
                 docked = False
@@ -752,7 +384,7 @@ class Navigator:
 
                     if attempt < DOCK_MAX_RETRIES:
                         print("No charge at contact - backing away to retry")
-                        self.brain.cli.drive_wheels(
+                        self.cli.drive_wheels(
                             lwheel_speed=DOCK_RETRY_SPEED,
                             rwheel_speed=DOCK_RETRY_SPEED,
                             duration=DOCK_RETRY_DRIVE / DOCK_RETRY_SPEED,
@@ -764,7 +396,7 @@ class Navigator:
                             f"(dist={_dist_to_dock():.0f}mm, no charge)"
                         )
 
-                self.brain.cli.stop_all_motors()
+                self.cli.stop_all_motors()
 
                 if docked or _is_charging():
                     self._reset_pose_origin()

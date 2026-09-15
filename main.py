@@ -1,14 +1,9 @@
 #!/usr/bin/env python
 """Main test script for PyCozmo vision system.
 
-Connects to Cozmo, initializes vision processor, and runs the display loop.
+Connects to Cozmo, initializes vision processor, and runs the headless loop.
 All reusable logic lives in pycozmo.brain; this file is only argparse + wiring.
-
-Controls:
-- Press 'q' to quit
-- Press 's' to save current frames
-- Press 'c' to toggle cube detection
-- Press 'f' to toggle FPS display
+The interface is the web viewer (http://<this-machine-ip>:8766).
 
 Detection throttle:
   python main.py --process-every-n-frames 2   # 15 fps detection, 30 fps preview
@@ -220,10 +215,6 @@ def main():
                 brain.vision.on_annotated_camera_image,
             )
 
-            cli.add_handler(
-                pycozmo.event.EvtCubeDetectorDebugImages, brain.vision.on_debug_images
-            )
-
             if floor_enabled:
                 cli.add_handler(
                     pycozmo.event.EvtFloorProjectedImage,
@@ -286,7 +277,7 @@ def main():
 
             if args.no_camera:
                 print(
-                    "--no-camera: skipping display loop. "
+                    "--no-camera: skipping event loop. "
                     "Connection will stay idle. Press Ctrl-C to quit."
                 )
                 try:
@@ -295,13 +286,13 @@ def main():
                 except KeyboardInterrupt:
                     pass
             else:
-                print("\nStarting display...\n")
+                print("\nStarting headless run...\n")
                 print("Open http://<this-machine-ip>:8766 in a browser\n")
 
                 brain.run(cli)
                 brain.cubes.stop_cube_light_worker()
 
-                print("\nDisplay closed")
+                print("\nRun closed")
 
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
