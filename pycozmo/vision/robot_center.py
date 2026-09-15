@@ -44,8 +44,9 @@ class RobotCenterDetector:
     approximately ``MIN_HEAD_ANGLE`` (-25 deg), because only then are the
     circles visible in the lower part of the camera image.
 
-    Uses Hough circle detection which is robust against the large dark
-    background blob that dominates threshold-based approaches.
+    Uses contour-based detection with a fixed threshold (50) which reliably
+    finds the two circles in the lower image half when the camera is
+    manually exposed (gain=8, exposure=300ms).
     """
 
     MIN_HEAD_ANGLE_RAD = np.radians(-25.0)
@@ -76,117 +77,66 @@ class RobotCenterDetector:
         )
 
     def _find_circles(self, gray: np.ndarray) -> list[tuple[float, float]]:
-        """Find two circles using Hough detection on the lower image half.
+        """Find two symmetric dark circles using contour detection.
+
+        The circles are at approximately (81,200) and (258,200) in a 320x240
+        image when the head is at max-down. Uses a fixed threshold of 50
+        which reliably separates the circles from the floor background.
 
         Returns a list of (cx, cy) pixel coordinates, sorted left-to-right.
         """
         h, w = gray.shape[:2]
         img_center_x = w / 2.0
 
-        # Only look at the lower 50%
-        y_start = int(h * 0.5)
-        roi = gray[y_start:, :]
-
-        blurred = cv2.GaussianBlur(roi, (9, 9), 2)
-
-        # Hough circle detection — works well for distinct circular blobs
-        # even when there's a large dark background
-        circles = cv2.HoughCircles(
-            blurred,
-            cv2.HOUGH_GRADIENT,
-            dp=1.2,
-            minDist=30,
-            param1=80,
-            param2=25,
-            minRadius=5,
-            maxRadius=20,
-        )
-
-        if circles is None:
-            return []
-
-        # Convert to full-image coordinates
-        candidates = []
-        for cx, cy, r in circles[0]:
-            candidates.append((cx, cy + y_start, r))
-
-        if len(candidates) < 2:
-            return []
-
-        # From all candidates, find the pair most symmetric about image centre
-        best_pair = None
-        best_score = float("inf")
-        for i in range(len(candidates)):
-            for j in range(i + 1, len(candidates)):
-                cx_a, cy_a, r_a = candidates[i]
-                cx_b, cy_b, r_b = candidates[j]
-
-                mid_x = (cx_a + cx_b) / 2.0
-                symmetry = abs(mid_x - img_center_x)
-                y_diff = abs(cy_a - cy_b)
-                # Prefer symmetric pairs at similar height, similar radius
-                r_diff = abs(r_a - r_b)
-                score = symmetry + y_diff * 0.5 + r_diff * 2.0
-
-                if score < best_score:
-                    best_score = score
-                    if cx_a <= cx_b:
-                        best_pair = ((cx_a, cy_a), (cx_b, cy_b))
-                    else:
-                        best_pair = ((cx_b, cy_b), (cx_a, cy_a))
-
-        if best_pair is None:
-            return []
-
-        return [best_pair[0], best_pair[1]]
-
-    def _find_circles_contour(self, gray: np.ndarray) -> list[tuple[float, float]]:
-        """Fallback: contour-based detection with Otsu threshold.
-
-        Uses Otsu to automatically find the threshold, then looks for
-        two symmetric dark blobs.
-        """
-        h, w = gray.shape[:2]
-        img_center_x = w / 2.0
-
+        # Only look at the lower 50% (circles are in the bottom half)
         y_start = int(h * 0.5)
         roi = gray[y_start:, :]
 
         blurred = cv2.GaussianBlur(roi, (7, 7), 0)
 
-        # Otsu finds optimal threshold automatically
-        _, thresh = cv2.threshold(
-            blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
-        )
+        # Fixed threshold: circles (dark, <50) stand out from floor (>50)
+        # when camera is manually exposed for calibration
+        _, thresh = cv2.threshold(blurred, 50, 255, cv2.THRESH_BINARY_INV)
+
+        # Minimal cleanup — don't merge the circles
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
 
         contours, _ = cv2.findContours(
             thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
 
+        # Filter to circle-like blobs of the right size
         candidates = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area < 80 or area > 800:
+
+            # Real circles have area ~150-200 px
+            if area < 80 or area > 500:
                 continue
 
             perimeter = cv2.arcLength(cnt, True)
             if perimeter < 1e-3:
                 continue
             circularity = 4.0 * np.pi * area / (perimeter * perimeter)
-            if circularity < 0.3:
+
+            # Real circles have circularity ~0.7+
+            if circularity < 0.5:
                 continue
 
             (_cx, _cy), _radius = cv2.minEnclosingCircle(cnt)
-            if _radius < 4 or _radius > 25:
+
+            # Real circles have radius ~8-15 px
+            if _radius < 5 or _radius > 20:
                 continue
 
             cy_full = _cy + y_start
-            candidates.append((_cx, cy_full, circularity))
+            candidates.append((_cx, cy_full, area))
 
         if len(candidates) < 2:
             return []
 
-        # Find most symmetric pair
+        # Find the most symmetric pair about the image centre
         best_pair = None
         best_score = float("inf")
         for i in range(len(candidates)):
@@ -226,12 +176,7 @@ class RobotCenterDetector:
         else:
             gray = frame
 
-        # Try Hough first (more robust against large dark backgrounds)
         circles = self._find_circles(gray)
-
-        # Fallback to contour-based
-        if len(circles) < 2:
-            circles = self._find_circles_contour(gray)
 
         if len(circles) < 2:
             logger.debug("Robot center: fewer than 2 circles detected")
