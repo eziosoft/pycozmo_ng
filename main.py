@@ -219,35 +219,6 @@ def main():
             vision_processor.show_cube_id = True
             vision_processor.box_thickness = 2
 
-            # Robot center calibration at startup
-            if args.detect_robot_center:
-                print("Calibrating robot center (head to max-down)...")
-                cli.set_head_angle(
-                    pycozmo.robot.MIN_HEAD_ANGLE.radians,
-                    accel=30.0,
-                    max_speed=30.0,
-                )
-                time.sleep(2.0)  # Wait for head to settle and frames to arrive
-                rc = vision_processor.robot_center_result
-                if rc is not None and rc.detected:
-                    print(
-                        f"   Robot center detected: lateral_offset={rc.lateral_offset_mm:+.2f}mm"
-                    )
-                    if rc.translation_mm is not None:
-                        print(
-                            f"   solvePnP translation: "
-                            f"({rc.translation_mm[0]:.1f}, {rc.translation_mm[1]:.1f}, "
-                            f"{rc.translation_mm[2]:.1f}) mm"
-                        )
-                else:
-                    print("   WARNING: Robot center NOT detected (circles not found)")
-                    print(
-                        "   Head will stay at max-down; cube detection may not work well"
-                    )
-                # Return head to normal position
-                cli.set_head_angle(angle, accel=30.0, max_speed=30.0)
-                time.sleep(1.0)
-
             cli.add_handler(
                 pycozmo.event.EvtAnnotatedCameraImage,
                 brain.vision.on_annotated_camera_image,
@@ -291,6 +262,59 @@ def main():
                 )
                 print(f"   Resolution when enabled: {args.camera_resolution}")
                 brain.install_camera_lifecycle(cli, resolution)
+
+                # Robot center calibration: enable camera, tilt head, detect
+                if args.detect_robot_center:
+                    print("Calibrating robot center (head to max-down)...")
+                    # Temporarily enable camera for calibration
+                    cli.enable_camera(
+                        enable=True,
+                        color=False,
+                        resolution=resolution,
+                    )
+                    cli.set_camera_params(
+                        gain=0.0,
+                        exposure_ms=100,
+                        auto_exposure_enabled=True,
+                    )
+                    time.sleep(1.0)  # Let camera warm up
+
+                    cli.set_head_angle(
+                        pycozmo.robot.MIN_HEAD_ANGLE.radians,
+                        accel=30.0,
+                        max_speed=30.0,
+                    )
+                    # Wait for frames and detection (poll up to 5s)
+                    for _ in range(50):
+                        time.sleep(0.1)
+                        rc = vision_processor.robot_center_result
+                        if rc is not None and rc.detected:
+                            break
+
+                    rc = vision_processor.robot_center_result
+                    if rc is not None and rc.detected:
+                        print(
+                            f"   Robot center detected: "
+                            f"lateral_offset={rc.lateral_offset_mm:+.2f}mm"
+                        )
+                        if rc.translation_mm is not None:
+                            print(
+                                f"   solvePnP translation: "
+                                f"({rc.translation_mm[0]:.1f}, "
+                                f"{rc.translation_mm[1]:.1f}, "
+                                f"{rc.translation_mm[2]:.1f}) mm"
+                            )
+                    else:
+                        print(
+                            "   WARNING: Robot center NOT detected (circles not found)"
+                        )
+                    # Return head to normal position
+                    cli.set_head_angle(angle, accel=30.0, max_speed=30.0)
+                    time.sleep(1.0)
+                    # Disable camera — the lifecycle listener will re-enable
+                    # it when a browser connects
+                    cli.enable_camera(enable=False)
+                    print("   Camera disabled after calibration")
 
                 time.sleep(2.0)
 
