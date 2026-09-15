@@ -284,8 +284,8 @@ def main():
                         accel=30.0,
                         max_speed=30.0,
                     )
-                    # Wait for frames and detection (poll up to 5s)
-                    for _ in range(50):
+                    # Wait for frames and detection (poll up to 8s)
+                    for _ in range(80):
                         time.sleep(0.1)
                         rc = vision_processor.robot_center_result
                         if rc is not None and rc.detected:
