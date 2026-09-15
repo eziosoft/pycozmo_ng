@@ -73,6 +73,7 @@ class RobotCenterDetector:
             if head_tolerance_rad is not None
             else self.DEFAULT_HEAD_TOLERANCE_RAD
         )
+        self._last_offset: float | None = None
 
     def _head_near_min(self) -> bool:
         return (
@@ -174,12 +175,17 @@ class RobotCenterDetector:
         lateral_offset_px = mid_x - img_center_x
         lateral_offset_mm = lateral_offset_px * scale_mm_per_px
 
-        logger.info(
-            f"Robot center detected: lateral_offset={lateral_offset_mm:+.2f}mm, "
-            f"circles at ({circle_a_px[0]:.0f},{circle_a_px[1]:.0f}) and "
-            f"({circle_b_px[0]:.0f},{circle_b_px[1]:.0f}), "
-            f"scale={scale_mm_per_px:.3f} mm/px"
-        )
+        # Log at INFO only on first detection or when offset changes significantly
+        if (
+            self._last_offset is None
+            or abs(lateral_offset_mm - self._last_offset) > 0.5
+        ):
+            logger.info(
+                f"Robot center: lateral_offset={lateral_offset_mm:+.2f}mm, "
+                f"circles at ({circle_a_px[0]:.0f},{circle_a_px[1]:.0f}) and "
+                f"({circle_b_px[0]:.0f},{circle_b_px[1]:.0f})"
+            )
+        self._last_offset = lateral_offset_mm
 
         return RobotCenterResult(
             detected=True,
