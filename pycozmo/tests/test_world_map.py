@@ -147,3 +147,119 @@ class TestWorldMapFusion:
         assert len(wm.get_path_points()) == 2
         wm.reset_path()
         assert wm.get_path_points() == []
+
+
+class TestWorldMapRotationAlpha:
+    """Tests for separate rotation smoothing (rotation_alpha)."""
+
+    def _rotation_angle_error(self, r1: np.ndarray, r2: np.ndarray) -> float:
+        """Angle (degrees) between two rotation matrices."""
+        from scipy.spatial.transform import Rotation as R
+
+        return float(
+            np.degrees((R.from_matrix(r1) * R.from_matrix(r2).inv()).magnitude())
+        )
+
+    def test_first_measurement_no_smoothing(self):
+        """First measurement is stored as-is (after world transform)."""
+        wm = WorldMap(smoothing_alpha=0.3, rotation_alpha=0.12)
+        wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
+        r = np.eye(3)
+        wm.update_cube_measurement(0, [0.0, 0.0, 200.0], r, 0.9, 0.0)
+        # Expected world-frame rotation for identity camera rotation at
+        # head=0, robot at origin, yaw=0.
+        _, rot_world = coords.camera_to_world(
+            [0.0, 0.0, 200.0], r, 0.0, np.zeros(3), 0.0
+        )
+        np.testing.assert_allclose(
+            wm.get_cubes()[0].rotation_matrix, rot_world, atol=1e-6
+        )
+
+    def test_rotation_uses_rotation_alpha(self):
+        """Rotation blend uses rotation_alpha, not smoothing_alpha."""
+        wm_high_pos = WorldMap(smoothing_alpha=0.9, rotation_alpha=0.12)
+        wm_low_rot = WorldMap(smoothing_alpha=0.9, rotation_alpha=0.12)
+        # Both have same rotation_alpha, so rotation convergence should match
+        # even if smoothing_alpha differs (position alpha is irrelevant to rotation).
+
+        # Initial measurement: identity rotation
+        r_init = np.eye(3)
+        for wm in (wm_high_pos, wm_low_rot):
+            wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
+            wm.update_cube_measurement(0, [0.0, 0.0, 200.0], r_init, 0.9, 0.0)
+
+        # Second measurement: 30° yaw
+        yaw = np.deg2rad(30)
+        r_new = np.array(
+            [[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]],
+            dtype=np.float64,
+        )
+
+        wm_high_pos.update_cube_measurement(0, [0.0, 0.0, 200.0], r_new, 0.9, 0.0)
+        wm_low_rot.update_cube_measurement(0, [0.0, 0.0, 200.0], r_new, 0.9, 0.0)
+
+        # Both should have identical rotation (same rotation_alpha)
+        err = self._rotation_angle_error(
+            wm_high_pos.get_cubes()[0].rotation_matrix,
+            wm_low_rot.get_cubes()[0].rotation_matrix,
+        )
+        assert err < 0.01, (
+            f"rotation mismatch with different smoothing_alpha: {err:.3f}°"
+        )
+
+    def test_lower_rotation_alpha_slower_convergence(self):
+        """Lower rotation_alpha produces slower rotation convergence."""
+        wm_fast = WorldMap(smoothing_alpha=0.3, rotation_alpha=0.20)
+        wm_slow = WorldMap(smoothing_alpha=0.3, rotation_alpha=0.10)
+
+        yaw = np.deg2rad(30)
+        r_new = np.array(
+            [[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]],
+            dtype=np.float64,
+        )
+
+        for wm in (wm_fast, wm_slow):
+            wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
+            wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
+
+        # Apply 5 identical measurements
+        for _ in range(5):
+            wm_fast.update_cube_measurement(0, [0.0, 0.0, 200.0], r_new, 0.9, 0.0)
+            wm_slow.update_cube_measurement(0, [0.0, 0.0, 200.0], r_new, 0.9, 0.0)
+
+        err_fast = self._rotation_angle_error(
+            wm_fast.get_cubes()[0].rotation_matrix, r_new
+        )
+        err_slow = self._rotation_angle_error(
+            wm_slow.get_cubes()[0].rotation_matrix, r_new
+        )
+        assert err_fast < err_slow, (
+            f"higher alpha should converge faster: fast_err={err_fast:.2f}° "
+            f">= slow_err={err_slow:.2f}°"
+        )
+
+    def test_position_still_uses_smoothing_alpha(self):
+        """Position blending still uses smoothing_alpha (not rotation_alpha)."""
+        wm = WorldMap(smoothing_alpha=0.5, rotation_alpha=0.10)
+        wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
+        wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
+
+        # Second measurement: cube deeper (camera z: 200 -> 300).
+        wm.update_cube_measurement(0, [0.0, 0.0, 300.0], np.eye(3), 0.9, 0.0)
+
+        pos = wm.get_cubes()[0].position
+        # Camera depth maps to world X (forward); Y stays 0, Z stays 38 (camera
+        # height). World X: 200+30=230 (first), 300+30=330 (second).
+        # blend = 0.5 * 0.9 = 0.45 -> x = 0.45*330 + 0.55*230 = 275.0
+        expected = np.array([275.0, 0.0, 38.0])
+        np.testing.assert_allclose(pos, expected, atol=0.1)
+
+    def test_default_rotation_alpha(self):
+        """Default rotation_alpha is 0.12."""
+        wm = WorldMap()
+        assert wm.rotation_alpha == pytest.approx(0.12)
+
+    def test_custom_rotation_alpha(self):
+        """Custom rotation_alpha is stored."""
+        wm = WorldMap(rotation_alpha=0.05)
+        assert wm.rotation_alpha == pytest.approx(0.05)

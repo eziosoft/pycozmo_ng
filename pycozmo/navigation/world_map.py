@@ -72,19 +72,26 @@ class WorldMap:
     def __init__(
         self,
         smoothing_alpha: float = 0.3,
+        rotation_alpha: float = 0.12,
         confidence_floor: float = 0.5,
         max_path_points: int = 5000,
     ):
         """
         Args:
-            smoothing_alpha: Exponential smoothing factor for cube fusion
-                (0 = no update, 1 = no smoothing).
+            smoothing_alpha: Exponential smoothing factor for cube position
+                fusion (0 = no update, 1 = no smoothing).
+            rotation_alpha: Exponential smoothing factor for cube rotation
+                (SLERP) fusion.  Lower values suppress attitude noise more
+                aggressively — recommended range 0.05–0.20 for 10–20°
+                per-frame jitter.  (0 = no update, 1 = no smoothing).
             confidence_floor: Cube measurements below this confidence are
                 dropped entirely (not fused).
             max_path_points: Rolling cap on the number of path points kept.
         """
         self.smoothing_alpha = float(smoothing_alpha)
         self.smoothing_complement = 1.0 - self.smoothing_alpha
+        self.rotation_alpha = float(rotation_alpha)
+        self.rotation_complement = 1.0 - self.rotation_alpha
         self.confidence_floor = float(confidence_floor)
         self.max_path_points = int(max_path_points)
 
@@ -206,12 +213,13 @@ class WorldMap:
                 )
                 return
 
-            # Confidence-weighted blend: weak detections move the estimate less.
-            blend = self.smoothing_alpha * float(confidence)
-            complement = 1.0 - blend
+            # Position: confidence-weighted exponential smoothing.
+            pos_blend = self.smoothing_alpha * float(confidence)
+            position = pos_blend * pos_world + (1.0 - pos_blend) * prev.position
 
-            position = blend * pos_world + complement * prev.position
-
+            # Rotation: confidence-weighted SLERP with its own (lower) alpha
+            # to suppress attitude noise more aggressively than position.
+            rot_blend = self.rotation_alpha * float(confidence)
             prev_q = R.from_matrix(prev.rotation_matrix)
             new_q = R.from_matrix(rot_world)
             prev_quat = prev_q.as_quat()
@@ -221,7 +229,7 @@ class WorldMap:
                 new_q = R.from_quat(new_quat)
             key_rots = R.concatenate([prev_q, new_q])
             slerp = Slerp([0, 1], key_rots)
-            rotation = slerp(blend).as_matrix()
+            rotation = slerp(rot_blend).as_matrix()
 
             self._cubes[cube_id] = CubeState(
                 position=position,
