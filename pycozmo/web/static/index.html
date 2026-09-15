@@ -15,61 +15,26 @@
   </script>
 </head>
 <body>
-  <!-- Split layout: left (camera + telemetry) | right (status + 3D) -->
+  <!-- Split layout: left (camera feeds) | center (3D map) | right (telemetry) -->
   <div id="layout">
-    <!-- Left column: camera feed on top, telemetry below -->
+    <!-- Left column: camera feeds -->
     <div id="left-col">
       <div id="camera-panel">
         <div id="camera-label">Cozmo Camera</div>
         <img id="camera-feed" src="/video" alt="Camera feed" />
       </div>
+      <div id="annotated-panel">
+        <div id="annotated-label">Detections</div>
+        <img id="annotated-feed" src="/annotated-video" alt="Annotated feed" />
+      </div>
       <div id="floor-panel">
         <div id="floor-label">Floor (Bird's Eye)</div>
         <img id="floor-feed" src="/floor-video" alt="Floor view" />
       </div>
-      <div id="telemetry-panel">
-        <h3>Telemetry</h3>
-        <div class="tel-row">
-          <span class="tel-label">Status</span>
-          <span class="tel-value" id="tel-status">--</span>
-        </div>
-        <div class="tel-row">
-          <span class="tel-label">Battery</span>
-          <span class="tel-value" id="tel-battery">--</span>
-        </div>
-        <div class="tel-row">
-          <span class="tel-label">Speed</span>
-          <span class="tel-value" id="tel-speed">0 mm/s</span>
-        </div>
-        <div class="tel-row">
-          <span class="tel-label">Head</span>
-          <span class="tel-value" id="tel-head">--&deg;</span>
-        </div>
-        <div class="tel-row">
-          <span class="tel-label">Lift</span>
-          <span class="tel-value" id="tel-lift">-- mm</span>
-        </div>
-        <div class="tel-row">
-          <span class="tel-label">Wheel L</span>
-          <span class="tel-value" id="tel-wheel-l">0 mm/s</span>
-        </div>
-        <div class="tel-row">
-          <span class="tel-label">Wheel R</span>
-          <span class="tel-value" id="tel-wheel-r">0 mm/s</span>
-        </div>
-        <div class="tel-row">
-          <span class="tel-label">Cubes</span>
-          <span class="tel-value" id="tel-cubes">0</span>
-        </div>
-        <div class="tel-row">
-          <span class="tel-label">Path</span>
-          <span class="tel-value" id="tel-path">0 pts</span>
-        </div>
-      </div>
     </div>
 
-    <!-- Right column: status bar + 3D viewer -->
-    <div id="viewer-panel">
+    <!-- Center column: 3D viewer -->
+    <div id="center-col">
       <div id="status-bar">
         <span class="status-dot disconnected" id="status-dot"></span>
         <span class="status-label disconnected" id="status-text">disconnected</span>
@@ -108,6 +73,49 @@
             <td class="ctl-label" colspan="3">stop all motors</td>
           </tr>
         </table>
+      </div>
+    </div>
+
+    <!-- Right column: telemetry -->
+    <div id="right-col">
+      <div id="telemetry-panel">
+        <h3>Telemetry</h3>
+        <div class="tel-row">
+          <span class="tel-label">Status</span>
+          <span class="tel-value" id="tel-status">--</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Battery</span>
+          <span class="tel-value" id="tel-battery">--</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Speed</span>
+          <span class="tel-value" id="tel-speed">0 mm/s</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Head</span>
+          <span class="tel-value" id="tel-head">--&deg;</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Lift</span>
+          <span class="tel-value" id="tel-lift">-- mm</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Wheel L</span>
+          <span class="tel-value" id="tel-wheel-l">0 mm/s</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Wheel R</span>
+          <span class="tel-value" id="tel-wheel-r">0 mm/s</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Cubes</span>
+          <span class="tel-value" id="tel-cubes">0</span>
+        </div>
+        <div class="tel-row">
+          <span class="tel-label">Path</span>
+          <span class="tel-value" id="tel-path">0 pts</span>
+        </div>
       </div>
     </div>
   </div>

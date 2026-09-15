@@ -44,6 +44,8 @@ class VisionDisplay:
         with self.fs.detections_lock:
             self.fs.latest_detections = detections
         self._stamp_detections_seen()
+        if annotated_image is not None:
+            self.web_viewer.push_annotated_frame(annotated_image)
         self.web.update_web_viewer()
 
     def _stamp_detections_seen(self):
@@ -75,9 +77,7 @@ class VisionDisplay:
         if self.floor_pipeline is not None and self.floor_pipeline.floor_projector:
             fp = self.floor_pipeline.floor_projector
             self.web_viewer.set_floor_size(fp.floor_size[0], fp.floor_size[1])
-            self.web_viewer.set_floor_center(
-                fp.floor_center[0], fp.floor_center[1]
-            )
+            self.web_viewer.set_floor_center(fp.floor_center[0], fp.floor_center[1])
 
     def save_frames(self):
         """Save current frames to disk."""

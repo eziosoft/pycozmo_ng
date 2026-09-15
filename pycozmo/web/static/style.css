@@ -85,7 +85,7 @@ html, body {
   height: 100%;
 }
 
-/* ---- Left column: camera + telemetry ---- */
+/* ---- Left column: camera feeds ---- */
 #left-col {
   flex: 0 0 340px;
   display: flex;
@@ -93,6 +93,7 @@ html, body {
   background: var(--bg-subtle);
   border-right: 1px solid var(--border);
   z-index: 10;
+  overflow-y: auto;
 }
 
 /* ---- Camera panel ---- */
@@ -115,6 +116,34 @@ html, body {
 }
 
 #camera-feed {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: #000;
+  display: block;
+}
+
+/* ---- Annotated panel ---- */
+#annotated-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+}
+
+#annotated-label {
+  padding: 8px 12px;
+  font-family: var(--font-display);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+
+#annotated-feed {
   width: 100%;
   aspect-ratio: 4 / 3;
   object-fit: contain;
@@ -150,6 +179,17 @@ html, body {
   display: block;
 }
 
+/* ---- Right column: telemetry ---- */
+#right-col {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-subtle);
+  border-left: 1px solid var(--border);
+  z-index: 10;
+  overflow-y: auto;
+}
+
 /* ---- Telemetry panel ---- */
 #telemetry-panel {
   flex: 1;
@@ -159,7 +199,6 @@ html, body {
   flex-direction: column;
   gap: 6px;
   background: var(--bg-subtle);
-  border-top: 1px solid var(--border);
 }
 
 #telemetry-panel h3 {
@@ -216,7 +255,7 @@ html, body {
   color: var(--strength-weak);
 }
 
-/* ---- Status bar (top of right col) ---- */
+/* ---- Status bar (top of center col) ---- */
 #status-bar {
   display: flex;
   align-items: center;
@@ -263,8 +302,8 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- 3D viewer panel ---- */
-#viewer-panel {
+/* ---- 3D viewer panel (center column) ---- */
+#center-col {
   flex: 1;
   display: flex;
   flex-direction: column;

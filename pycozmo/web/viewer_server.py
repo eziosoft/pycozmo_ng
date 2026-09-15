@@ -85,6 +85,10 @@ class WebViewerServer:
         self._latest_image = None
         self._image_id: int = 0
 
+        # Annotated MJPEG streaming (camera with detection overlays)
+        self._latest_annotated_image = None
+        self._annotated_image_id: int = 0
+
         # Floor MJPEG streaming
         self._latest_floor_image = None
         self._floor_image_id: int = 0
@@ -273,6 +277,14 @@ class WebViewerServer:
         """
         self._latest_image = image
         self._image_id += 1
+
+    def push_annotated_frame(self, image):
+        """Publish the latest annotated camera frame (PIL image) for MJPEG streaming.
+
+        The annotated frame includes detection overlays (bounding boxes, labels).
+        """
+        self._latest_annotated_image = image
+        self._annotated_image_id += 1
 
     def push_floor_frame(self, image):
         """Publish the latest floor-projected frame (numpy BGR) for MJPEG."""
@@ -612,6 +624,42 @@ class WebViewerServer:
 
         return response
 
+    async def _serve_annotated_video(self, request):
+        """MJPEG streaming endpoint — pushes annotated camera frame to browser."""
+        response = web.StreamResponse(
+            status=200,
+            reason="OK",
+            headers={
+                "Content-Type": "multipart/x-mixed-replace; boundary=frame",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+        await response.prepare(request)
+
+        boundary = "frame"
+        last_frame_id = -1
+        while True:
+            try:
+                current_id = self._annotated_image_id
+                image = self._latest_annotated_image
+                if current_id == last_frame_id or image is None:
+                    await asyncio.sleep(0.01)
+                    continue
+
+                last_frame_id = current_id
+                jpeg = await asyncio.to_thread(encode_jpeg, image, 70)
+                header = (
+                    f"--{boundary}\r\n"
+                    f"Content-Type: image/jpeg\r\n"
+                    f"Content-Length: {len(jpeg)}\r\n\r\n"
+                ).encode()
+                await response.write(header + jpeg + b"\r\n")
+            except (ConnectionResetError, ConnectionError, asyncio.CancelledError):
+                break
+
+        return response
+
     async def _serve_floor_video(self, request):
         """MJPEG streaming endpoint — pushes floor-projected frame to browser."""
         response = web.StreamResponse(
@@ -712,6 +760,7 @@ class WebViewerServer:
             app = web.Application()
             app.router.add_get("/", self._serve_index)
             app.router.add_get("/video", self._serve_video)
+            app.router.add_get("/annotated-video", self._serve_annotated_video)
             app.router.add_get("/floor-video", self._serve_floor_video)
             app.router.add_get("/{filename}", self._serve_static)
             runner = web.AppRunner(app)
