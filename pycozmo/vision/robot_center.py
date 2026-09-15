@@ -1,9 +1,9 @@
 """Robot center detection via two black circles on the robot body.
 
 When the head is tilted fully down (MIN_HEAD_ANGLE = -25 deg), two black
-circles are visible in the lower part of the image. The distance between
-their centres is 20 mm, and the midpoint between them is the true centre
-of the robot in width.
+circles are visible near the bottom of the image on the robot's white
+chassis. The distance between their centres is 20 mm, and the midpoint
+between them is the true centre of the robot in width.
 
 The lateral offset (camera position relative to robot centre) is computed
 from the pixel midpoint of the two circles, scaled by the known 20 mm
@@ -42,11 +42,12 @@ class RobotCenterDetector:
 
     The detector only produces valid results when the head is tilted to
     approximately ``MIN_HEAD_ANGLE`` (-25 deg), because only then are the
-    circles visible in the lower part of the camera image.
+    circles visible near the bottom of the camera image.
 
-    Uses contour-based detection with a fixed threshold (50) which reliably
-    finds the two circles in the lower image half when the camera is
-    manually exposed (gain=8, exposure=300ms).
+    The circles sit on the robot's white chassis at the very bottom of
+    the frame.  Detection uses the bottom 25 % of the image with a
+    brightness threshold that separates the dark circles from the light
+    chassis background.
     """
 
     MIN_HEAD_ANGLE_RAD = np.radians(-25.0)
@@ -77,28 +78,28 @@ class RobotCenterDetector:
         )
 
     def _find_circles(self, gray: np.ndarray) -> list[tuple[float, float]]:
-        """Find two symmetric dark circles using contour detection.
+        """Find two symmetric dark circles on the robot's white chassis.
 
-        The circles are at approximately (81,200) and (258,200) in a 320x240
-        image when the head is at max-down. Uses a fixed threshold of 50
-        which reliably separates the circles from the floor background.
+        The circles are near the bottom of the frame (~y 210-225 in a
+        320x240 image) on the robot's light-colored body.  The bottom 25 %
+        of the image is examined.  A brightness threshold of 120 separates
+        the dark circles (< 120) from the white chassis (> 120).
 
         Returns a list of (cx, cy) pixel coordinates, sorted left-to-right.
         """
         h, w = gray.shape[:2]
         img_center_x = w / 2.0
 
-        # Only look at the lower 50% (circles are in the bottom half)
-        y_start = int(h * 0.5)
+        # Circles are in the bottom ~25% of the image (robot chassis)
+        y_start = int(h * 0.75)
         roi = gray[y_start:, :]
 
-        blurred = cv2.GaussianBlur(roi, (7, 7), 0)
+        blurred = cv2.GaussianBlur(roi, (5, 5), 0)
 
-        # Fixed threshold: circles (dark, <50) stand out from floor (>50)
-        # when camera is manually exposed for calibration
-        _, thresh = cv2.threshold(blurred, 50, 255, cv2.THRESH_BINARY_INV)
+        # Threshold: circles are dark (<120) on white chassis (>150)
+        _, thresh = cv2.threshold(blurred, 120, 255, cv2.THRESH_BINARY_INV)
 
-        # Minimal cleanup — don't merge the circles
+        # Light cleanup
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
         thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
 
@@ -106,13 +107,13 @@ class RobotCenterDetector:
             thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
 
-        # Filter to circle-like blobs of the right size
+        # Filter to circle-like blobs — small circles (~5-15 px radius)
         candidates = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
 
-            # Real circles have area ~150-200 px
-            if area < 80 or area > 500:
+            # Small circles: area roughly 50-500 px
+            if area < 20 or area > 600:
                 continue
 
             perimeter = cv2.arcLength(cnt, True)
@@ -120,14 +121,12 @@ class RobotCenterDetector:
                 continue
             circularity = 4.0 * np.pi * area / (perimeter * perimeter)
 
-            # Real circles have circularity ~0.7+
-            if circularity < 0.5:
+            if circularity < 0.4:
                 continue
 
             (_cx, _cy), _radius = cv2.minEnclosingCircle(cnt)
 
-            # Real circles have radius ~8-15 px
-            if _radius < 5 or _radius > 20:
+            if _radius < 2 or _radius > 20:
                 continue
 
             cy_full = _cy + y_start
