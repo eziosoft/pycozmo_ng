@@ -270,13 +270,15 @@ class Dispatcher:
         self.dispatch_handlers = collections.defaultdict(list)
 
     def dispatch(self, event, *args, **kwargs):
-        # Dispatch to handlers.
-        handlers = []
-        for i, handler in enumerate(self.dispatch_handlers[event]):
-            if handler.one_shot:
-                # Delete one-shot handlers prior to actual dispatch
-                del self.dispatch_handlers[event][i]
-            handlers.append(handler)
+        # Snapshot the handler list before iterating: handlers may be added or
+        # removed from other threads (e.g. Client.go_to_pose registering its
+        # path-completion waiter) while a packet is being dispatched.  The old
+        # in-place iteration/deletion could raise "list changed size during
+        # iteration", silently dropping the packet and leaving callers blocked
+        # forever (COZMO-53).
+        handlers = list(self.dispatch_handlers[event])
+        if any(h.one_shot for h in handlers):
+            self.dispatch_handlers[event] = [h for h in handlers if not h.one_shot]
         for handler in handlers:
             handler.f(*args, **kwargs)
         # Dispatch to child dispatchers.

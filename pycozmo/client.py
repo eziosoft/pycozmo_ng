@@ -517,8 +517,25 @@ class Client(event.Dispatcher):
         pkt = protocol_encoder.StopAllMotors()
         self.conn.send(pkt)
 
-    def go_to_pose(self, pose: util.Pose, relative_to_robot: bool = False) -> None:
-        """Move to a specific pose (position and orientation)."""
+    def go_to_pose(
+        self,
+        pose: util.Pose,
+        relative_to_robot: bool = False,
+        timeout_s: float | None = 30.0,
+    ) -> None:
+        """Move to a specific pose (position and orientation).
+
+        Blocks until the on-board planner reports the path completed or
+        aborted, or until ``timeout_s`` seconds elapse (default 30 s; pass
+        ``None`` to wait indefinitely). On timeout only a warning is logged —
+        the robot keeps executing its path — so callers should re-check the
+        robot pose before acting (COZMO-53).
+
+        The path-completion handler is registered *before* the path is sent so
+        a fast ``PATH_COMPLETED`` event cannot be missed; missing it previously
+        left the caller blocked forever (e.g. the cube approach stalling after
+        step 1 while the robot sat at the standoff).
+        """
 
         if relative_to_robot:
             pose = util.Pose(
@@ -528,37 +545,52 @@ class Client(event.Dispatcher):
                 angle_z=self.pose.rotation.angle_z,
             ).define_pose_relative_this(pose)
 
-        pkt = protocol_encoder.AppendPathSegLine(
-            from_x=self.pose.position.x,
-            from_y=self.pose.position.y,
-            to_x=pose.position.x,
-            to_y=pose.position.y,
-            speed_mmps=100.0,
-            accel_mmps2=20.0,
-            decel_mmps2=20.0,
-        )
-        self.conn.send(pkt)
-        pkt = protocol_encoder.AppendPathSegPointTurn(
-            x=pose.position.x,
-            y=pose.position.y,
-            angle_rad=pose.rotation.angle_z.radians,
-            angle_tolerance_rad=0.01,
-            speed_mmps=40.0,
-            accel_mmps2=20.0,
-            decel_mmps2=20.0,
-        )
-        self.conn.send(pkt)
-        pkt = protocol_encoder.ExecutePath(event_id=1)
-        self.conn.send(pkt)
-
         e = Event()
+        completed = False
 
         def event_wait(_, pkt2: protocol_encoder.PathFollowingEvent):
+            nonlocal completed
             if pkt2.event_type != protocol_encoder.PathEventType.PATH_STARTED:
+                completed = True
                 e.set()
 
-        self.add_handler(protocol_encoder.PathFollowingEvent, event_wait)
-        e.wait()
+        # Register before sending so the completion event (which crosses a few
+        # thread hops from the robot) cannot race ahead of this handler.
+        handler = self.add_handler(protocol_encoder.PathFollowingEvent, event_wait)
+        try:
+            pkt = protocol_encoder.AppendPathSegLine(
+                from_x=self.pose.position.x,
+                from_y=self.pose.position.y,
+                to_x=pose.position.x,
+                to_y=pose.position.y,
+                speed_mmps=100.0,
+                accel_mmps2=20.0,
+                decel_mmps2=20.0,
+            )
+            self.conn.send(pkt)
+            pkt = protocol_encoder.AppendPathSegPointTurn(
+                x=pose.position.x,
+                y=pose.position.y,
+                angle_rad=pose.rotation.angle_z.radians,
+                angle_tolerance_rad=0.01,
+                speed_mmps=40.0,
+                accel_mmps2=20.0,
+                decel_mmps2=20.0,
+            )
+            self.conn.send(pkt)
+            pkt = protocol_encoder.ExecutePath(event_id=1)
+            self.conn.send(pkt)
+
+            e.wait(timeout=timeout_s)
+        finally:
+            self.del_handler(protocol_encoder.PathFollowingEvent, handler)
+
+        if not completed:
+            logger.warning(
+                "go_to_pose: timed out after %.0fs waiting for path completion "
+                "(robot may still be moving)",
+                timeout_s if timeout_s is not None else 0,
+            )
 
     def set_backpack_lights(
         self, left_light, front_light, center_light, rear_light, right_light
