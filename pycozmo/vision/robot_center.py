@@ -1,13 +1,12 @@
-"""Robot center detection via two black circles on the robot body.
+"""Robot center detection via two ring-shaped markers on the robot body.
 
-When the head is tilted fully down (MIN_HEAD_ANGLE = -25 deg), two black
-circles are visible near the bottom of the image on the robot's white
-chassis. The distance between their centres is 20 mm, and the midpoint
-between them is the true centre of the robot in width.
+When the head is tilted fully down (MIN_HEAD_ANGLE = -25 deg), two small
+black rings with white centres are visible near the bottom of the image on
+the robot's chassis. The distance between their centres is 20 mm, and the
+midpoint between them is the true centre of the robot in width.
 
-The lateral offset (camera position relative to robot centre) is computed
-from the pixel midpoint of the two circles, scaled by the known 20 mm
-separation divided by the pixel distance between them.
+Detection uses a narrow horizontal band at the bottom of the frame and
+Hough circle detection on the inverted image (rings become bright circles).
 """
 
 from dataclasses import dataclass
@@ -38,16 +37,16 @@ class RobotCenterResult:
 
 
 class RobotCenterDetector:
-    """Detect two black circles on the robot body and compute camera lateral offset.
+    """Detect two ring markers on the robot body and compute camera lateral offset.
 
     The detector only produces valid results when the head is tilted to
     approximately ``MIN_HEAD_ANGLE`` (-25 deg), because only then are the
-    circles visible near the bottom of the camera image.
+    rings visible near the bottom of the camera image.
 
-    The circles sit on the robot's white chassis at the very bottom of
-    the frame.  Detection uses the bottom 25 % of the image with a
-    brightness threshold that separates the dark circles from the light
-    chassis background.
+    The rings are small black circles with white centres, located on the
+    robot's chassis at the very bottom of the frame.  Detection scans a
+    narrow band (y 70%-93% of image height) and uses Hough circle detection
+    on the inverted image where rings appear as bright circles.
     """
 
     MIN_HEAD_ANGLE_RAD = np.radians(-25.0)
@@ -78,85 +77,68 @@ class RobotCenterDetector:
         )
 
     def _find_circles(self, gray: np.ndarray) -> list[tuple[float, float]]:
-        """Find two symmetric dark circles on the robot's white chassis.
+        """Find two ring markers using Hough detection on inverted band.
 
-        The circles are near the bottom of the frame (~y 210-225 in a
-        320x240 image) on the robot's light-colored body.  The bottom 25 %
-        of the image is examined.  A brightness threshold of 120 separates
-        the dark circles (< 120) from the white chassis (> 120).
+        The rings sit in a narrow horizontal band near the bottom of the
+        frame.  Inverting the image turns the black rings into bright
+        circles that HoughCircles can detect reliably.
 
         Returns a list of (cx, cy) pixel coordinates, sorted left-to-right.
         """
         h, w = gray.shape[:2]
         img_center_x = w / 2.0
 
-        # Circles are in the bottom ~25% of the image (robot chassis)
-        y_start = int(h * 0.75)
-        roi = gray[y_start:, :]
+        # Narrow band at the bottom where rings sit (y 70%-93%)
+        y_start = int(h * 0.70)
+        y_end = int(h * 0.93)
+        band = gray[y_start:y_end, :]
 
-        blurred = cv2.GaussianBlur(roi, (5, 5), 0)
+        # Invert: black rings become bright circles
+        inv_band = cv2.bitwise_not(band)
+        blurred = cv2.GaussianBlur(inv_band, (5, 5), 0)
 
-        # Threshold: circles are dark (<120) on white chassis (>150)
-        _, thresh = cv2.threshold(blurred, 120, 255, cv2.THRESH_BINARY_INV)
-
-        # Light cleanup
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
-
-        contours, _ = cv2.findContours(
-            thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        # Hough detection with conservative parameters
+        circles = cv2.HoughCircles(
+            blurred,
+            cv2.HOUGH_GRADIENT,
+            dp=1.2,
+            minDist=50,
+            param1=50,
+            param2=8,
+            minRadius=3,
+            maxRadius=10,
         )
 
-        # Filter to circle-like blobs — small circles (~5-15 px radius)
-        candidates = []
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-
-            # Small circles: area roughly 50-500 px
-            if area < 20 or area > 600:
-                continue
-
-            perimeter = cv2.arcLength(cnt, True)
-            if perimeter < 1e-3:
-                continue
-            circularity = 4.0 * np.pi * area / (perimeter * perimeter)
-
-            if circularity < 0.4:
-                continue
-
-            (_cx, _cy), _radius = cv2.minEnclosingCircle(cnt)
-
-            if _radius < 2 or _radius > 20:
-                continue
-
-            cy_full = _cy + y_start
-            candidates.append((_cx, cy_full, area))
-
-        if len(candidates) < 2:
+        if circles is None or len(circles[0]) < 2:
             return []
 
-        # Find the most symmetric pair about the image centre
+        # Sort by x coordinate (left-to-right)
+        detected = []
+        for cx, cy, r in circles[0]:
+            detected.append((cx, cy + y_start))
+
+        detected.sort(key=lambda p: p[0])
+
+        # Take the two most symmetric candidates about image centre
+        if len(detected) == 2:
+            return detected
+
+        # More than 2 — pick the most symmetric pair
         best_pair = None
         best_score = float("inf")
-        for i in range(len(candidates)):
-            for j in range(i + 1, len(candidates)):
-                cx_a, cy_a, _ = candidates[i]
-                cx_b, cy_b, _ = candidates[j]
+        for i in range(len(detected)):
+            for j in range(i + 1, len(detected)):
+                cx_a, cy_a = detected[i]
+                cx_b, cy_b = detected[j]
                 mid_x = (cx_a + cx_b) / 2.0
                 symmetry = abs(mid_x - img_center_x)
                 y_diff = abs(cy_a - cy_b)
                 score = symmetry + y_diff * 0.5
                 if score < best_score:
                     best_score = score
-                    if cx_a <= cx_b:
-                        best_pair = ((cx_a, cy_a), (cx_b, cy_b))
-                    else:
-                        best_pair = ((cx_b, cy_b), (cx_a, cy_a))
+                    best_pair = (detected[i], detected[j])
 
-        if best_pair is None:
-            return []
-
-        return [best_pair[0], best_pair[1]]
+        return list(best_pair) if best_pair else []
 
     def detect(self, frame: np.ndarray) -> RobotCenterResult:
         """Detect robot center from camera frame.
