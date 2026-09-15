@@ -34,7 +34,7 @@ class CubeApproach:
     # Tuning constants
     # ------------------------------------------------------------------
     STEP1_DIST_MM = 160.0
-    STEP2_DIST_MM = 90.0
+    STEP2_DIST_MM = 100.0
     BACK_AWAY_DIST_MM = 220.0
     TOO_CLOSE_MM = 120.0
     HEAD_TILT_DEG = -10.0
