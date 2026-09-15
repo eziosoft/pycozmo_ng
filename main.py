@@ -118,6 +118,15 @@ def main():
         ),
     )
     parser.add_argument(
+        "--detect-robot-center",
+        action="store_true",
+        help=(
+            "Calibrate camera offset at startup by detecting two black "
+            "circles on the robot body (head tilts to max-down). The "
+            "measured lateral offset is used for all cube measurements."
+        ),
+    )
+    parser.add_argument(
         "--floor-size",
         type=float,
         default=600.0,
@@ -209,6 +218,35 @@ def main():
             vision_processor.show_confidence = True
             vision_processor.show_cube_id = True
             vision_processor.box_thickness = 2
+
+            # Robot center calibration at startup
+            if args.detect_robot_center:
+                print("Calibrating robot center (head to max-down)...")
+                cli.set_head_angle(
+                    pycozmo.robot.MIN_HEAD_ANGLE.radians,
+                    accel=30.0,
+                    max_speed=30.0,
+                )
+                time.sleep(2.0)  # Wait for head to settle and frames to arrive
+                rc = vision_processor.robot_center_result
+                if rc is not None and rc.detected:
+                    print(
+                        f"   Robot center detected: lateral_offset={rc.lateral_offset_mm:+.2f}mm"
+                    )
+                    if rc.translation_mm is not None:
+                        print(
+                            f"   solvePnP translation: "
+                            f"({rc.translation_mm[0]:.1f}, {rc.translation_mm[1]:.1f}, "
+                            f"{rc.translation_mm[2]:.1f}) mm"
+                        )
+                else:
+                    print("   WARNING: Robot center NOT detected (circles not found)")
+                    print(
+                        "   Head will stay at max-down; cube detection may not work well"
+                    )
+                # Return head to normal position
+                cli.set_head_angle(angle, accel=30.0, max_speed=30.0)
+                time.sleep(1.0)
 
             cli.add_handler(
                 pycozmo.event.EvtAnnotatedCameraImage,

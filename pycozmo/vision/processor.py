@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pycozmo import logger
 from pycozmo.vision.camera_calibration import CameraCalibration
 from pycozmo.vision.floor_pipeline import FloorPipeline
+from pycozmo.vision.robot_center import RobotCenterDetector, RobotCenterResult
 
 # Import CubeFusionTracker
 try:
@@ -79,6 +80,13 @@ class VisionProcessor:
         self.cube_detector = None
         self.cube_tracker = None
         self.fused_cubes = {}  # 3D fused cube states
+
+        # Robot center detection
+        self.robot_center_detector = RobotCenterDetector(
+            camera_calibration.camera_matrix,
+            camera_calibration.distortion_coefficients,
+        )
+        self.robot_center_result: RobotCenterResult | None = None
 
         # Initialize the detector
         self._init_detector()
@@ -222,6 +230,8 @@ class VisionProcessor:
         """
         Detect cubes using CozmoCubeDetector with 3D tracking.
 
+        Also runs robot center detection when the head is near max-down tilt.
+
         Args:
             img_array: Image as numpy array (RGB from PIL)
             head_angle_rad: Current head tilt angle in radians (positive = looking up)
@@ -234,6 +244,10 @@ class VisionProcessor:
 
             # Convert RGB to BGR for OpenCV
             img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+
+            # Robot center detection (runs when head is near max-down)
+            self.robot_center_detector.head_angle_rad = head_angle_rad
+            self.robot_center_result = self.robot_center_detector.detect(img_bgr)
 
             # Detect marker faces
             results = self.cube_detector.detect(img_bgr)
@@ -402,6 +416,73 @@ class VisionProcessor:
         annotated_image = self.draw_detections(image, detections)
         return detections, annotated_image
 
+    def draw_robot_center(
+        self, image: Image.Image, result: RobotCenterResult | None = None
+    ) -> Image.Image:
+        """Draw robot center detection overlay on the image.
+
+        Shows the two detected circles, the midpoint (robot center), and
+        the lateral offset value.
+
+        Args:
+            image: PIL Image to annotate.
+            result: RobotCenterResult to draw. If None, uses the latest result.
+
+        Returns:
+            Annotated PIL Image (a copy of the original).
+        """
+        if result is None:
+            result = self.robot_center_result
+        if result is None or not result.detected:
+            return image
+
+        annotated = image.copy()
+        draw = ImageDraw.Draw(annotated)
+
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
+        except Exception:
+            try:
+                font = ImageFont.truetype("arial.ttf", 11)
+            except Exception:
+                font = ImageFont.load_default()
+
+        # Draw circle centres
+        if result.circle_a_px is not None:
+            cx, cy = result.circle_a_px
+            r = 6
+            draw.ellipse(
+                [(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 0), width=2
+            )
+
+        if result.circle_b_px is not None:
+            cx, cy = result.circle_b_px
+            r = 6
+            draw.ellipse(
+                [(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 0), width=2
+            )
+
+        # Draw midpoint (robot center)
+        if result.circle_a_px is not None and result.circle_b_px is not None:
+            mid_x = (result.circle_a_px[0] + result.circle_b_px[0]) / 2.0
+            mid_y = (result.circle_a_px[1] + result.circle_b_px[1]) / 2.0
+
+            # Vertical line at robot center
+            img_h = image.size[1]
+            draw.line([(mid_x, 0), (mid_x, img_h)], fill=(255, 255, 0), width=1)
+
+            # Center dot
+            draw.ellipse(
+                [(mid_x - 4, mid_y - 4), (mid_x + 4, mid_y + 4)],
+                fill=(255, 255, 0),
+            )
+
+        # Label
+        label = f"center: {result.lateral_offset_mm:+.1f}mm"
+        draw.text((5, 5), label, fill=(255, 255, 0), font=font)
+
+        return annotated
+
 
 class AnnotatedVisionProcessor(VisionProcessor):
     """
@@ -557,6 +638,15 @@ class AnnotatedVisionProcessor(VisionProcessor):
             detections, annotated_image = self.detect_and_annotate(
                 undistorted_image, head_angle_rad
             )
+
+            # Draw robot center overlay if detected
+            if (
+                self.robot_center_result is not None
+                and self.robot_center_result.detected
+            ):
+                annotated_image = self.draw_robot_center(
+                    annotated_image, self.robot_center_result
+                )
 
             # Dispatch annotated image event
             self.client.dispatch(

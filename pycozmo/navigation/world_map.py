@@ -173,6 +173,7 @@ class WorldMap:
         confidence: float,
         head_angle_rad: float,
         num_faces: int | None = None,
+        camera_lateral_offset_mm: float = 0.0,
     ) -> None:
         """Fuse a camera-frame cube measurement into the world map.
 
@@ -189,6 +190,8 @@ class WorldMap:
             num_faces: How many marker faces produced this measurement; keeps
                 the fused state's ``num_faces`` current instead of forever
                 keeping the first frame's value. (COZMO-36)
+            camera_lateral_offset_mm: Measured lateral offset of camera from
+                robot centre (mm). From robot center detection (black circles).
         """
         if confidence < self.confidence_floor:
             return
@@ -200,6 +203,7 @@ class WorldMap:
                 head_angle_rad,
                 self._robot_position,
                 self._robot_yaw,
+                camera_lateral_offset_mm,
             )
             prev = self._cubes.get(cube_id)
             now = time.monotonic()

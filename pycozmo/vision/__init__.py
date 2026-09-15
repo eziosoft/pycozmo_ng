@@ -5,5 +5,11 @@ from pycozmo.vision.camera_calibration import (
     CameraCalibrationRetriever,
 )
 from pycozmo.vision.processor import *
+from pycozmo.vision.robot_center import RobotCenterDetector, RobotCenterResult
 
-__all__ = ["CameraCalibration", "CameraCalibrationRetriever"]
+__all__ = [
+    "CameraCalibration",
+    "CameraCalibrationRetriever",
+    "RobotCenterDetector",
+    "RobotCenterResult",
+]

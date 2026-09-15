@@ -36,8 +36,12 @@ class WebBridge:
         if not self.vision_processor:
             return
 
-        head_angle = (
-            self.cli.head_angle.radians if self.cli is not None else 0.0
+        head_angle = self.cli.head_angle.radians if self.cli is not None else 0.0
+
+        # Read robot center offset if available
+        rc_result = getattr(self.vision_processor, "robot_center_result", None)
+        lateral_offset = (
+            rc_result.lateral_offset_mm if (rc_result and rc_result.detected) else 0.0
         )
 
         suppressed = self.ct.suppress.get("ids", set())
@@ -63,6 +67,7 @@ class WebBridge:
                 m["confidence"],
                 head_angle,
                 m.get("num_faces"),
+                camera_lateral_offset_mm=lateral_offset,
             )
 
         self.ct.suppress["fresh_frames"] = new_fresh_frames

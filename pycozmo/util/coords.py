@@ -91,6 +91,7 @@ def camera_to_body(
     position_cam: np.ndarray,
     rotation_cam: np.ndarray,
     head_angle_rad: float,
+    camera_lateral_offset_mm: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Transform a pose from camera frame to body frame.
 
@@ -103,6 +104,10 @@ def camera_to_body(
         position_cam: 3-vector position in camera frame (mm).
         rotation_cam: 3x3 rotation matrix in camera frame.
         head_angle_rad: head pitch (radians, positive = looking up).
+        camera_lateral_offset_mm: Measured lateral offset of camera from
+            robot centre (mm). Positive = camera is to the left of centre,
+            so objects appear shifted right. Detected via robot center
+            calibration (black circles).
 
     Returns:
         (position_body, rotation_body).
@@ -110,6 +115,8 @@ def camera_to_body(
     r_head = _head_tilt_matrix(head_angle_rad)
     position_body = r_head @ np.asarray(position_cam, dtype=np.float64)
     position_body = position_body + CAMERA_TO_BODY_OFFSET
+    # Apply measured lateral correction (body Y axis = left)
+    position_body[1] += camera_lateral_offset_mm
     rotation_body = r_head @ np.asarray(rotation_cam, dtype=np.float64)
     return position_body, rotation_body
 
@@ -147,9 +154,12 @@ def camera_to_world(
     head_angle_rad: float,
     robot_position: np.ndarray,
     robot_yaw_rad: float,
+    camera_lateral_offset_mm: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Convenience: camera frame -> world frame in one step."""
-    p_body, r_body = camera_to_body(position_cam, rotation_cam, head_angle_rad)
+    p_body, r_body = camera_to_body(
+        position_cam, rotation_cam, head_angle_rad, camera_lateral_offset_mm
+    )
     return body_to_world(p_body, r_body, robot_position, robot_yaw_rad)
 
 
