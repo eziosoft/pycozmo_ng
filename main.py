@@ -118,15 +118,6 @@ def main():
         ),
     )
     parser.add_argument(
-        "--detect-robot-center",
-        action="store_true",
-        help=(
-            "Calibrate camera offset at startup by detecting two black "
-            "circles on the robot body (head tilts to max-down). The "
-            "measured lateral offset is used for all cube measurements."
-        ),
-    )
-    parser.add_argument(
         "--floor-size",
         type=float,
         default=600.0,
@@ -264,52 +255,51 @@ def main():
                 brain.install_camera_lifecycle(cli, resolution)
 
                 # Robot center calibration: enable camera, tilt head, detect
-                if args.detect_robot_center:
-                    print("Calibrating robot center (head to max-down)...")
-                    # Temporarily enable camera for calibration with manual
-                    # exposure — auto-exposure makes the image too dark when
-                    # head is at max-down (robot body fills the frame).
-                    cli.enable_camera(
-                        enable=True,
-                        color=False,
-                        resolution=resolution,
-                    )
-                    cli.set_camera_params(
-                        gain=8.0,
-                        exposure_ms=300,
-                        auto_exposure_enabled=False,
-                    )
-                    time.sleep(2.0)  # Let camera warm up
+                print("Calibrating robot center (head to max-down)...")
+                # Temporarily enable camera for calibration with manual
+                # exposure — auto-exposure makes the image too dark when
+                # head is at max-down (robot body fills the frame).
+                cli.enable_camera(
+                    enable=True,
+                    color=False,
+                    resolution=resolution,
+                )
+                cli.set_camera_params(
+                    gain=8.0,
+                    exposure_ms=300,
+                    auto_exposure_enabled=False,
+                )
+                time.sleep(2.0)  # Let camera warm up
 
-                    cli.set_head_angle(
-                        pycozmo.robot.MIN_HEAD_ANGLE.radians,
-                        accel=30.0,
-                        max_speed=30.0,
-                    )
-                    # Wait for frames and detection (poll up to 8s)
-                    for _ in range(80):
-                        time.sleep(0.1)
-                        rc = vision_processor.robot_center_result
-                        if rc is not None and rc.detected:
-                            break
-
+                cli.set_head_angle(
+                    pycozmo.robot.MIN_HEAD_ANGLE.radians,
+                    accel=30.0,
+                    max_speed=30.0,
+                )
+                # Wait for frames and detection (poll up to 8s)
+                for _ in range(80):
+                    time.sleep(0.1)
                     rc = vision_processor.robot_center_result
                     if rc is not None and rc.detected:
-                        print(
-                            f"   Robot center detected: "
-                            f"lateral_offset={rc.lateral_offset_mm:+.2f}mm"
-                        )
-                    else:
-                        print(
-                            "   WARNING: Robot center NOT detected (circles not found)"
-                        )
-                    # Return head to normal position
-                    cli.set_head_angle(angle, accel=30.0, max_speed=30.0)
-                    time.sleep(1.0)
-                    # Disable camera — the lifecycle listener will re-enable
-                    # it when a browser connects
-                    cli.enable_camera(enable=False)
-                    print("   Camera disabled after calibration")
+                        break
+
+                rc = vision_processor.robot_center_result
+                if rc is not None and rc.detected:
+                    print(
+                        f"   Robot center detected: "
+                        f"lateral_offset={rc.lateral_offset_mm:+.2f}mm"
+                    )
+                else:
+                    print(
+                        "   WARNING: Robot center NOT detected (circles not found)"
+                    )
+                # Return head to normal position
+                cli.set_head_angle(angle, accel=30.0, max_speed=30.0)
+                time.sleep(1.0)
+                # Disable camera — the lifecycle listener will re-enable
+                # it when a browser connects
+                cli.enable_camera(enable=False)
+                print("   Camera disabled after calibration")
 
                 time.sleep(2.0)
 

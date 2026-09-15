@@ -87,6 +87,10 @@ class VisionProcessor:
             camera_calibration.distortion_coefficients,
         )
         self.robot_center_result: RobotCenterResult | None = None
+        # Persistent offset: once detected, stays valid until a new
+        # detection replaces it.  Updated automatically whenever the
+        # head tilts down (during startup calibration or cube approach).
+        self._camera_lateral_offset_mm: float = 0.0
 
         # Initialize the detector
         self._init_detector()
@@ -248,6 +252,8 @@ class VisionProcessor:
             # Robot center detection (runs when head is near max-down)
             self.robot_center_detector.head_angle_rad = head_angle_rad
             self.robot_center_result = self.robot_center_detector.detect(img_bgr)
+            if self.robot_center_result is not None and self.robot_center_result.detected:
+                self._camera_lateral_offset_mm = self.robot_center_result.lateral_offset_mm
 
             # Detect marker faces
             results = self.cube_detector.detect(img_bgr)
@@ -298,6 +304,20 @@ class VisionProcessor:
         """Reset the cube tracking state."""
         self.fused_cubes = {}
         logger.info("Cube tracking reset")
+
+    @property
+    def camera_lateral_offset_mm(self) -> float:
+        """Best-known lateral offset of camera from robot centre (mm).
+
+        Updated automatically whenever the head tilts down (startup
+        calibration or cube approach).  Returns 0.0 until the first
+        successful detection.
+        """
+        return self._camera_lateral_offset_mm
+
+    @camera_lateral_offset_mm.setter
+    def camera_lateral_offset_mm(self, value: float) -> None:
+        self._camera_lateral_offset_mm = value
 
     # Annotation settings
     annotation_colors = [

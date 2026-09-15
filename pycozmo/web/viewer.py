@@ -38,11 +38,9 @@ class WebBridge:
 
         head_angle = self.cli.head_angle.radians if self.cli is not None else 0.0
 
-        # Read robot center offset if available
-        rc_result = getattr(self.vision_processor, "robot_center_result", None)
-        lateral_offset = (
-            rc_result.lateral_offset_mm if (rc_result and rc_result.detected) else 0.0
-        )
+        # Read persistent lateral offset (updated automatically during
+        # startup calibration and each cube approach)
+        lateral_offset = self.vision_processor.camera_lateral_offset_mm
 
         suppressed = self.ct.suppress.get("ids", set())
         fresh_frames = self.ct.suppress.get("fresh_frames", {})
