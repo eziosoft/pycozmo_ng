@@ -51,6 +51,10 @@ class CubeApproach:
     LIFT_UP_ACCEL = 3.0
     LIFT_UP_SPEED = 3.0
     FRESH_TOL_S = 1.5
+    #: How long to dwell at the step-1 standoff so the world-map EMA/SLERP
+    #: filters converge to a stable cube position/attitude before step 2
+    #: commits to the final approach line.
+    STANDOFF_DWELL_S = 1.5
     ARRIVE_POS_MM = 8.0
     ARRIVE_ANG_RAD = math.radians(2.0)
 
@@ -150,18 +154,30 @@ class CubeApproach:
             heading,
         )
 
-    def _wait_for_fresh(self, cube_idx: int, timeout_s: float = 3.0) -> None:
-        """Block until a camera measurement newer than now is fused."""
+    def _dwell_for_smoothing(self, cube_idx: int) -> bool:
+        """Dwell at the standoff so the world-map filters converge.
+
+        The fused cube pose is updated once per camera frame; a single fresh
+        frame barely moves the confidence-weighted EMA (position) / SLERP
+        (rotation) estimate.  Waiting ``STANDOFF_DWELL_S`` lets dozens of
+        frames accumulate, so step 2 corrects off a stable, converged pose
+        instead of the first noisy frame after arrival.
+
+        Returns True if the cube was re-detected during the dwell (a fresh
+        measurement was fused), False otherwise — the caller should cancel
+        the approach when the cube is not visible at the standoff.
+        """
         before = self._get_cube_state(cube_idx)
         base_ts = before.updated_at if before is not None else None
+        saw_fresh = False
         t0 = time.monotonic()
-        while time.monotonic() - t0 < timeout_s:
+        while time.monotonic() - t0 < self.STANDOFF_DWELL_S:
+            time.sleep(0.05)
             s = self._get_cube_state(cube_idx)
             ts = s.updated_at if s is not None else None
             if ts is not None and (base_ts is None or ts > base_ts + 0.05):
-                return
-            time.sleep(0.05)
-        print("Cube not re-detected at standoff - using last known pose")
+                saw_fresh = True
+        return saw_fresh
 
     def _watch_near_tilt(self, cube_idx: int) -> None:
         """Drop head to ``NEAR_TILT_DEG`` once within proximity."""
@@ -210,8 +226,7 @@ class CubeApproach:
         f = self.pick_face_normal(s.position, s.rotation_matrix, rpos, ryaw)
         facing_err_rad = None if f is None else abs(wrap_pi(f[2] - ryaw))
         facing = (
-            facing_err_rad is not None
-            and facing_err_rad <= self.GRAB_HEADING_TOL_RAD
+            facing_err_rad is not None and facing_err_rad <= self.GRAB_HEADING_TOL_RAD
         )
         if facing_err_rad is None:
             msgs.append("facing=FAIL (no face normal resolved)")
@@ -321,7 +336,10 @@ class CubeApproach:
                 relative_to_robot=False,
             )
 
-            self._wait_for_fresh(cube_idx)
+            if not self._dwell_for_smoothing(cube_idx):
+                self.cli.stop_all_motors()
+                print("Cube not re-detected at standoff - cancelling approach")
+                return
 
             # Step 2: corrected standoff
             target2 = self._corrected_target(cube_idx, self.STEP2_DIST_MM)

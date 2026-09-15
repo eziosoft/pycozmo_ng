@@ -72,9 +72,12 @@ class TestPickFaceNormal:
 class TestStandoff:
     def test_standoff_computes_face_offset(self):
         cli, _ = _make_mock_cli()
-        ca = CubeApproach(cli, get_cube_state=lambda i: None,
-                          drive_to_point=lambda *a, **k: True,
-                          move_forward=lambda d: True)
+        ca = CubeApproach(
+            cli,
+            get_cube_state=lambda i: None,
+            drive_to_point=lambda *a, **k: True,
+            move_forward=lambda d: True,
+        )
         state = _make_cube_state(x=100.0, y=200.0)
         sx, sy = ca._standoff(state, 90.0, (0.0, 1.0))
         assert sx == pytest.approx(100.0)
@@ -88,9 +91,7 @@ class TestVerifyGrabAlignment:
         cli, _ = _make_mock_cli(x=0.0, y=0.0, yaw=math.pi / 2)
         ca = CubeApproach(
             cli,
-            get_cube_state=lambda i: _make_cube_state(
-                x=0.0, y=80.0, confidence=0.95
-            ),
+            get_cube_state=lambda i: _make_cube_state(x=0.0, y=80.0, confidence=0.95),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
         )
@@ -132,9 +133,7 @@ class TestVerifyGrabAlignment:
         cli, _ = _make_mock_cli(x=0.0, y=0.0, yaw=0.0)
         ca = CubeApproach(
             cli,
-            get_cube_state=lambda i: _make_cube_state(
-                x=50.0, y=80.0, confidence=0.95
-            ),
+            get_cube_state=lambda i: _make_cube_state(x=50.0, y=80.0, confidence=0.95),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
         )
@@ -194,9 +193,15 @@ class TestApproachThread:
             calls["move_fwd"] += 1
             return True
 
+        def get_state(idx):
+            # Simulate fresh camera frames being fused during the standoff
+            # dwell so the approach proceeds past step 1.
+            cube_state.updated_at = time.monotonic()
+            return cube_state
+
         ca = CubeApproach(
             cli,
-            get_cube_state=lambda i: cube_state,
+            get_cube_state=get_state,
             drive_to_point=mock_drive,
             move_forward=mock_fwd,
         )
@@ -207,3 +212,28 @@ class TestApproachThread:
         cli.set_head_angle.assert_called()
         # go_to_pose called (step 1 + step 2)
         assert cli.go_to_pose.call_count >= 2
+
+    def test_approach_cancelled_when_cube_lost_at_standoff(self):
+        """If the cube is never re-detected at the step-1 standoff, the
+        approach is cancelled instead of using a stale pose."""
+        cli, _pose = _make_mock_cli(x=0.0, y=0.0, yaw=0.0)
+        cube_state = _make_cube_state(x=0.0, y=300.0)
+        calls = {"move_fwd": 0}
+
+        def mock_fwd(d):
+            calls["move_fwd"] += 1
+            return True
+
+        ca = CubeApproach(
+            cli,
+            get_cube_state=lambda i: cube_state,  # updated_at never advances
+            drive_to_point=lambda *a, **k: True,
+            move_forward=mock_fwd,
+        )
+        ca._run(0, 0.0, 300.0)
+
+        # Step 1 only — no step 2, no grab.
+        assert cli.go_to_pose.call_count == 1
+        assert calls["move_fwd"] == 0
+        # Cancel path stops motors.
+        cli.stop_all_motors.assert_called()
