@@ -331,16 +331,14 @@ class WebViewerServer:
         ``callback(active_count: int)`` is called whenever the number of
         connected WebSocket clients changes (0→1, 1→0, 1→2, etc.). Multiple
         listeners may be registered. Typical use: turn Cozmo's camera on
-        when the first browser tab opens and off when the last one closes,
-        so the camera stream only runs while someone is watching —
-        eliminates the sustained 30 fps load that drops the Wi-Fi.
-        (COZMO-22)
-
-        The callback is invoked on the server's asyncio event-loop thread;
-        keep it short and non-blocking, or use ``call_soon_threadsafe`` to
-        hand off work to another thread.
+        when the first browser tab opens and off when the last one closes, (COZMO-22)
         """
         self._active_clients_listeners.append(callback)
+
+    @property
+    def active_client_count(self) -> int:
+        """Return the current number of connected WebSocket clients."""
+        return self._last_active_count
 
     def set_control_listener(self, callback) -> None:
         """Subscribe to browser key updates for remote control.

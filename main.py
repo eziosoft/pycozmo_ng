@@ -290,16 +290,14 @@ def main():
                         f"lateral_offset={rc.lateral_offset_mm:+.2f}mm"
                     )
                 else:
-                    print(
-                        "   WARNING: Robot center NOT detected (circles not found)"
-                    )
-                # Return head to normal position
-                cli.set_head_angle(angle, accel=30.0, max_speed=30.0)
-                time.sleep(1.0)
-                # Disable camera — the lifecycle listener will re-enable
-                # it when a browser connects
-                cli.enable_camera(enable=False)
-                print("   Camera disabled after calibration")
+                    print("   WARNING: Robot center NOT detected (circles not found)")
+                    # Return head to normal position
+                    cli.set_head_angle(angle, accel=30.0, max_speed=30.0)
+                    time.sleep(1.0)
+                    # Reset lifecycle state — if a viewer is already
+                    # connected the camera will be re-enabled immediately
+                    brain.post_calibration(cli, resolution)
+                    print("   Camera disabled after calibration")
 
                 time.sleep(2.0)
 
