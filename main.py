@@ -297,13 +297,6 @@ def main():
                             f"   Robot center detected: "
                             f"lateral_offset={rc.lateral_offset_mm:+.2f}mm"
                         )
-                        if rc.translation_mm is not None:
-                            print(
-                                f"   solvePnP translation: "
-                                f"({rc.translation_mm[0]:.1f}, "
-                                f"{rc.translation_mm[1]:.1f}, "
-                                f"{rc.translation_mm[2]:.1f}) mm"
-                            )
                     else:
                         print(
                             "   WARNING: Robot center NOT detected (circles not found)"

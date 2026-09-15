@@ -467,8 +467,17 @@ class VisionProcessor:
             mid_x = (result.circle_a_px[0] + result.circle_b_px[0]) / 2.0
             mid_y = (result.circle_a_px[1] + result.circle_b_px[1]) / 2.0
 
-            # Vertical line at robot center
             img_h = image.size[1]
+
+            # Image centre reference line (grey dashed)
+            img_center_x = image.size[0] / 2.0
+            draw.line(
+                [(img_center_x, 0), (img_center_x, img_h)],
+                fill=(128, 128, 128),
+                width=1,
+            )
+
+            # Vertical line at detected robot center (yellow)
             draw.line([(mid_x, 0), (mid_x, img_h)], fill=(255, 255, 0), width=1)
 
             # Center dot
