@@ -63,6 +63,9 @@ class CubeApproach:
         self._get_cube_state = get_cube_state
         self._drive_to_point = drive_to_point
         self._move_forward = move_forward
+        # Serializes approaches: multiple in-flight runs would race each other
+        # with conflicting go_to_pose / drive_wheels commands.
+        self._approach_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Pure helpers
@@ -269,11 +272,20 @@ class CubeApproach:
         """Two-step approach & grab for the given cube.
 
         Spawns a daemon thread so the caller (WebSocket handler) returns
-        immediately.
+        immediately. Only one approach runs at a time: if one is already in
+        progress, the request is ignored.
         """
-        t = threading.Thread(
-            target=self._run, args=(cube_idx, cube_x, cube_y), daemon=True
-        )
+        if not self._approach_lock.acquire(blocking=False):
+            print(f"Approach busy - ignoring request for cube {cube_idx + 1}")
+            return
+
+        def _run_guarded():
+            try:
+                self._run(cube_idx, cube_x, cube_y)
+            finally:
+                self._approach_lock.release()
+
+        t = threading.Thread(target=_run_guarded, daemon=True)
         t.start()
 
     def _run(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
