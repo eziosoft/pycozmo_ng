@@ -71,7 +71,7 @@ class RobotCenterDetector:
         head_angle_rad: float = 0.0,
         circle_spacing_mm: float = 20.0,
         head_tolerance_rad: float | None = None,
-        search_radius: int = 50,
+        search_radius: int = 20,
     ):
         self.camera_matrix = camera_matrix
         self.dist_coeffs = dist_coeffs
