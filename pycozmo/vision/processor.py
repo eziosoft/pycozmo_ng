@@ -87,9 +87,10 @@ class VisionProcessor:
             camera_calibration.distortion_coefficients,
         )
         self.robot_center_result: RobotCenterResult | None = None
-        # Persistent offset: once detected, stays valid until a new
-        # detection replaces it.  Updated automatically whenever the
-        # head tilts down (during startup calibration or cube approach).
+        # One-time measurement: the offset is measured once during startup
+        # calibration (head at max-down) and then frozen. After a successful
+        # detection this flag is set and the detector is never run again.
+        self._robot_center_measured: bool = False
         self._camera_lateral_offset_mm: float = 0.0
 
         # Initialize the detector
@@ -234,7 +235,8 @@ class VisionProcessor:
         """
         Detect cubes using CozmoCubeDetector with 3D tracking.
 
-        Also runs robot center detection when the head is near max-down tilt.
+        Also performs the one-time robot center measurement (head at
+        max-down tilt) on the first successful detection.
 
         Args:
             img_array: Image as numpy array (RGB from PIL)
@@ -249,11 +251,20 @@ class VisionProcessor:
             # Convert RGB to BGR for OpenCV
             img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
-            # Robot center detection (runs when head is near max-down)
-            self.robot_center_detector.head_angle_rad = head_angle_rad
-            self.robot_center_result = self.robot_center_detector.detect(img_bgr)
-            if self.robot_center_result is not None and self.robot_center_result.detected:
-                self._camera_lateral_offset_mm = self.robot_center_result.lateral_offset_mm
+            # Robot center detection: measured exactly once during startup
+            # calibration (head at max-down). Once a measurement succeeds the
+            # value is remembered and detection never runs again.
+            if not self._robot_center_measured:
+                self.robot_center_detector.head_angle_rad = head_angle_rad
+                self.robot_center_result = self.robot_center_detector.detect(img_bgr)
+                if (
+                    self.robot_center_result is not None
+                    and self.robot_center_result.detected
+                ):
+                    self._camera_lateral_offset_mm = (
+                        self.robot_center_result.lateral_offset_mm
+                    )
+                    self._robot_center_measured = True
 
             # Detect marker faces
             results = self.cube_detector.detect(img_bgr)
@@ -307,11 +318,11 @@ class VisionProcessor:
 
     @property
     def camera_lateral_offset_mm(self) -> float:
-        """Best-known lateral offset of camera from robot centre (mm).
+        """Lateral offset of camera from robot centre (mm), measured once.
 
-        Updated automatically whenever the head tilts down (startup
-        calibration or cube approach).  Returns 0.0 until the first
-        successful detection.
+        Measured once during startup calibration (head at max-down) and then
+        frozen for the session.  Returns 0.0 until the one-time measurement
+        succeeds.
         """
         return self._camera_lateral_offset_mm
 
@@ -321,11 +332,6 @@ class VisionProcessor:
 
     # Annotation settings
     annotation_colors = [
-        (255, 0, 0),  # Red
-        (0, 255, 0),  # Green
-        (0, 0, 255),  # Blue
-        (255, 255, 0),  # Yellow
-        (255, 0, 255),  # Magenta
         (0, 255, 255),  # Cyan
     ]
     box_thickness = 2
@@ -472,14 +478,14 @@ class VisionProcessor:
             cx, cy = result.circle_a_px
             r = 6
             draw.ellipse(
-                [(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 0), width=2
+                [(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 255), width=2
             )
 
         if result.circle_b_px is not None:
             cx, cy = result.circle_b_px
             r = 6
             draw.ellipse(
-                [(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 0), width=2
+                [(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 255), width=2
             )
 
         # Draw midpoint (robot center)
@@ -493,22 +499,22 @@ class VisionProcessor:
             img_center_x = image.size[0] / 2.0
             draw.line(
                 [(img_center_x, 0), (img_center_x, img_h)],
-                fill=(128, 128, 128),
+                fill=(0, 255, 255),
                 width=1,
             )
 
-            # Vertical line at detected robot center (yellow)
-            draw.line([(mid_x, 0), (mid_x, img_h)], fill=(255, 255, 0), width=1)
+            # Vertical line at detected robot center (cyan)
+            draw.line([(mid_x, 0), (mid_x, img_h)], fill=(0, 255, 255), width=1)
 
             # Center dot
             draw.ellipse(
                 [(mid_x - 4, mid_y - 4), (mid_x + 4, mid_y + 4)],
-                fill=(255, 255, 0),
+                fill=(0, 255, 255),
             )
 
         # Label
         label = f"center: {result.lateral_offset_mm:+.1f}mm"
-        draw.text((5, 5), label, fill=(255, 255, 0), font=font)
+        draw.text((5, 5), label, fill=(0, 255, 255), font=font)
 
         return annotated
 
