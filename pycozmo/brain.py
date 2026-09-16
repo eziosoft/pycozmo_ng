@@ -104,7 +104,7 @@ class Brain:
         )
         cli.set_camera_params(
             gain=0.0,
-            exposure_ms=100,
+            exposure_ms=20,
             auto_exposure_enabled=True,
         )
         fs.camera_active = True
@@ -126,7 +126,7 @@ class Brain:
         )
         cli.set_camera_params(
             gain=0.0,
-            exposure_ms=100,
+            exposure_ms=20,
             auto_exposure_enabled=True,
         )
         fs.camera_active = True

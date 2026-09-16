@@ -156,7 +156,7 @@ class WebViewerServer:
         self._camera_settings: dict = {
             "auto_exposure_enabled": True,
             "gain": 0.0,
-            "exposure_ms": 100,
+            "exposure_ms": 20,
             "color": False,
             "resolution": "QVGA",
             "jpeg_quality": 70,
