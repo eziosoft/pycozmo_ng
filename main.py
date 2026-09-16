@@ -282,6 +282,11 @@ def main():
                     if rc is not None and rc.detected:
                         break
 
+                # Return head to normal position and restore auto-exposure
+                cli.set_head_angle(0.0, accel=30.0, max_speed=30.0)
+                time.sleep(1.0)
+                brain.post_calibration(cli, resolution)
+
                 rc = vision_processor.robot_center_result
                 if rc is not None and rc.detected:
                     print(
@@ -290,14 +295,8 @@ def main():
                     )
                 else:
                     print("   WARNING: Robot center NOT detected (circles not found)")
-                    # Return head to normal position
-                    cli.set_head_angle(angle, accel=30.0, max_speed=30.0)
-                    time.sleep(1.0)
-                    # Reset lifecycle state — camera stays on with auto-exposure
-                    brain.post_calibration(cli, resolution)
-                    print("   Camera back to auto-exposure (stays on)")
 
-                time.sleep(2.0)
+                time.sleep(1.0)
 
                 brain.cubes.setup_cube_mapping(cli)
 
