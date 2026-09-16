@@ -72,6 +72,8 @@ class RobotCenterDetector:
         circle_spacing_mm: float = 20.0,
         head_tolerance_rad: float | None = None,
         search_radius: int = 20,
+        threshold_block: int = 31,
+        threshold_c: int = 5,
     ):
         self.camera_matrix = camera_matrix
         self.dist_coeffs = dist_coeffs
@@ -84,6 +86,9 @@ class RobotCenterDetector:
         )
         #: How far (px) the rings are allowed to move between frames.
         self.search_radius = search_radius
+        #: Adaptive-threshold window size (odd, <= search window) and offset.
+        self.threshold_block = threshold_block
+        self.threshold_c = threshold_c
         self._last_offset: float | None = None
         self._last_a_px: tuple[float, float] | None = None
         self._last_b_px: tuple[float, float] | None = None
@@ -104,7 +109,21 @@ class RobotCenterDetector:
         Returns a list of (cx, cy) centroids, filtered by area and image edges.
         """
         blurred = cv2.GaussianBlur(sub, (3, 3), 0)
-        _, dark = cv2.threshold(blurred, 60, 255, cv2.THRESH_BINARY_INV)
+
+        # Adaptive threshold: robust to lighting changes / gradients, unlike a
+        # fixed grey value. Works on the inverted band so bright spots (rings)
+        # become the foreground.
+        bs = min(self.threshold_block, *blurred.shape)
+        bs -= 1 - (bs % 2)  # must be odd
+        bs = max(3, bs)
+        dark = cv2.adaptiveThreshold(
+            blurred,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            bs,
+            self.threshold_c,
+        )
 
         num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(dark, 8)
 
