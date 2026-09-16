@@ -8,6 +8,11 @@ midpoint between them is the true centre of the robot in width.
 Detection inverts the image (rings become bright), thresholds to find dark
 regions, then uses connected-component analysis with an area filter to
 isolate the small ring spots from the wide centre cable.
+
+After the first (global) detection establishes the two ring positions, later
+frames only search in two small windows (``search_radius`` px) around the
+last known locations — the rings barely move frame-to-frame, so this rejects
+stray spots elsewhere in the band and locks onto the real rings.
 """
 
 from dataclasses import dataclass
@@ -50,7 +55,10 @@ class RobotCenterDetector:
     3. Threshold at 60 to find dark regions on the inverted image.
     4. Connected-component analysis with area < 500 to isolate small
        ring spots from the wide centre cable.
-    5. Take the two smallest components (left and right ring).
+    5. First frame: take the two smallest components (left and right ring).
+    6. Later frames: only search within ``search_radius`` px windows around
+       the last known ring locations, keeping the pair that is nearest to
+       where it was last seen.
     """
 
     MIN_HEAD_ANGLE_RAD = np.radians(-25.0)
@@ -63,6 +71,7 @@ class RobotCenterDetector:
         head_angle_rad: float = 0.0,
         circle_spacing_mm: float = 20.0,
         head_tolerance_rad: float | None = None,
+        search_radius: int = 50,
     ):
         self.camera_matrix = camera_matrix
         self.dist_coeffs = dist_coeffs
@@ -73,7 +82,11 @@ class RobotCenterDetector:
             if head_tolerance_rad is not None
             else self.DEFAULT_HEAD_TOLERANCE_RAD
         )
+        #: How far (px) the rings are allowed to move between frames.
+        self.search_radius = search_radius
         self._last_offset: float | None = None
+        self._last_a_px: tuple[float, float] | None = None
+        self._last_b_px: tuple[float, float] | None = None
 
     def _head_near_min(self) -> bool:
         return (
@@ -81,10 +94,57 @@ class RobotCenterDetector:
             <= self.head_tolerance_rad
         )
 
-    def _find_circles(self, gray: np.ndarray) -> list[tuple[float, float]]:
-        """Find two ring markers using connected-component analysis on inverted image.
+    def _component_spots(
+        self, sub: np.ndarray, x_off: float, y_off: float, w: int
+    ) -> list[tuple[float, float]]:
+        """Find small dark spots in ``sub`` via connected components.
 
-        Returns a list of (cx, cy) pixel coordinates, sorted left-to-right.
+        ``sub`` is a crop of the inverted image band; ``x_off``/``y_off`` are the
+        offsets of that crop in the full frame so returned coords are absolute.
+        Returns a list of (cx, cy) centroids, filtered by area and image edges.
+        """
+        blurred = cv2.GaussianBlur(sub, (3, 3), 0)
+        _, dark = cv2.threshold(blurred, 60, 255, cv2.THRESH_BINARY_INV)
+
+        num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(dark, 8)
+
+        spots = []
+        for i in range(1, num_labels):  # skip background (0)
+            area = stats[i, cv2.CC_STAT_AREA]
+            cx, cy = centroids[i]
+            # Filter: small spots only, exclude image edges
+            if area < 500 and cx + x_off > 20 and cx + x_off < w - 20:
+                spots.append((cx + x_off, cy + y_off))
+        return spots
+
+    def _find_circle_near(
+        self, band: np.ndarray, y_start: int, w: int, pred: tuple[float, float]
+    ) -> tuple[float, float] | None:
+        """Find the ring spot closest to ``pred`` within ``search_radius`` px.
+
+        ``band`` is the inverted bottom band of the full frame, so returned
+        coordinates are absolute (x, y) in the full frame.
+        """
+        radius = self.search_radius
+        x0 = int(max(0, pred[0] - radius))
+        x1 = int(min(w, pred[0] + radius))
+        y0 = int(max(0, pred[1] - y_start - radius))
+        y1 = int(min(band.shape[0], pred[1] - y_start + radius))
+
+        if x1 - x0 < 4 or y1 - y0 < 4:
+            return None
+
+        spots = self._component_spots(band[y0:y1, x0:x1], x0, y0 + y_start, w)
+        if not spots:
+            return None
+        return min(spots, key=lambda p: (p[0] - pred[0]) ** 2 + (p[1] - pred[1]) ** 2)
+
+    def _find_circles(self, gray: np.ndarray) -> list[tuple[float, float]]:
+        """Find two ring markers, sorted left-to-right.
+
+        Uses the last known ring locations to restrict the search to small
+        windows around them; falls back to a full-band search on the first
+        frame or when the tracked pair is lost.
         """
         h, w = gray.shape[:2]
 
@@ -96,21 +156,30 @@ class RobotCenterDetector:
         y_end = int(h * 0.92)
         band = neg[y_start:y_end, :]
 
-        blurred = cv2.GaussianBlur(band, (3, 3), 0)
+        circles: list[tuple[float, float]] = []
 
-        # Threshold: dark regions on the inverted image
-        _, dark = cv2.threshold(blurred, 60, 255, cv2.THRESH_BINARY_INV)
+        # ROI mode: search small windows around last known positions
+        if self._last_a_px is not None and self._last_b_px is not None:
+            a = self._find_circle_near(band, y_start, w, self._last_a_px)
+            b = self._find_circle_near(band, y_start, w, self._last_b_px)
+            if a is not None and b is not None:
+                circles = sorted([a, b], key=lambda p: p[0])
 
-        # Connected components — filter by area to keep only small spots
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dark, 8)
+        if not circles:
+            circles = self._find_circles_full_band(band, y_start, w)
 
-        spots = []
-        for i in range(1, num_labels):  # skip background (0)
-            area = stats[i, cv2.CC_STAT_AREA]
-            cx, cy = centroids[i]
-            # Filter: small spots only, exclude image edges
-            if area < 500 and cx > 20 and cx < w - 20:
-                spots.append((cx, cy + y_start))
+        if len(circles) == 2:
+            self._last_a_px, self._last_b_px = circles
+        else:
+            self._last_a_px = self._last_b_px = None
+
+        return circles
+
+    def _find_circles_full_band(
+        self, band: np.ndarray, y_start: int, w: int
+    ) -> list[tuple[float, float]]:
+        """Full-band search used on the first frame or when tracking is lost."""
+        spots = self._component_spots(band, 0, y_start, w)
 
         if len(spots) < 2:
             return []
