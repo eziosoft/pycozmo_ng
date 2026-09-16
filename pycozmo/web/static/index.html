@@ -830,6 +830,7 @@
     const camJpegQualityVal = document.getElementById('cam-jpeg-quality-val');
 
     let camSettingsApplyLock = false;  // prevent echo loops
+    let camSettingsInit = false;       // only apply from first broadcast
 
     function sendCameraSettings() {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -851,6 +852,8 @@
 
     function applyCameraSettings(s) {
       if (!s) return;
+      if (camSettingsInit) return;  // only apply on first broadcast
+      camSettingsInit = true;
       camSettingsApplyLock = true;
       camAutoExp.checked = !!s.auto_exposure_enabled;
       camGain.value = s.gain ?? 0;
@@ -908,7 +911,7 @@
 
     function connectWS() {
       ws = new WebSocket(WS_URL);
-      ws.onopen = () => setStatus('connected');
+      ws.onopen = () => { setStatus('connected'); camSettingsInit = false; };
       ws.onclose = () => {
         setStatus('disconnected');
         reconnectTimer = setTimeout(connectWS, 2000);
