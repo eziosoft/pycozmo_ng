@@ -92,66 +92,44 @@ class Brain:
     # Camera lifecycle (COZMO-22)
     # ------------------------------------------------------------------
 
-    def install_camera_lifecycle(self, cli, resolution):
-        """Bind the Cozmo camera on/off to WebSocket viewer activity."""
-        self.frame_state.camera_resolution = resolution
+    def enable_camera_persistent(self, cli, resolution):
+        """Enable the Cozmo camera at startup and keep it on regardless of viewers."""
         fs = self.frame_state
-
-        def _on_clients_change(active_count: int) -> None:
-            if active_count > 0 and not fs.camera_active:
-                print(f"{active_count} viewer(s) connected - enabling Cozmo camera")
-                cli.enable_camera(
-                    enable=True,
-                    color=False,
-                    resolution=fs.camera_resolution,
-                )
-                cli.set_camera_params(
-                    gain=0.0,
-                    exposure_ms=100,
-                    auto_exposure_enabled=True,
-                )
-                fs.camera_active = True
-                fs.camera_enabled_at = time.time()
-            elif active_count == 0 and fs.camera_active:
-                print("No viewers - disabling Cozmo camera")
-                cli.enable_camera(enable=False)
-                fs.camera_active = False
-                fs.camera_enabled_at = None
-
-        self.web_viewer.add_active_clients_listener(_on_clients_change)
+        fs.camera_resolution = resolution
+        cli.enable_camera(
+            enable=True,
+            color=False,
+            resolution=resolution,
+        )
+        cli.set_camera_params(
+            gain=0.0,
+            exposure_ms=100,
+            auto_exposure_enabled=True,
+        )
+        fs.camera_active = True
+        fs.camera_enabled_at = time.time()
+        print("Cozmo camera enabled at startup")
 
     def post_calibration(self, cli, resolution) -> None:
-        """Reset lifecycle state after manual camera calibration.
+        """Return the camera to live auto-exposure after a manual calibration.
 
-        Call this after any code that manually enabled/disabled the camera
-        (e.g. robot-center calibration) so the lifecycle knows the camera
-        is off and will re-enable it when a viewer connects.
+        The camera stays enabled (always-on by default); only the temporary
+        manual-exposure settings used during calibration are undone.
         """
         fs = self.frame_state
-        cli.enable_camera(enable=False)
-        fs.camera_active = False
-        fs.camera_enabled_at = None
-        # If a viewer is already connected, re-enable immediately
-        if self.web_viewer.active_client_count > 0:
-            _on_clients_change = None
-            # Find the registered listener — it's a closure, so we
-            # replicate the logic directly here.
-            print(
-                f"{self.web_viewer.active_client_count} viewer(s) connected "
-                "- enabling Cozmo camera (post-calibration)"
-            )
-            cli.enable_camera(
-                enable=True,
-                color=False,
-                resolution=fs.camera_resolution,
-            )
-            cli.set_camera_params(
-                gain=0.0,
-                exposure_ms=100,
-                auto_exposure_enabled=True,
-            )
-            fs.camera_active = True
-            fs.camera_enabled_at = time.time()
+        fs.camera_resolution = resolution
+        cli.enable_camera(
+            enable=True,
+            color=False,
+            resolution=resolution,
+        )
+        cli.set_camera_params(
+            gain=0.0,
+            exposure_ms=100,
+            auto_exposure_enabled=True,
+        )
+        fs.camera_active = True
+        fs.camera_enabled_at = time.time()
 
     # ------------------------------------------------------------------
     # Remote control (COZMO-25)

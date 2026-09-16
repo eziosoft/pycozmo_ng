@@ -246,13 +246,12 @@ def main():
                         "instead. (COZMO-20)"
                     )
 
-                print("Camera is OFF by default.")
+                print("Camera is ON by default.")
                 print(
-                    "   It will turn on automatically when a browser opens the "
-                    "web viewer, and off again when the last tab closes."
+                    "   It stays on for the whole session (not tied to the web viewer)."
                 )
-                print(f"   Resolution when enabled: {args.camera_resolution}")
-                brain.install_camera_lifecycle(cli, resolution)
+                print(f"   Resolution: {args.camera_resolution}")
+                brain.enable_camera_persistent(cli, resolution)
 
                 # Robot center calibration: enable camera, tilt head, detect
                 print("Calibrating robot center (head to max-down)...")
@@ -294,10 +293,9 @@ def main():
                     # Return head to normal position
                     cli.set_head_angle(angle, accel=30.0, max_speed=30.0)
                     time.sleep(1.0)
-                    # Reset lifecycle state — if a viewer is already
-                    # connected the camera will be re-enabled immediately
+                    # Reset lifecycle state — camera stays on with auto-exposure
                     brain.post_calibration(cli, resolution)
-                    print("   Camera disabled after calibration")
+                    print("   Camera back to auto-exposure (stays on)")
 
                 time.sleep(2.0)
 
