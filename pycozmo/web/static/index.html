@@ -172,6 +172,8 @@
     const WS_URL = `ws://${location.hostname || 'localhost'}:${WS_PORT}`;
     const CUBE_SIZE = 44;
     const CUBE_COLORS = [0xff4444, 0x4444ff, 0x44cc44];
+    const FACE_NAMES = ['face_0', 'face_1', 'face_2', 'face_3', 'top', 'bottom'];
+    const FACE_TYPES = ['wall', 'wall', 'wall', 'wall', 'bottom', 'top'];
 
     // -----------------------------------------------------------------------
     // Renderer
@@ -581,6 +583,41 @@
     let hasRobotPose = false;
     let didInitialFrame = false;
 
+    function createCubeLabel(text) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = 512;
+      canvas.height = 64;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 36px monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(60, 8, 1);
+      sprite.position.set(0, CUBE_SIZE / 2 + 10, 0);
+      return { sprite, canvas, ctx, texture, material };
+    }
+
+    function updateCubeLabel(label, text) {
+      const { ctx, canvas, texture, material } = label;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 36px monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+      texture.needsUpdate = true;
+    }
+
     function createCube(id) {
       const group = new THREE.Group();
       const idx = parseInt(id.replace('cube_', ''), 10) - 1;
@@ -623,7 +660,11 @@
       const blueLine = new THREE.Line(azGeo, new THREE.LineBasicMaterial({ color: 0x0000ff }));
       group.add(blueLine);
 
-      group.userData = { targetPos: new THREE.Vector3(), targetQuat: new THREE.Quaternion() };
+      const label = createCubeLabel('Cube ' + (idx + 1));
+      group.add(label.sprite);
+      label.sprite.visible = false;
+
+      group.userData = { targetPos: new THREE.Vector3(), targetQuat: new THREE.Quaternion(), label };
       scene.add(group);
       cubeGroups[id] = group;
       return group;
@@ -632,6 +673,11 @@
     function removeCube(id) {
       const g = cubeGroups[id];
       if (g) {
+        const label = g.userData.label;
+        if (label) {
+          label.texture.dispose();
+          label.material.dispose();
+        }
         scene.remove(g);
         delete cubeGroups[id];
       }
@@ -678,6 +724,15 @@
           0, 0, 0, 1
         );
         g.userData.targetQuat.setFromRotationMatrix(m);
+
+        const label = g.userData.label;
+        if (label && c.face_idx >= 0) {
+          const faceName = FACE_NAMES[c.face_idx] || `face_${c.face_idx}`;
+          const faceType = FACE_TYPES[c.face_idx] || 'unknown';
+          const rot = c.face_rotation || 0;
+          updateCubeLabel(label, `Cube ${parseInt(c.id.replace('cube_', ''), 10)} | ${faceName} (${faceType}, ${rot}\u00b0)`);
+          label.sprite.visible = true;
+        }
       }
       for (const id of Object.keys(cubeGroups)) {
         if (!seen.has(id)) removeCube(id);

@@ -66,6 +66,7 @@ class WebBridge:
                 head_angle,
                 m.get("num_faces"),
                 camera_lateral_offset_mm=lateral_offset,
+                rotation_source=m.get("rotation_source"),
             )
 
         self.ct.suppress["fresh_frames"] = new_fresh_frames

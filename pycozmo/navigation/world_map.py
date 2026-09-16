@@ -7,6 +7,21 @@ the robot's fused pose from ``cli.pose`` and cube measurements from the vision
 tracker (camera frame) — transforms them into world frame, and fuses repeated
 cube measurements there so a stationary cube stays put while Cozmo drives.
 
+FACE INDEX MAPPING
+-------------------
+Each cube has 6 marker faces, indexed 0-5:
+
+=======  ========  =========  ==========================================
+face_idx  face_type  rotation  Marker file
+=======  ========  =========  ==========================================
+0         wall      0          cube{N}_face_0.jpg
+1         wall      90         cube{N}_face_1.jpg
+2         wall      180        cube{N}_face_2.jpg
+3         wall      270        cube{N}_face_3.jpg
+4         bottom    0          cube{N}_face_bottom.jpg
+5         top       0          cube{N}_face_top.jpg
+=======  ========  =========  ==========================================
+
 The web viewer and web server are thin adapters over this class; it has no
 dependency on the web stack, so it can be used standalone.
 
@@ -35,6 +50,8 @@ class CubeState:
     __slots__ = (
         "age",
         "confidence",
+        "face_idx",
+        "face_rotation",
         "num_faces",
         "position",
         "rotation_matrix",
@@ -47,6 +64,8 @@ class CubeState:
         rotation_matrix: np.ndarray,
         confidence: float,
         num_faces: int = 1,
+        face_idx: int = -1,
+        face_rotation: int = 0,
         age: int = 0,
         updated_at: float = 0.0,
     ):
@@ -54,11 +73,37 @@ class CubeState:
         self.rotation_matrix = np.asarray(rotation_matrix, dtype=np.float64)
         self.confidence = float(confidence)
         self.num_faces = int(num_faces)
+        self.face_idx = int(face_idx)
+        self.face_rotation = int(face_rotation)
         self.age = int(age)
         # Monotonic time (seconds) of the measurement that produced this
         # state. Lets callers (e.g. the navigator) detect that a fresh
         # camera measurement has been fused since a given instant.
         self.updated_at = float(updated_at)
+
+
+# Face type to face_idx mapping (matches cube_detector face_type_lookup order)
+_FACE_TYPE_TO_IDX = {
+    "wall_0": 0,
+    "wall_90": 1,
+    "wall_180": 2,
+    "wall_270": 3,
+    "bottom_0": 4,
+    "top_0": 5,
+}
+
+
+def _parse_rotation_source(rotation_source: str) -> tuple[int, int]:
+    """Parse a rotation_source string like 'wall_90deg' into (face_idx, rotation_deg).
+
+    Returns (-1, 0) if the string cannot be parsed.
+    """
+    try:
+        parts = rotation_source.rsplit("deg", 1)
+        key = parts[0]  # e.g. "wall_90"
+        return _FACE_TYPE_TO_IDX.get(key, -1), int(key.split("_", 1)[1])
+    except (ValueError, IndexError):
+        return -1, 0
 
 
 class WorldMap:
@@ -174,6 +219,7 @@ class WorldMap:
         head_angle_rad: float,
         num_faces: int | None = None,
         camera_lateral_offset_mm: float = 0.0,
+        rotation_source: str | None = None,
     ) -> None:
         """Fuse a camera-frame cube measurement into the world map.
 
@@ -192,9 +238,16 @@ class WorldMap:
                 keeping the first frame's value. (COZMO-36)
             camera_lateral_offset_mm: Measured lateral offset of camera from
                 robot centre (mm). From robot center detection (black circles).
+            rotation_source: Which face determined the cube rotation, e.g.
+                ``"wall_90deg"`` or ``"top_0deg"``. Parsed into face_idx and
+                face_rotation for display in the 3D viewer.
         """
         if confidence < self.confidence_floor:
             return
+
+        face_idx, face_rotation = (
+            _parse_rotation_source(rotation_source) if rotation_source else (-1, 0)
+        )
 
         with self._lock:
             pos_world, rot_world = camera_to_world(
@@ -213,6 +266,8 @@ class WorldMap:
                     rotation_matrix=rot_world,
                     confidence=confidence,
                     num_faces=int(num_faces) if num_faces is not None else 1,
+                    face_idx=face_idx,
+                    face_rotation=face_rotation,
                     updated_at=now,
                 )
                 return
@@ -240,6 +295,8 @@ class WorldMap:
                 rotation_matrix=rotation,
                 confidence=confidence,
                 num_faces=int(num_faces) if num_faces is not None else prev.num_faces,
+                face_idx=face_idx if face_idx >= 0 else prev.face_idx,
+                face_rotation=face_rotation if face_idx >= 0 else prev.face_rotation,
                 age=0,
                 updated_at=now,
             )
@@ -269,6 +326,8 @@ class WorldMap:
                     rotation_matrix=cube_state.rotation_matrix.copy(),
                     confidence=cube_state.confidence,
                     num_faces=cube_state.num_faces,
+                    face_idx=cube_state.face_idx,
+                    face_rotation=cube_state.face_rotation,
                     age=cube_state.age,
                     updated_at=cube_state.updated_at,
                 )
@@ -298,6 +357,8 @@ class WorldMap:
                         "position": cube_state.position.tolist(),
                         "rotation": cube_state.rotation_matrix.tolist(),
                         "confidence": cube_state.confidence,
+                        "face_idx": cube_state.face_idx,
+                        "face_rotation": cube_state.face_rotation,
                     }
                     for cube_id, cube_state in self._cubes.items()
                 },

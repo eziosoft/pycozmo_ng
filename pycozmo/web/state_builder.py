@@ -91,6 +91,8 @@ def build_state_json(
                 "position": [float(v) for v in pos_gl],
                 "rotation": [row.tolist() for row in rot_gl],
                 "size": 44,
+                "face_idx": cube_state.get("face_idx", -1),
+                "face_rotation": cube_state.get("face_rotation", 0),
             }
         )
 

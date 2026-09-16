@@ -179,7 +179,7 @@ class VisionProcessor:
         Returns:
             List of dicts with keys: ``cube_id`` (0-indexed), ``position``
             (camera frame mm), ``rotation_matrix`` (camera frame),
-            ``confidence``.
+            ``confidence``, ``rotation_source``.
         """
         measurements = []
         for cube_id, cube_state in self.fused_cubes.items():
@@ -190,6 +190,7 @@ class VisionProcessor:
                     "rotation_matrix": cube_state["rotation_matrix"],
                     "confidence": cube_state["confidence"],
                     "num_faces": cube_state.get("num_faces", 1),
+                    "rotation_source": cube_state.get("rotation_source"),
                 }
             )
         return measurements
