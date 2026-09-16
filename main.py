@@ -289,23 +289,31 @@ def main():
                     max_speed=30.0,
                 )
                 time.sleep(3.0)  # Let head settle and camera see circles
-                # Wait for frames and detection (poll up to 8s)
-                for _ in range(80):
+
+                # Collect multiple detections and average them
+                vision_processor._robot_center_measured = False
+                offsets = []
+                for _ in range(300):  # up to 30s
                     time.sleep(0.1)
                     rc = vision_processor.robot_center_result
                     if rc is not None and rc.detected:
-                        break
+                        offsets.append(rc.lateral_offset_mm)
+                        if len(offsets) >= 10:
+                            break
 
                 # Return head to normal position and restore auto-exposure
                 cli.set_head_angle(0.0, accel=30.0, max_speed=30.0)
                 time.sleep(1.0)
                 brain.post_calibration(cli, resolution)
 
-                rc = vision_processor.robot_center_result
-                if rc is not None and rc.detected:
+                if offsets:
+                    avg_offset = sum(offsets) / len(offsets)
+                    vision_processor.camera_lateral_offset_mm = avg_offset
+                    vision_processor._robot_center_measured = True
                     print(
                         f"   Robot center detected: "
-                        f"lateral_offset={rc.lateral_offset_mm:+.2f}mm"
+                        f"lateral_offset={avg_offset:+.2f}mm "
+                        f"(avg of {len(offsets)} frames)"
                     )
                 else:
                     print("   WARNING: Robot center NOT detected (circles not found)")
