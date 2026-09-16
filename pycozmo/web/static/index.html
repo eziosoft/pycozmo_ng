@@ -125,6 +125,47 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     // -----------------------------------------------------------------------
+    // MJPEG feed watchdog — reconnect feeds that aren't receiving frames
+    // -----------------------------------------------------------------------
+    // Each camera feed is a long-lived multipart connection. If a connection
+    // stalls (camera warming up, Wi-Fi hiccup, browser dropped the first
+    // response) the <img> sits empty until the page is refreshed. Instead,
+    // re-point the feed at a cache-busted URL until the first frame decodes;
+    // the server hands back the latest frame on every request.
+    const FEED_RETRY_MS = 2500;
+    const FEED_MAX_RETRIES = 20;  // give up after ~50s so --no-camera feeds
+                                  // don't hammer the server forever
+    const feeds = [
+      { el: document.getElementById('camera-feed'), path: '/video' },
+      { el: document.getElementById('annotated-feed'), path: '/annotated-video' },
+      { el: document.getElementById('floor-feed'), path: '/floor-video' },
+    ];
+    for (const f of feeds) {
+      f.lastRetry = 0;
+      f.retries = 0;
+    }
+
+    function feedWatchdog() {
+      const now = Date.now();
+      for (const f of feeds) {
+        const el = f.el;
+        if (el.naturalWidth > 0) {  // at least one frame decoded — healthy
+          f.lastRetry = 0;
+          f.retries = 0;
+          continue;
+        }
+        if (f.lastRetry === 0) { f.lastRetry = now; continue; }
+        if (now - f.lastRetry < FEED_RETRY_MS) continue;
+        f.lastRetry = now;
+        if (f.retries >= FEED_MAX_RETRIES) continue;
+        f.retries++;
+        el.src = `${f.path}?t=${now}`;
+      }
+    }
+
+    setInterval(feedWatchdog, 1000);
+
+    // -----------------------------------------------------------------------
     // Configuration
     // -----------------------------------------------------------------------
     const WS_PORT = 8765;
