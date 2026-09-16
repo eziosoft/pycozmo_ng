@@ -96,6 +96,19 @@ def build_state_json(
             }
         )
 
+    # Faces: world frame -> scene frame.
+    face_list = []
+    for face_id, face_state in world.get("faces", {}).items():
+        pos_gl = coords.world_to_scene_point(face_state["position"])
+        face_list.append(
+            {
+                "id": f"face_{face_id}",
+                "position": [float(v) for v in pos_gl],
+                "confidence": face_state.get("confidence", 1.0),
+                "label": face_state.get("label", "face"),
+            }
+        )
+
     # Path: world frame -> scene frame, lifted just above the ground so the
     # zero-thickness trail doesn't z-fight the grid floor. Decimated so the
     # payload size doesn't grow with session length (see
@@ -114,6 +127,7 @@ def build_state_json(
 
     state = {
         "cubes": cube_list,
+        "faces": face_list,
         "robot": {
             "position": [float(v) for v in robot_pos],
             "heading": float(robot_heading),

@@ -40,6 +40,7 @@ from pycozmo.util.coords import camera_to_world
 
 __all__ = [
     "CubeState",
+    "FaceState",
     "WorldMap",
 ]
 
@@ -79,6 +80,32 @@ class CubeState:
         # Monotonic time (seconds) of the measurement that produced this
         # state. Lets callers (e.g. the navigator) detect that a fresh
         # camera measurement has been fused since a given instant.
+        self.updated_at = float(updated_at)
+
+
+class FaceState:
+    """Fused world-frame state of a detected face."""
+
+    __slots__ = (
+        "age",
+        "confidence",
+        "label",
+        "position",
+        "updated_at",
+    )
+
+    def __init__(
+        self,
+        position: np.ndarray,
+        confidence: float,
+        label: str = "face",
+        age: int = 0,
+        updated_at: float = 0.0,
+    ):
+        self.position = np.asarray(position, dtype=np.float64)
+        self.confidence = float(confidence)
+        self.label = str(label)
+        self.age = int(age)
         self.updated_at = float(updated_at)
 
 
@@ -150,6 +177,9 @@ class WorldMap:
         # Cubes: cube_id (0-indexed) -> fused world-frame state.
         self._cubes: dict[int, CubeState] = {}
 
+        # Faces: face_id -> fused world-frame state.
+        self._faces: dict[int, FaceState] = {}
+
         # Path: rolling buffer of world-frame positions (mm).
         self._path_points: deque[np.ndarray] = deque(maxlen=self.max_path_points)
 
@@ -203,6 +233,7 @@ class WorldMap:
         """Clear all entities and the path (fresh world)."""
         with self._lock:
             self._cubes.clear()
+            self._faces.clear()
             self._path_points.clear()
             self._robot_position = np.zeros(3, dtype=np.float64)
             self._robot_yaw = 0.0
@@ -310,6 +341,80 @@ class WorldMap:
         with self._lock:
             self._cubes.pop(cube_id, None)
 
+    # -- faces --------------------------------------------------------------
+
+    def update_face_measurement(
+        self,
+        face_id: int,
+        position_cam: np.ndarray,
+        confidence: float,
+        head_angle_rad: float,
+        camera_lateral_offset_mm: float = 0.0,
+        label: str = "face",
+    ) -> None:
+        """Fuse a camera-frame face measurement into the world map.
+
+        Transforms camera → body → world, then applies exponential smoothing
+        against the previous world-frame state.
+
+        Args:
+            face_id: Unique face id (assigned by the caller).
+            position_cam: Face centre in camera frame (mm).
+            confidence: Detection confidence (0..1).
+            head_angle_rad: Head pitch at measurement time (radians).
+            camera_lateral_offset_mm: Lateral offset of camera from robot centre.
+            label: Human-readable label (e.g. "Face 0").
+        """
+        with self._lock:
+            pos_world, _rot_world = camera_to_world(
+                position_cam,
+                np.eye(3),
+                head_angle_rad,
+                self._robot_position,
+                self._robot_yaw,
+                camera_lateral_offset_mm,
+            )
+            prev = self._faces.get(face_id)
+            now = time.monotonic()
+            if prev is None:
+                self._faces[face_id] = FaceState(
+                    position=pos_world,
+                    confidence=confidence,
+                    label=label,
+                    updated_at=now,
+                )
+                return
+
+            alpha = self.smoothing_alpha * float(confidence)
+            position = alpha * pos_world + (1.0 - alpha) * prev.position
+
+            self._faces[face_id] = FaceState(
+                position=position,
+                confidence=confidence,
+                label=label,
+                age=prev.age + 1,
+                updated_at=now,
+            )
+
+    def forget_face(self, face_id: int) -> None:
+        """Remove a tracked face from the map."""
+        with self._lock:
+            self._faces.pop(face_id, None)
+
+    def get_faces(self) -> dict[int, FaceState]:
+        """Return a copy of the fused face states (world frame)."""
+        with self._lock:
+            return {
+                face_id: FaceState(
+                    position=fs.position.copy(),
+                    confidence=fs.confidence,
+                    label=fs.label,
+                    age=fs.age,
+                    updated_at=fs.updated_at,
+                )
+                for face_id, fs in self._faces.items()
+            }
+
     # -- read API -----------------------------------------------------------
 
     def get_robot_pose(self) -> tuple[np.ndarray, float]:
@@ -343,7 +448,8 @@ class WorldMap:
         """Return the full world state as plain data (world frame).
 
         Keys: ``robot`` (position, yaw, origin_id), ``cubes`` (cube_id ->
-        position/rotation/confidence), ``path_points``.
+        position/rotation/confidence), ``faces`` (face_id ->
+        position/confidence/label), ``path_points``.
         """
         with self._lock:
             return {
@@ -361,6 +467,14 @@ class WorldMap:
                         "face_rotation": cube_state.face_rotation,
                     }
                     for cube_id, cube_state in self._cubes.items()
+                },
+                "faces": {
+                    face_id: {
+                        "position": fs.position.tolist(),
+                        "confidence": fs.confidence,
+                        "label": fs.label,
+                    }
+                    for face_id, fs in self._faces.items()
                 },
                 "path_points": [p.tolist() for p in self._path_points],
             }

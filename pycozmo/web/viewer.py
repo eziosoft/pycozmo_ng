@@ -28,7 +28,7 @@ class WebBridge:
         self.vision_processor = None
 
     def update_web_viewer(self):
-        """Feed the latest cube measurements into the world map.
+        """Feed the latest cube and face measurements into the world map.
 
         Cubes that have been invalidated (moved, forget_cube) are
         suppressed until they are re-detected stably. (COZMO-34)
@@ -70,6 +70,17 @@ class WebBridge:
             )
 
         self.ct.suppress["fresh_frames"] = new_fresh_frames
+
+        # Feed face measurements into world map
+        for fm in self.vision_processor.get_face_measurements():
+            self.web_viewer.update_face_measurement(
+                fm["face_id"],
+                fm["position"],
+                fm["confidence"],
+                head_angle,
+                camera_lateral_offset_mm=lateral_offset,
+                label=f"Face {fm['face_id']}",
+            )
 
         self.web_viewer.broadcast()
 

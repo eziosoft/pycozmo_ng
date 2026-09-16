@@ -228,6 +228,29 @@ class WebViewerServer:
         """Drop a cube from the world map (e.g. on IMU-move)."""
         self.world_map.forget_cube(cube_id)
 
+    def update_face_measurement(
+        self,
+        face_id,
+        position_cam,
+        confidence,
+        head_angle_rad,
+        camera_lateral_offset_mm=0.0,
+        label="face",
+    ):
+        """Fuse a camera-frame face measurement into the world map."""
+        self.world_map.update_face_measurement(
+            face_id,
+            position_cam,
+            confidence,
+            head_angle_rad,
+            camera_lateral_offset_mm=camera_lateral_offset_mm,
+            label=label,
+        )
+
+    def forget_face(self, face_id):
+        """Remove a face from the world map."""
+        self.world_map.forget_face(face_id)
+
     def add_path_point(self, position):
         """Append a world-frame position (mm) to the path trail."""
         self.world_map.add_path_point(position)

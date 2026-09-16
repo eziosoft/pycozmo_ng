@@ -23,6 +23,9 @@ __all__ = [
     "EvtCubeDetected",
     "EvtCubeLost",
     "EvtCubeObserved",
+    "EvtFaceDetected",
+    "EvtFaceLost",
+    "EvtFaceObserved",
     "EvtFloorProjectedImage",
     "EvtNewRawCameraImage",
     "EvtPacketReceived",
@@ -235,6 +238,33 @@ class EvtCubeLost(Event):
 
     Attributes:
         cube_id: ID of the lost cube
+    """
+
+
+class EvtFaceDetected(Event):
+    """
+    Triggered when one or more faces are first detected.
+
+    Attributes:
+        faces: List of FaceDetection objects
+    """
+
+
+class EvtFaceObserved(Event):
+    """
+    Triggered periodically while faces are visible.
+
+    Attributes:
+        faces: List of FaceDetection objects
+    """
+
+
+class EvtFaceLost(Event):
+    """
+    Triggered when a tracked face is no longer visible.
+
+    Attributes:
+        face_id: ID of the lost face
     """
 
 

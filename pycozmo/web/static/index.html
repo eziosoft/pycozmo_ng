@@ -684,6 +684,87 @@
     }
 
     // -----------------------------------------------------------------------
+    // Face globe management
+    // -----------------------------------------------------------------------
+    const faceGroups = {};
+    const FACE_GLOBE_RADIUS = 12;
+
+    function createFaceLabel(text) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = 512;
+      canvas.height = 64;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 36px monospace';
+      ctx.fillStyle = '#ffa000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(60, 8, 1);
+      sprite.position.set(0, FACE_GLOBE_RADIUS + 10, 0);
+      return { sprite, canvas, ctx, texture, material };
+    }
+
+    function updateFaceLabel(label, text) {
+      const { ctx, canvas, texture } = label;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 36px monospace';
+      ctx.fillStyle = '#ffa000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+      texture.needsUpdate = true;
+    }
+
+    function createFace(id) {
+      const group = new THREE.Group();
+
+      const geo = new THREE.SphereGeometry(FACE_GLOBE_RADIUS, 16, 12);
+      const mat = new THREE.MeshLambertMaterial({
+        color: 0xffa000,
+        transparent: true,
+        opacity: 0.6,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+
+      const wire = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: 0xffcc00 })
+      );
+      group.add(wire);
+
+      const label = createFaceLabel(id.replace('face_', 'Face '));
+      group.add(label.sprite);
+
+      group.userData = { targetPos: new THREE.Vector3(), label };
+      scene.add(group);
+      faceGroups[id] = group;
+      return group;
+    }
+
+    function removeFace(id) {
+      const g = faceGroups[id];
+      if (g) {
+        const label = g.userData.label;
+        if (label) {
+          label.texture.dispose();
+          label.material.dispose();
+        }
+        scene.remove(g);
+        delete faceGroups[id];
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // WebSocket
     // -----------------------------------------------------------------------
     let ws;
@@ -738,6 +819,22 @@
         if (!seen.has(id)) removeCube(id);
       }
       document.getElementById('tel-cubes').textContent = seen.size;
+
+      // Faces
+      const faceSeen = new Set();
+      for (const f of state.faces || []) {
+        faceSeen.add(f.id);
+        let g = faceGroups[f.id];
+        if (!g) g = createFace(f.id);
+        g.userData.targetPos.set(f.position[0], f.position[1], f.position[2]);
+        const label = g.userData.label;
+        if (label) {
+          updateFaceLabel(label, f.label || f.id.replace('face_', 'Face '));
+        }
+      }
+      for (const id of Object.keys(faceGroups)) {
+        if (!faceSeen.has(id)) removeFace(id);
+      }
 
       // Path trail
       if (state.path_points) {
@@ -968,6 +1065,11 @@
         g.position.lerp(_tmpPos, lerp);
         _tmpQuat.copy(g.userData.targetQuat);
         g.quaternion.slerp(_tmpQuat, lerp);
+      }
+
+      for (const g of Object.values(faceGroups)) {
+        _tmpPos.copy(g.userData.targetPos);
+        g.position.lerp(_tmpPos, 0.35);
       }
 
       if (hasRobotPose) {

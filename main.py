@@ -118,6 +118,15 @@ def main():
         ),
     )
     parser.add_argument(
+        "--no-face-detection",
+        action="store_true",
+        help=(
+            "Disable Haar cascade face detection. "
+            "Enabled by default — detects faces and renders them as "
+            "orange globes in the 3D world viewer."
+        ),
+    )
+    parser.add_argument(
         "--floor-size",
         type=float,
         default=600.0,
@@ -191,6 +200,7 @@ def main():
                 f"   Undistortion: {'ENABLED' if undistort_enabled else 'DISABLED (default - undistortion may cause warping)'}"
             )
             floor_enabled = not args.no_floor_projection
+            face_enabled = not args.no_face_detection
             vision_processor = vision.AnnotatedVisionProcessor(
                 client=cli,
                 camera_calibration=camera_calibration,
@@ -200,9 +210,12 @@ def main():
                 floor_center_mm=(200.0, 0.0),
                 floor_size_mm=(args.floor_size, args.floor_size),
                 mm_per_pixel=args.floor_resolution,
+                enable_face_detection=face_enabled,
             )
 
             print("Cube detector initialized with camera calibration")
+            if face_enabled:
+                print("Face detection ENABLED (orange globes in 3D viewer)")
 
             brain.vision_processor = vision_processor
 

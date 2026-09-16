@@ -32,6 +32,14 @@ except ImportError:
     logger.error("cube_detector module is required but not available")
     raise
 
+# Import FaceDetector
+try:
+    from pycozmo.vision.face_detector import FaceDetection, FaceDetector
+
+    FACE_DETECTOR_AVAILABLE = True
+except ImportError:
+    FACE_DETECTOR_AVAILABLE = False
+
 __all__ = [
     "AnnotatedVisionProcessor",
     "CubeDetection",
@@ -81,6 +89,12 @@ class VisionProcessor:
         self.cube_tracker = None
         self.fused_cubes = {}  # 3D fused cube states
 
+        # Face detection
+        self.face_detector = None
+        self._tracked_faces: dict[int, np.ndarray] = {}  # face_id -> position_cam
+        self._next_face_id = 0
+        self._face_measurements: list[dict] = []
+
         # Robot center detection
         self.robot_center_detector = RobotCenterDetector(
             camera_calibration.camera_matrix,
@@ -95,6 +109,7 @@ class VisionProcessor:
 
         # Initialize the detector
         self._init_detector()
+        self._init_face_detector()
 
         logger.info("Vision processor initialized with cube_detector")
 
@@ -157,6 +172,18 @@ class VisionProcessor:
 
         logger.info("Cube detector initialized successfully")
 
+    def _init_face_detector(self):
+        """Initialize the Haar cascade face detector."""
+        if not FACE_DETECTOR_AVAILABLE:
+            logger.warning("FaceDetector not available — face detection disabled")
+            return
+        try:
+            self.face_detector = FaceDetector(self.camera_calibration)
+            logger.info("Face detector initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize face detector: {e}")
+            self.face_detector = None
+
     def get_fused_cube_states(self):
         """
         Get the fused per-cube states from the current frame.
@@ -194,6 +221,72 @@ class VisionProcessor:
                 }
             )
         return measurements
+
+    def detect_faces(
+        self, image: Image.Image, head_angle_rad: float = 0.0
+    ) -> list[FaceDetection]:
+        """Detect faces and return with 3D camera-frame positions.
+
+        Assigns stable face IDs by matching detections to previously tracked
+        faces using nearest-position in camera frame.
+
+        Returns:
+            List of FaceDetection objects (with .position_mm in camera frame).
+        """
+        if self.face_detector is None:
+            return []
+        if not getattr(self, "enable_face_detection", True):
+            return []
+
+        img_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        detections = self.face_detector.detect(img_bgr)
+
+        # Simple nearest-match tracking: assign IDs based on proximity
+        new_tracked: dict[int, np.ndarray] = {}
+        new_measurements: list[dict] = []
+        used_old_ids: set[int] = set()
+
+        for det in detections:
+            pos = det.position_mm
+            best_id = None
+            best_dist = float("inf")
+
+            for old_id, old_pos in self._tracked_faces.items():
+                if old_id in used_old_ids:
+                    continue
+                dist = np.linalg.norm(pos - old_pos)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_id = old_id
+
+            # Match if within 100mm (roughly one face width at typical range)
+            if best_id is not None and best_dist < 100.0:
+                face_id = best_id
+            else:
+                face_id = self._next_face_id
+                self._next_face_id += 1
+
+            used_old_ids.add(face_id)
+            new_tracked[face_id] = pos
+
+            # Update the detection's ID for downstream use
+            det._face_id = face_id  # type: ignore[attr-defined]
+
+            new_measurements.append(
+                {
+                    "face_id": face_id,
+                    "position": pos,
+                    "confidence": det.confidence,
+                }
+            )
+
+        self._tracked_faces = new_tracked
+        self._face_measurements = new_measurements
+        return detections
+
+    def get_face_measurements(self) -> list[dict]:
+        """Return the latest face measurements for feeding into WorldMap."""
+        return list(self._face_measurements)
 
     def forget_cube(self, cube_id):
         """Remove a cube from the fusion tracker.
@@ -426,22 +519,62 @@ class VisionProcessor:
 
     def detect_and_annotate(
         self, image: Image.Image, head_angle_rad: float = 0.0
-    ) -> tuple[list[CubeDetection], Image.Image]:
+    ) -> tuple[list[CubeDetection], list[FaceDetection], Image.Image]:
         """
-        Detect cubes and return both detections and an annotated image.
-
-        This is a convenience method that combines detect_cubes() and draw_detections().
+        Detect cubes and faces, return both detections and an annotated image.
 
         Args:
             image: PIL Image from the robot's camera
             head_angle_rad: Current head tilt angle in radians (positive = looking up)
 
         Returns:
-            Tuple of (detections list, annotated image)
+            Tuple of (cube_detections, face_detections, annotated image)
         """
-        detections = self.detect_cubes(image, head_angle_rad)
-        annotated_image = self.draw_detections(image, detections)
-        return detections, annotated_image
+        cube_detections = self.detect_cubes(image, head_angle_rad)
+        face_detections = self.detect_faces(image, head_angle_rad)
+        annotated_image = self.draw_detections(image, cube_detections)
+        annotated_image = self.draw_face_detections(annotated_image, face_detections)
+        return cube_detections, face_detections, annotated_image
+
+    def draw_face_detections(
+        self, image: Image.Image, detections: list[FaceDetection]
+    ) -> Image.Image:
+        """Draw face bounding boxes on the image.
+
+        Args:
+            image: PIL Image to annotate.
+            detections: List of face detections to draw.
+
+        Returns:
+            Annotated PIL Image (a copy of the original).
+        """
+        if not detections:
+            return image
+
+        annotated = image.copy()
+        draw = ImageDraw.Draw(annotated)
+
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
+        except Exception:
+            try:
+                font = ImageFont.truetype("arial.ttf", 11)
+            except Exception:
+                font = ImageFont.load_default()
+
+        color = (255, 160, 0)  # Orange for faces
+
+        for det in detections:
+            x1, y1 = det.x, det.y
+            x2, y2 = det.x + det.width, det.y + det.height
+            draw.rectangle([(x1, y1), (x2, y2)], outline=color, width=2)
+
+            face_id = getattr(det, "_face_id", "?")
+            z_mm = det.position_mm[2]
+            label = f"Face {face_id} | {z_mm:.0f}mm"
+            draw.text((x1, y1 - 13), label, fill=color, font=font)
+
+        return annotated
 
     def draw_robot_center(
         self, image: Image.Image, result: RobotCenterResult | None = None
@@ -556,6 +689,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         occupancy_valid_min_brightness: int = 8,
         occupancy_edge_margin_px: int = 3,
         floor_edge_margin_px: int = 4,
+        enable_face_detection: bool = True,
     ):
         """
         Initialize the annotated vision processor.
@@ -586,6 +720,8 @@ class AnnotatedVisionProcessor(VisionProcessor):
                 pixels of the projection silhouette (must be > inflation radius
                 so the boundary ring isn't voted as occupied; interior edges
                 survive).
+            enable_face_detection: Enable Haar cascade face detection and 3D
+                position estimation (default: True).
         """
         super().__init__(camera_calibration=camera_calibration)
 
@@ -593,6 +729,7 @@ class AnnotatedVisionProcessor(VisionProcessor):
         self.process_every_n_frames = process_every_n_frames
         self.undistort = undistort
         self._frame_counter = 0
+        self.enable_face_detection = enable_face_detection
         self.latest_occupancy_map_image: np.ndarray | None = None
 
         # Floor pipeline (optional)
@@ -670,9 +807,9 @@ class AnnotatedVisionProcessor(VisionProcessor):
             else:
                 undistorted_image = image  # Use original image without undistortion
 
-            # Detect cubes and annotate
-            detections, annotated_image = self.detect_and_annotate(
-                undistorted_image, head_angle_rad
+            # Detect cubes, faces, and annotate
+            cube_detections, face_detections, annotated_image = (
+                self.detect_and_annotate(undistorted_image, head_angle_rad)
             )
 
             # Draw robot center overlay if detected
@@ -684,13 +821,16 @@ class AnnotatedVisionProcessor(VisionProcessor):
                     annotated_image, self.robot_center_result
                 )
 
-            # Dispatch annotated image event
+            # Dispatch annotated image event (pass cube detections for backwards compat)
             self.client.dispatch(
-                event.EvtAnnotatedCameraImage, cli, annotated_image, detections
+                event.EvtAnnotatedCameraImage, cli, annotated_image, cube_detections
             )
 
             # Also handle cube detection events
-            self._dispatch_cube_events(cli, detections)
+            self._dispatch_cube_events(cli, cube_detections)
+
+            # Handle face detection events
+            self._dispatch_face_events(cli, face_detections)
 
             # Floor projection (optional)
             if self.floor_pipeline is not None:
@@ -770,6 +910,41 @@ class AnnotatedVisionProcessor(VisionProcessor):
         self._obs_frame_counter += 1
         if self._obs_frame_counter % 5 == 0:
             cli.dispatch(event.EvtCubeObserved, cli, detections)
+
+    def _dispatch_face_events(self, cli, detections: list[FaceDetection]):
+        """Dispatch face detection events (detected, observed, lost)."""
+        from pycozmo import event
+
+        if not hasattr(self, "_last_face_ids"):
+            self._last_face_ids = set()
+
+        current_ids = {getattr(d, "_face_id", None) for d in detections}
+        current_ids.discard(None)
+
+        if current_ids != self._last_face_ids:
+            new_ids = current_ids - self._last_face_ids
+            if new_ids:
+                new_dets = [
+                    d for d in detections if getattr(d, "_face_id", None) in new_ids
+                ]
+                cli.dispatch(event.EvtFaceDetected, cli, new_dets)
+
+            lost_ids = self._last_face_ids - current_ids
+            for fid in lost_ids:
+                cli.dispatch(event.EvtFaceLost, cli, fid)
+
+            self._last_face_ids = current_ids
+
+        if not hasattr(self, "_face_obs_counter"):
+            self._face_obs_counter = 0
+
+        if not detections:
+            self._face_obs_counter = 0
+            return
+
+        self._face_obs_counter += 1
+        if self._face_obs_counter % 5 == 0:
+            cli.dispatch(event.EvtFaceObserved, cli, detections)
 
     def stop(self):
         """
