@@ -109,6 +109,10 @@
           <span class="tel-value" id="tel-wheel-r">0 mm/s</span>
         </div>
         <div class="tel-row">
+          <span class="tel-label">Cliff</span>
+          <span class="tel-value" id="tel-cliff">--</span>
+        </div>
+        <div class="tel-row">
           <span class="tel-label">Cubes</span>
           <span class="tel-value" id="tel-cubes">0</span>
         </div>
@@ -1066,6 +1070,13 @@
           `${(t.left_wheel_speed || 0).toFixed(0)} mm/s`;
         document.getElementById('tel-wheel-r').textContent =
           `${(t.right_wheel_speed || 0).toFixed(0)} mm/s`;
+
+        const cliff = t.cliff_data;
+        const cliffEl = document.getElementById('tel-cliff');
+        if (cliff != null) {
+          cliffEl.textContent = cliff;
+          cliffEl.className = cliff > 200 ? 'tel-value warn' : 'tel-value';
+        }
       }
 
       // Floor grid size
