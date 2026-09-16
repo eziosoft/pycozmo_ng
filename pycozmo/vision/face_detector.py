@@ -126,31 +126,31 @@ class FaceDetector:
         if len(faces_rect) == 0:
             return []
 
-        results: list[FaceDetection] = []
-        for x, y, w, h in faces_rect:
-            # Centre pixel
-            u = x + w / 2.0
-            v = y + h / 2.0
+        # Pick the largest detection (closest face).
+        x, y, w, h = max(faces_rect, key=lambda r: r[2] * r[3])
 
-            # Depth from apparent width (pinhole)
-            Z = (self.fx * self.real_width_m) / max(w, 1)
+        # Centre pixel
+        u = x + w / 2.0
+        v = y + h / 2.0
 
-            # Back-project to 3D
-            X = (u - self.cx) * Z / self.fx
-            Y = (v - self.cy) * Z / self.fy
+        # Depth from apparent width (pinhole).  real_width_m is in metres,
+        # so Z comes out in metres — convert to mm for the rest of the stack.
+        Z_m = (self.fx * self.real_width_m) / max(w, 1)
+        Z = Z_m * 1000.0
 
-            position = np.array([X, Y, Z], dtype=np.float64)
+        # Back-project to 3D (mm)
+        X = (u - self.cx) * Z / self.fx
+        Y = (v - self.cy) * Z / self.fy
 
-            results.append(
-                FaceDetection(
-                    x=int(x),
-                    y=int(y),
-                    width=int(w),
-                    height=int(h),
-                    confidence=1.0,
-                    position_mm=position,
-                )
+        position = np.array([X, Y, Z], dtype=np.float64)
+
+        return [
+            FaceDetection(
+                x=int(x),
+                y=int(y),
+                width=int(w),
+                height=int(h),
+                confidence=1.0,
+                position_mm=position,
             )
-
-        results.sort(key=lambda f: f.x)
-        return results
+        ]

@@ -91,8 +91,6 @@ class VisionProcessor:
 
         # Face detection
         self.face_detector = None
-        self._tracked_faces: dict[int, np.ndarray] = {}  # face_id -> position_cam
-        self._next_face_id = 0
         self._face_measurements: list[dict] = []
 
         # Robot center detection
@@ -225,13 +223,14 @@ class VisionProcessor:
     def detect_faces(
         self, image: Image.Image, head_angle_rad: float = 0.0
     ) -> list[FaceDetection]:
-        """Detect faces and return with 3D camera-frame positions.
+        """Detect the closest face and return with 3D camera-frame position.
 
-        Assigns stable face IDs by matching detections to previously tracked
-        faces using nearest-position in camera frame.
+        Always returns at most one detection.  No multi-face tracking —
+        we cannot re-identify faces across frames, so we just report the
+        single best (largest / closest) face each frame.
 
         Returns:
-            List of FaceDetection objects (with .position_mm in camera frame).
+            List with zero or one FaceDetection (position_mm in camera frame).
         """
         if self.face_detector is None:
             return []
@@ -241,47 +240,15 @@ class VisionProcessor:
         img_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         detections = self.face_detector.detect(img_bgr)
 
-        # Simple nearest-match tracking: assign IDs based on proximity
-        new_tracked: dict[int, np.ndarray] = {}
-        new_measurements: list[dict] = []
-        used_old_ids: set[int] = set()
-
-        for det in detections:
-            pos = det.position_mm
-            best_id = None
-            best_dist = float("inf")
-
-            for old_id, old_pos in self._tracked_faces.items():
-                if old_id in used_old_ids:
-                    continue
-                dist = np.linalg.norm(pos - old_pos)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_id = old_id
-
-            # Match if within 100mm (roughly one face width at typical range)
-            if best_id is not None and best_dist < 100.0:
-                face_id = best_id
-            else:
-                face_id = self._next_face_id
-                self._next_face_id += 1
-
-            used_old_ids.add(face_id)
-            new_tracked[face_id] = pos
-
-            # Update the detection's ID for downstream use
-            det._face_id = face_id  # type: ignore[attr-defined]
-
-            new_measurements.append(
-                {
-                    "face_id": face_id,
-                    "position": pos,
-                    "confidence": det.confidence,
-                }
-            )
-
-        self._tracked_faces = new_tracked
-        self._face_measurements = new_measurements
+        # Store measurements for downstream (WorldMap, events)
+        self._face_measurements = [
+            {
+                "face_id": 0,
+                "position": det.position_mm,
+                "confidence": det.confidence,
+            }
+            for det in detections
+        ]
         return detections
 
     def get_face_measurements(self) -> list[dict]:
