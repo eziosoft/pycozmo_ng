@@ -117,6 +117,55 @@
           <span class="tel-value" id="tel-path">0 pts</span>
         </div>
       </div>
+
+      <div id="camera-settings-panel">
+        <h3>Camera Settings</h3>
+        <div class="cam-row">
+          <span class="cam-label">Auto Exposure</span>
+          <label class="cam-toggle">
+            <input type="checkbox" id="cam-auto-exposure" checked />
+            <span class="cam-toggle-slider"></span>
+          </label>
+        </div>
+        <div class="cam-row" id="cam-gain-row">
+          <span class="cam-label">Gain</span>
+          <div class="cam-slider-wrap">
+            <input type="range" id="cam-gain" min="0" max="16" step="0.1" value="0" />
+            <span class="cam-slider-value" id="cam-gain-val">0.0</span>
+          </div>
+        </div>
+        <div class="cam-row" id="cam-exposure-row">
+          <span class="cam-label">Exposure (ms)</span>
+          <div class="cam-slider-wrap">
+            <input type="range" id="cam-exposure" min="0" max="500" step="1" value="100" />
+            <span class="cam-slider-value" id="cam-exposure-val">100</span>
+          </div>
+        </div>
+        <div class="cam-row">
+          <span class="cam-label">Color Mode</span>
+          <div class="cam-btn-group">
+            <button class="cam-btn active" id="cam-gray-btn">Gray</button>
+            <button class="cam-btn" id="cam-color-btn">Color</button>
+          </div>
+        </div>
+        <div class="cam-row">
+          <span class="cam-label">Resolution</span>
+          <select id="cam-resolution" class="cam-select">
+            <option value="QQQVGA">QQQVGA (80x60)</option>
+            <option value="QQVGA">QQVGA (160x120)</option>
+            <option value="QVGA" selected>QVGA (320x240)</option>
+            <option value="CVGA">CVGA (400x296)</option>
+            <option value="VGA">VGA (640x480)</option>
+          </select>
+        </div>
+        <div class="cam-row">
+          <span class="cam-label">JPEG Quality</span>
+          <div class="cam-slider-wrap">
+            <input type="range" id="cam-jpeg-quality" min="10" max="100" step="1" value="70" />
+            <span class="cam-slider-value" id="cam-jpeg-quality-val">70</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -765,6 +814,93 @@
     }
 
     // -----------------------------------------------------------------------
+    // Camera settings (COZMO-30)
+    // -----------------------------------------------------------------------
+    const camAutoExp = document.getElementById('cam-auto-exposure');
+    const camGain = document.getElementById('cam-gain');
+    const camGainVal = document.getElementById('cam-gain-val');
+    const camGainRow = document.getElementById('cam-gain-row');
+    const camExposure = document.getElementById('cam-exposure');
+    const camExposureVal = document.getElementById('cam-exposure-val');
+    const camExposureRow = document.getElementById('cam-exposure-row');
+    const camGrayBtn = document.getElementById('cam-gray-btn');
+    const camColorBtn = document.getElementById('cam-color-btn');
+    const camResolution = document.getElementById('cam-resolution');
+    const camJpegQuality = document.getElementById('cam-jpeg-quality');
+    const camJpegQualityVal = document.getElementById('cam-jpeg-quality-val');
+
+    let camSettingsApplyLock = false;  // prevent echo loops
+
+    function sendCameraSettings() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const settings = {
+        type: 'camera_settings',
+        auto_exposure_enabled: camAutoExp.checked,
+        gain: parseFloat(camGain.value),
+        exposure_ms: parseInt(camExposure.value, 10),
+        color: camColorBtn.classList.contains('active'),
+        resolution: camResolution.value,
+        jpeg_quality: parseInt(camJpegQuality.value, 10),
+      };
+      try {
+        ws.send(JSON.stringify(settings));
+      } catch (e) {
+        console.warn('camera_settings send failed', e);
+      }
+    }
+
+    function applyCameraSettings(s) {
+      if (!s) return;
+      camSettingsApplyLock = true;
+      camAutoExp.checked = !!s.auto_exposure_enabled;
+      camGain.value = s.gain ?? 0;
+      camGainVal.textContent = parseFloat(camGain.value).toFixed(1);
+      camExposure.value = s.exposure_ms ?? 100;
+      camExposureVal.textContent = camExposure.value;
+      if (s.color) {
+        camColorBtn.classList.add('active');
+        camGrayBtn.classList.remove('active');
+      } else {
+        camGrayBtn.classList.add('active');
+        camColorBtn.classList.remove('active');
+      }
+      if (s.resolution && camResolution.querySelector(`option[value="${s.resolution}"]`)) {
+        camResolution.value = s.resolution;
+      }
+      camJpegQuality.value = s.jpeg_quality ?? 70;
+      camJpegQualityVal.textContent = camJpegQuality.value;
+      updateCamAutoState();
+      camSettingsApplyLock = false;
+    }
+
+    function updateCamAutoState() {
+      const auto = camAutoExp.checked;
+      camGain.disabled = auto;
+      camExposure.disabled = auto;
+      camGainRow.style.opacity = auto ? '0.5' : '1';
+      camExposureRow.style.opacity = auto ? '0.5' : '1';
+    }
+
+    camAutoExp.addEventListener('change', () => { updateCamAutoState(); sendCameraSettings(); });
+    camGain.addEventListener('input', () => { camGainVal.textContent = parseFloat(camGain.value).toFixed(1); });
+    camGain.addEventListener('change', sendCameraSettings);
+    camExposure.addEventListener('input', () => { camExposureVal.textContent = camExposure.value; });
+    camExposure.addEventListener('change', sendCameraSettings);
+    camGrayBtn.addEventListener('click', () => {
+      camGrayBtn.classList.add('active');
+      camColorBtn.classList.remove('active');
+      sendCameraSettings();
+    });
+    camColorBtn.addEventListener('click', () => {
+      camColorBtn.classList.add('active');
+      camGrayBtn.classList.remove('active');
+      sendCameraSettings();
+    });
+    camResolution.addEventListener('change', sendCameraSettings);
+    camJpegQuality.addEventListener('input', () => { camJpegQualityVal.textContent = camJpegQuality.value; });
+    camJpegQuality.addEventListener('change', sendCameraSettings);
+
+    // -----------------------------------------------------------------------
     // WebSocket
     // -----------------------------------------------------------------------
     let ws;
@@ -925,6 +1061,9 @@
       // Occupancy map overlay
       if (state.occupancy_png) applyOccupancyPng(state.occupancy_png);
       if (state.occupancy_origin) applyOccupancyOrigin(state.occupancy_origin);
+
+      // Camera settings
+      if (state.camera_settings) applyCameraSettings(state.camera_settings);
     }
 
     // -----------------------------------------------------------------------

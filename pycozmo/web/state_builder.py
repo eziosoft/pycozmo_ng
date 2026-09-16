@@ -54,6 +54,7 @@ def build_state_json(
     occupancy_seq_sent: int,
     start_time: float,
     force_occupancy: bool = False,
+    camera_settings: dict | None = None,
 ) -> str:
     """Serialize world-map state to JSON for the browser.
 
@@ -70,6 +71,7 @@ def build_state_json(
         occupancy_seq_sent: Last occupancy sequence sent to browser.
         start_time: Server start time (for timestamp).
         force_occupancy: If True, include occupancy even if unchanged.
+        camera_settings: Current camera settings dict (or None).
 
     Returns:
         JSON string for the browser.
@@ -138,6 +140,9 @@ def build_state_json(
         "floor_center": list(floor_center_mm),
         "timestamp": int((time.time() - start_time) * 1000),
     }
+
+    if camera_settings is not None:
+        state["camera_settings"] = dict(camera_settings)
 
     # Include occupancy grid PNG if available — and only when it actually
     # changed (or the receiver needs a full snapshot, e.g. on connect).

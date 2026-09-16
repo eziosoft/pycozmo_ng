@@ -255,6 +255,208 @@ html, body {
   color: var(--strength-weak);
 }
 
+/* ---- Camera settings panel ---- */
+#camera-settings-panel {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-subtle);
+  border-top: 1px solid var(--border);
+}
+
+#camera-settings-panel h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 4px;
+}
+
+.cam-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: background 0.15s var(--ease-out);
+}
+
+.cam-row:hover {
+  background: var(--chrome);
+}
+
+.cam-label {
+  font-family: var(--font-display);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+/* Toggle switch */
+.cam-toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.cam-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.cam-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--border);
+  border-radius: 20px;
+  transition: background 0.2s var(--ease-out);
+}
+
+.cam-toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: transform 0.2s var(--ease-out), background 0.2s var(--ease-out);
+}
+
+.cam-toggle input:checked + .cam-toggle-slider {
+  background: var(--accent);
+}
+
+.cam-toggle input:checked + .cam-toggle-slider::before {
+  transform: translateX(16px);
+  background: var(--accent-text);
+}
+
+/* Slider */
+.cam-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  max-width: 180px;
+}
+
+.cam-slider-wrap input[type="range"] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+}
+
+.cam-slider-wrap input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid var(--bg);
+  transition: background 0.15s var(--ease-out);
+}
+
+.cam-slider-wrap input[type="range"]::-webkit-slider-thumb:hover {
+  background: var(--accent-hover);
+}
+
+.cam-slider-wrap input[type="range"]:disabled {
+  opacity: 0.35;
+}
+
+.cam-slider-wrap input[type="range"]:disabled::-webkit-slider-thumb {
+  background: var(--text-faint);
+  cursor: default;
+}
+
+.cam-slider-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  color: var(--text);
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Button group */
+.cam-btn-group {
+  display: flex;
+  gap: 4px;
+}
+
+.cam-btn {
+  padding: 4px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s var(--ease-out), color 0.15s var(--ease-out),
+              border-color 0.15s var(--ease-out);
+}
+
+.cam-btn:hover {
+  background: var(--chrome);
+}
+
+.cam-btn.active {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+/* Select */
+.cam-select {
+  padding: 4px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s var(--ease-out);
+}
+
+.cam-select:hover {
+  border-color: var(--accent);
+}
+
+.cam-select:focus {
+  border-color: var(--accent);
+}
+
+.cam-select option {
+  background: var(--surface);
+  color: var(--text);
+}
+
 /* ---- Status bar (top of center col) ---- */
 #status-bar {
   display: flex;

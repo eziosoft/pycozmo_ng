@@ -19,6 +19,7 @@ from pycozmo.cubes.manager import CubeManager
 from pycozmo.logger import logger_cubes
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
+from pycozmo.protocol import protocol_encoder
 from pycozmo.vision.display import VisionDisplay
 from pycozmo.vision.frame_state import FrameState
 from pycozmo.web.viewer import WebBridge
@@ -145,12 +146,71 @@ class Brain:
         self.web_viewer.set_navigate_listener(self.navigator._on_navigate_to)
         self.web_viewer.set_approach_listener(self.navigator._on_approach_cube)
         self.web_viewer.set_dock_listener(self.navigator._on_dock)
+        self.web_viewer.set_camera_settings_listener(self._on_camera_settings)
         if self.cli is not None:
             self.dock_state.dock_pose = self.cli.pose
         print("Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
         print("Click-to-navigate: click ground to drive there")
         print("Click cube to approach and align")
         print("Z to dock: drive back to start position")
+
+    # ------------------------------------------------------------------
+    # Camera settings from browser (COZMO-30)
+    # ------------------------------------------------------------------
+
+    # Map resolution name strings to protocol enum values.
+    _RESOLUTION_MAP = {
+        "QQQQVGA": protocol_encoder.ImageResolution.QQQQVGA,
+        "QQQVGA": protocol_encoder.ImageResolution.QQQVGA,
+        "QQVGA": protocol_encoder.ImageResolution.QQVGA,
+        "QVGA": protocol_encoder.ImageResolution.QVGA,
+        "CVGA": protocol_encoder.ImageResolution.CVGA,
+        "VGA": protocol_encoder.ImageResolution.VGA,
+        "SVGA": protocol_encoder.ImageResolution.SVGA,
+        "XGA": protocol_encoder.ImageResolution.XGA,
+        "SXGA": protocol_encoder.ImageResolution.SXGA,
+        "UXGA": protocol_encoder.ImageResolution.UXGA,
+        "QXGA": protocol_encoder.ImageResolution.QXGA,
+        "QUXGA": protocol_encoder.ImageResolution.QUXGA,
+    }
+
+    def _on_camera_settings(self, settings: dict) -> None:
+        """Apply camera settings received from the browser."""
+        cli = self.cli
+        if cli is None:
+            return
+
+        # Apply sensor parameters (gain, exposure, auto-exposure)
+        cli.set_camera_params(
+            gain=settings.get("gain", 0.0),
+            exposure_ms=settings.get("exposure_ms", 100),
+            auto_exposure_enabled=settings.get("auto_exposure_enabled", True),
+        )
+
+        # Apply color mode and resolution (requires re-enabling camera)
+        color = settings.get("color", False)
+        res_name = settings.get("resolution", "QVGA")
+        resolution = self._RESOLUTION_MAP.get(res_name)
+        if resolution is None:
+            resolution = protocol_encoder.ImageResolution.QVGA
+
+        cli.enable_camera(
+            enable=True,
+            color=color,
+            resolution=resolution,
+        )
+
+        # Store resolution in frame state
+        self.frame_state.camera_resolution = resolution
+
+        # Echo settings back so the broadcast includes the latest values
+        self.web_viewer.update_camera_settings(**settings)
+
+        print(
+            f"Camera settings updated: auto_exposure={settings.get('auto_exposure_enabled')}, "
+            f"gain={settings.get('gain')}, exposure={settings.get('exposure_ms')}ms, "
+            f"color={'color' if color else 'gray'}, resolution={res_name}"
+        )
 
     def stop_remote_control(self) -> None:
         if self._remote_control is not None:

@@ -144,6 +144,24 @@ class WebViewerServer:
         # dock. (COZMO-28)
         self._dock_listener = None
 
+        # Camera settings listener. The browser sends a
+        # ``{"type": "camera_settings", ...}`` message when the user
+        # adjusts camera controls. The listener receives a dict with
+        # keys: auto_exposure_enabled, gain, exposure_ms, color,
+        # resolution, jpeg_quality. (COZMO-30)
+        self._camera_settings_listener = None
+
+        # Current camera settings — echoed back to the browser on
+        # connect so the UI can initialize sliders/toggles correctly.
+        self._camera_settings: dict = {
+            "auto_exposure_enabled": True,
+            "gain": 0.0,
+            "exposure_ms": 100,
+            "color": False,
+            "resolution": "QVGA",
+            "jpeg_quality": 70,
+        }
+
         # Latest robot telemetry (battery, charging, speed, head/lift).
         # Updated from ``main.py``'s RobotState handler; included in the
         # broadcast state so the browser can render a telemetry HUD.
@@ -421,6 +439,25 @@ class WebViewerServer:
         """
         self._dock_listener = callback
 
+    def set_camera_settings_listener(self, callback) -> None:
+        """Subscribe to browser camera-settings changes.
+
+        ``callback(settings: dict)`` is invoked whenever a
+        ``{"type": "camera_settings", ...}`` message arrives. The dict
+        contains: ``auto_exposure_enabled`` (bool), ``gain`` (float),
+        ``exposure_ms`` (int), ``color`` (bool), ``resolution`` (str),
+        ``jpeg_quality`` (int). Pass ``None`` to unsubscribe. (COZMO-30)
+        """
+        self._camera_settings_listener = callback
+
+    def update_camera_settings(self, **kwargs) -> None:
+        """Update the stored camera settings (called from the listener).
+
+        Merges ``kwargs`` into ``_camera_settings`` so the next broadcast
+        includes the latest values for the browser to display.
+        """
+        self._camera_settings.update(kwargs)
+
     # -- internal -----------------------------------------------------------
 
     def _build_state_json(self, force_occupancy: bool = False) -> str:
@@ -435,6 +472,7 @@ class WebViewerServer:
             self._occupancy_seq_sent,
             self._start_time,
             force_occupancy,
+            camera_settings=self._camera_settings,
         )
         # ``build_state_json`` is a pure function and can't advance our
         # sent-seq bookkeeping; keep it in sync here so an unchanged
@@ -558,6 +596,25 @@ class WebViewerServer:
                             listener()
                         except Exception as e:  # noqa: BLE001
                             print(f"⚠️  dock listener failed: {e}")
+                elif mtype == "camera_settings":
+                    # Camera parameter changes from the browser. (COZMO-30)
+                    listener = self._camera_settings_listener
+                    if listener is not None:
+                        try:
+                            settings = {
+                                "auto_exposure_enabled": msg.get(
+                                    "auto_exposure_enabled", True
+                                ),
+                                "gain": float(msg.get("gain", 0.0)),
+                                "exposure_ms": int(msg.get("exposure_ms", 100)),
+                                "color": msg.get("color", False),
+                                "resolution": msg.get("resolution", "QVGA"),
+                                "jpeg_quality": int(msg.get("jpeg_quality", 70)),
+                            }
+                            self._camera_settings.update(settings)
+                            listener(settings)
+                        except Exception as e:  # noqa: BLE001
+                            print(f"⚠️  camera_settings listener failed: {e}")
         finally:
             self._clients.discard(websocket)
             self._fire_active_clients_change()
