@@ -13,6 +13,8 @@ Usage::
 
 """
 
+import os
+import urllib.request
 from dataclasses import dataclass
 
 import cv2
@@ -27,12 +29,39 @@ __all__ = ["FaceDetection", "FaceDetector"]
 # Varies ~14-16 cm across adults; 15.5 cm is a reasonable default.
 REAL_FACE_WIDTH_M: float = 0.155
 
+# Haar cascade download URL (OpenCV official repo).
+_HAARCASCADE_URL = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+_HAARCASCADE_NAME = "haarcascade_frontalface_default.xml"
+
+
+def _ensure_cascade() -> str:
+    """Return the path to the frontal-face Haar cascade XML.
+
+    If the file is missing from ``cv2.data.haarcascades`` (common with
+    opencv-contrib-python 5.x on Python 3.14), download it automatically.
+    """
+    data_dir = cv2.data.haarcascades  # type: ignore[attr-defined]
+    path = os.path.join(data_dir, _HAARCASCADE_NAME)
+
+    if os.path.isfile(path):
+        return path
+
+    logger.info("Haar cascade XML not found — downloading to %s", path)
+    try:
+        urllib.request.urlretrieve(_HAARCASCADE_URL, path)
+        logger.info("Downloaded %s (%d bytes)", path, os.path.getsize(path))
+    except Exception as exc:
+        raise RuntimeError(
+            f"Cannot download Haar cascade to {path}: {exc}. "
+            "Install opencv-contrib-python or place the XML manually."
+        ) from exc
+
+    return path
+
 
 @dataclass
 class FaceDetection:
     """A detected face with 2D bounding box and estimated 3D position."""
-
-    __slots__ = ("x", "y", "width", "height", "confidence", "position_mm")
 
     x: int
     y: int
@@ -52,24 +81,20 @@ class FaceDetector:
     real_face_width_m : float
         Assumed real-world face width in metres.  Adjust if your subjects
         are mostly children or you have per-person calibration.
-    min_confidence : float
-        Minimum Haar cascade confidence to report (default 1.2).
     """
 
     def __init__(
         self,
         camera_calibration: CameraCalibration,
         real_face_width_m: float = REAL_FACE_WIDTH_M,
-        min_confidence: float = 1.2,
     ):
         self.fx = camera_calibration.fx
         self.fy = camera_calibration.fy
         self.cx = camera_calibration.cx
         self.cy = camera_calibration.cy
         self.real_width_m = real_face_width_m
-        self.min_confidence = min_confidence
 
-        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"  # type: ignore[attr-defined]
+        cascade_path = _ensure_cascade()
         self._cascade = cv2.CascadeClassifier(cascade_path)
         if self._cascade.empty():
             raise RuntimeError(f"Failed to load Haar cascade from {cascade_path}")
@@ -122,7 +147,7 @@ class FaceDetector:
                     y=int(y),
                     width=int(w),
                     height=int(h),
-                    confidence=1.0,  # Haar cascade doesn't give a 0-1 score
+                    confidence=1.0,
                     position_mm=position,
                 )
             )

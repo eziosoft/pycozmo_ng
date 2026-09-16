@@ -3,7 +3,7 @@ dpkt
 numpy
 Pillow>=6.0.0
 flatbuffers
-opencv-python>=4.5.0
+opencv-contrib-python>=4.5.0
 scipy>=1.7.0
 aiohttp>=3.9.0
 websockets>=12.0
