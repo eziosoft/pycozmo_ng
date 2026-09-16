@@ -160,6 +160,7 @@ class WebViewerServer:
             "color": False,
             "resolution": "QVGA",
             "jpeg_quality": 70,
+            "head_light": True,
         }
 
         # Latest robot telemetry (battery, charging, speed, head/lift).
@@ -610,6 +611,7 @@ class WebViewerServer:
                                 "color": msg.get("color", False),
                                 "resolution": msg.get("resolution", "QVGA"),
                                 "jpeg_quality": int(msg.get("jpeg_quality", 70)),
+                                "head_light": msg.get("head_light", True),
                             }
                             self._camera_settings.update(settings)
                             listener(settings)

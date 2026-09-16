@@ -187,6 +187,9 @@ class Brain:
             auto_exposure_enabled=settings.get("auto_exposure_enabled", True),
         )
 
+        # Apply head light (IR illuminator)
+        cli.set_head_light(settings.get("head_light", True))
+
         # Apply color mode and resolution (requires re-enabling camera)
         color = settings.get("color", False)
         res_name = settings.get("resolution", "QVGA")
@@ -209,7 +212,8 @@ class Brain:
         print(
             f"Camera settings updated: auto_exposure={settings.get('auto_exposure_enabled')}, "
             f"gain={settings.get('gain')}, exposure={settings.get('exposure_ms')}ms, "
-            f"color={'color' if color else 'gray'}, resolution={res_name}"
+            f"color={'color' if color else 'gray'}, resolution={res_name}, "
+            f"head_light={'on' if settings.get('head_light') else 'off'}"
         )
 
     def stop_remote_control(self) -> None:

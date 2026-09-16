@@ -127,6 +127,13 @@
             <span class="cam-toggle-slider"></span>
           </label>
         </div>
+        <div class="cam-row">
+          <span class="cam-label">Head Light</span>
+          <label class="cam-toggle">
+            <input type="checkbox" id="cam-head-light" checked />
+            <span class="cam-toggle-slider"></span>
+          </label>
+        </div>
         <div class="cam-row" id="cam-gain-row">
           <span class="cam-label">Gain</span>
           <div class="cam-slider-wrap">
@@ -817,6 +824,7 @@
     // Camera settings (COZMO-30)
     // -----------------------------------------------------------------------
     const camAutoExp = document.getElementById('cam-auto-exposure');
+    const camHeadLight = document.getElementById('cam-head-light');
     const camGain = document.getElementById('cam-gain');
     const camGainVal = document.getElementById('cam-gain-val');
     const camGainRow = document.getElementById('cam-gain-row');
@@ -842,6 +850,7 @@
         color: camColorBtn.classList.contains('active'),
         resolution: camResolution.value,
         jpeg_quality: parseInt(camJpegQuality.value, 10),
+        head_light: camHeadLight.checked,
       };
       try {
         ws.send(JSON.stringify(settings));
@@ -856,6 +865,7 @@
       camSettingsInit = true;
       camSettingsApplyLock = true;
       camAutoExp.checked = !!s.auto_exposure_enabled;
+      camHeadLight.checked = s.head_light !== false;
       camGain.value = s.gain ?? 0;
       camGainVal.textContent = parseFloat(camGain.value).toFixed(1);
       camExposure.value = s.exposure_ms ?? 100;
@@ -885,6 +895,7 @@
     }
 
     camAutoExp.addEventListener('change', () => { updateCamAutoState(); sendCameraSettings(); });
+    camHeadLight.addEventListener('change', sendCameraSettings);
     camGain.addEventListener('input', () => { camGainVal.textContent = parseFloat(camGain.value).toFixed(1); });
     camGain.addEventListener('change', sendCameraSettings);
     camExposure.addEventListener('input', () => { camExposureVal.textContent = camExposure.value; });
