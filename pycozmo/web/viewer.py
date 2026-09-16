@@ -108,6 +108,7 @@ class WebBridge:
                 right_wheel_speed=round(c.right_wheel_speed.mmps, 1),
                 head_angle=round(c.head_angle.degrees, 1),
                 lift_height=round(c.lift_position.height.mm, 1),
+                cliff_data=list(c.cliff_data),
             )
         except Exception:  # noqa: BLE001
             pass

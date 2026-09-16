@@ -82,6 +82,7 @@ class Client(event.Dispatcher):
         self.robot_orientation = robot.RobotOrientation.ON_THREADS
         self.robot_picked_up = False
         self.robot_moving = False
+        self.cliff_data = (0, 0, 0, 0)
         # Animation state
         self.num_anim_bytes_played = 0
         self.num_audio_frames_played = 0
@@ -375,6 +376,7 @@ class Client(event.Dispatcher):
         self.battery_voltage = pkt.battery_voltage
         self.accel = util.Vector3(pkt.accel_x, pkt.accel_y, pkt.accel_z)
         self.gyro = util.Vector3(pkt.gyro_x, pkt.gyro_y, pkt.gyro_z)
+        self.cliff_data = pkt.cliff_data_raw
         old_status = self.robot_status
         self.robot_status = pkt.status
         self.dispatch(event.EvtRobotStateUpdated, self)
