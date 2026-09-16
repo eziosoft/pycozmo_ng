@@ -9,10 +9,10 @@ Detection inverts the image (rings become bright), thresholds to find dark
 regions, then uses connected-component analysis with an area filter to
 isolate the small ring spots from the wide centre cable.
 
-After the first (global) detection establishes the two ring positions, later
-frames only search in two small windows (``search_radius`` px) around the
-last known locations — the rings barely move frame-to-frame, so this rejects
-stray spots elsewhere in the band and locks onto the real rings.
+The rings barely move in real life and the camera resolution never changes, so
+detection only searches two small windows (``search_radius`` px) centred on the
+hard-coded anchor positions at the top of this file — the ROI is fixed and
+never drifts, which rejects stray spots elsewhere in the band.
 """
 
 from dataclasses import dataclass
@@ -23,6 +23,15 @@ import numpy as np
 from pycozmo import logger
 
 __all__ = ["RobotCenterDetector", "RobotCenterResult"]
+
+#: Pixel centres of the left and right ring markers in a fully down-tilted view
+#: at the default camera resolution. Measured on the robot (2026-09-15):
+#: good detections at (82,199) and (256,198). The camera resolution never
+#: changes at runtime, so the rings always stay inside a ``±search_radius``
+#: window around these fixed anchors — the ROI is deliberately NOT allowed to
+#: drift frame-to-frame.
+ANCHOR_A_PX = (82.0, 199.0)
+ANCHOR_B_PX = (256.0, 198.0)
 
 
 @dataclass
@@ -52,13 +61,12 @@ class RobotCenterDetector:
     Algorithm:
     1. Invert the image (black rings become bright spots).
     2. Take the bottom band (y 77%-92% of image height).
-    3. Threshold at 60 to find dark regions on the inverted image.
+    3. Adaptive threshold (robust to lighting) on the inverted band.
     4. Connected-component analysis with area < 500 to isolate small
        ring spots from the wide centre cable.
-    5. First frame: take the two smallest components (left and right ring).
-    6. Later frames: only search within ``search_radius`` px windows around
-       the last known ring locations, keeping the pair that is nearest to
-       where it was last seen.
+    5. Search only two small ``±search_radius`` px windows centred on the
+       hard-coded anchor positions (``ANCHOR_A_PX``/``ANCHOR_B_PX``); take
+       the spot nearest to each anchor. No full-band search, no anchor drift.
     """
 
     MIN_HEAD_ANGLE_RAD = np.radians(-25.0)
@@ -84,14 +92,15 @@ class RobotCenterDetector:
             if head_tolerance_rad is not None
             else self.DEFAULT_HEAD_TOLERANCE_RAD
         )
-        #: How far (px) the rings are allowed to move between frames.
+        #: How far (px) the rings are allowed to move from the anchored ROI
+        #: (fixed to the module-level ANCHOR_* constants).
         self.search_radius = search_radius
         #: Adaptive-threshold window size (odd, <= search window) and offset.
         self.threshold_block = threshold_block
         self.threshold_c = threshold_c
+        self._anchor_a_px = ANCHOR_A_PX
+        self._anchor_b_px = ANCHOR_B_PX
         self._last_offset: float | None = None
-        self._last_a_px: tuple[float, float] | None = None
-        self._last_b_px: tuple[float, float] | None = None
 
     def _head_near_min(self) -> bool:
         return (
@@ -161,9 +170,10 @@ class RobotCenterDetector:
     def _find_circles(self, gray: np.ndarray) -> list[tuple[float, float]]:
         """Find two ring markers, sorted left-to-right.
 
-        Uses the last known ring locations to restrict the search to small
-        windows around them; falls back to a full-band search on the first
-        frame or when the tracked pair is lost.
+        Searches only two small ``±search_radius`` windows centred on the
+        hard-coded anchor positions (``ANCHOR_A_PX``/``ANCHOR_B_PX``). The
+        camera resolution never changes, so the rings stay inside these windows;
+        no full-band search and no anchor drift.
         """
         h, w = gray.shape[:2]
 
@@ -175,53 +185,12 @@ class RobotCenterDetector:
         y_end = int(h * 0.92)
         band = neg[y_start:y_end, :]
 
-        circles: list[tuple[float, float]] = []
+        a = self._find_circle_near(band, y_start, w, self._anchor_a_px)
+        b = self._find_circle_near(band, y_start, w, self._anchor_b_px)
 
-        # ROI mode: search small windows around last known positions
-        if self._last_a_px is not None and self._last_b_px is not None:
-            a = self._find_circle_near(band, y_start, w, self._last_a_px)
-            b = self._find_circle_near(band, y_start, w, self._last_b_px)
-            if a is not None and b is not None:
-                circles = sorted([a, b], key=lambda p: p[0])
-
-        if not circles:
-            circles = self._find_circles_full_band(band, y_start, w)
-
-        if len(circles) == 2:
-            self._last_a_px, self._last_b_px = circles
-        else:
-            self._last_a_px = self._last_b_px = None
-
-        return circles
-
-    def _find_circles_full_band(
-        self, band: np.ndarray, y_start: int, w: int
-    ) -> list[tuple[float, float]]:
-        """Full-band search used on the first frame or when tracking is lost."""
-        spots = self._component_spots(band, 0, y_start, w)
-
-        if len(spots) < 2:
+        if a is None or b is None:
             return []
-
-        # Sort left-to-right and take the two smallest (most ring-like)
-        spots.sort(key=lambda p: p[0])
-
-        # If more than 2, pick the pair with most symmetric midpoint
-        if len(spots) == 2:
-            return spots
-
-        img_center_x = w / 2.0
-        best_pair = None
-        best_score = float("inf")
-        for i in range(len(spots)):
-            for j in range(i + 1, len(spots)):
-                mid_x = (spots[i][0] + spots[j][0]) / 2.0
-                score = abs(mid_x - img_center_x)
-                if score < best_score:
-                    best_score = score
-                    best_pair = (spots[i], spots[j])
-
-        return list(best_pair) if best_pair else []
+        return sorted([a, b], key=lambda p: p[0])
 
     def detect(self, frame: np.ndarray) -> RobotCenterResult:
         """Detect robot center from camera frame.
