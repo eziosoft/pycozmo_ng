@@ -288,6 +288,7 @@ def main():
                     accel=30.0,
                     max_speed=30.0,
                 )
+                time.sleep(3.0)  # Let head settle and camera see circles
                 # Wait for frames and detection (poll up to 8s)
                 for _ in range(80):
                     time.sleep(0.1)
