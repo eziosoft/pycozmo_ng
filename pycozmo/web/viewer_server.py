@@ -3,8 +3,8 @@ WebSocket + HTTP server for the Three.js web viewer.
 
 Serves the browser-side Three.js scene and streams world state over WebSocket.
 The browser is a pure display: all localization math lives in ``WorldMap``
-(pycozmo/world_map.py), and this server converts the world frame to scene frame
-for rendering. Drop-in replacement for World3DViewer in main.py.
+(pycozmo/world_map.py), and this server converts the world frame to scene
+frame for rendering. Drop-in replacement for World3DViewer in main.py.
 
 Usage:
     # Standalone (serves HTML + WebSocket on port 8765):
@@ -17,39 +17,22 @@ Usage:
 """
 
 import asyncio
-import json
-import os
-import threading
 import time
-
-import numpy as np
-
-try:
-    import websockets
-    import websockets.server
-
-    HAS_WEBSOCKETS = True
-except ImportError:
-    HAS_WEBSOCKETS = False
-
-try:
-    from aiohttp import web
-
-    HAS_AIOHTTP = True
-except ImportError:
-    HAS_AIOHTTP = False
 
 from pycozmo import coords
 from pycozmo.navigation.world_map import WorldMap
+from pycozmo.web.file_server import FileServer
+from pycozmo.web.mjpeg_streamer import MjpegEndpoint
+from pycozmo.web.msg_router import MsgRouter
 from pycozmo.web.state_builder import (
     OCCUPANCY_SEND_INTERVAL_S,
     build_state_json,
-    encode_jpeg,
 )
+from pycozmo.web.ws_server import WSServer
 
 
 # ---------------------------------------------------------------------------
-# WebViewerServer
+# WebViewerServer — thin composition root
 # ---------------------------------------------------------------------------
 class WebViewerServer:
     """Headless replacement for World3DViewer — thin adapter over ``WorldMap``.
@@ -59,9 +42,12 @@ class WebViewerServer:
     broadcast, it serializes the world map to **scene frame** for the browser,
     which is a pure display and does no coordinate math.
 
-    Same ``update_cube`` / ``remove_cube`` / ``clear_cubes`` interface is kept
-    for backwards compatibility, but new code should use the WorldMap-backed
-    methods below.
+    Internally delegates to:
+    - :class:`MsgRouter` — browser message dispatch
+    - :class:`WSServer` — WebSocket + HTTP lifecycle
+    - :class:`FileServer` — static file serving
+    - :class:`MjpegEndpoint` — camera/annotated/floor MJPEG streams
+    - :func:`build_state_json` — world→scene state serialization
     """
 
     def __init__(
@@ -73,27 +59,20 @@ class WebViewerServer:
         self.host = host
         self.port = port
         self.world_map = world_map if world_map is not None else WorldMap()
-        self.cubes: dict[
-            str, dict
-        ] = {}  # kept for compat; world_map is source of truth
+        self.cubes: dict[str, dict] = {}
 
         self._clients: set = set()
-        self._loop: asyncio.AbstractEventLoop | None = None
         self._start_time = time.time()
 
-        # Camera MJPEG streaming (encode happens in the server loop thread)
+        # Camera frame sources (image, frame_id) — thread-safe via GIL
         self._latest_image = None
         self._image_id: int = 0
-
-        # Annotated MJPEG streaming (camera with detection overlays)
         self._latest_annotated_image = None
         self._annotated_image_id: int = 0
-
-        # Floor MJPEG streaming
         self._latest_floor_image = None
         self._floor_image_id: int = 0
 
-        # Floor grid dimensions (mm) — set from FloorProjector config
+        # Floor grid dimensions (mm)
         self._floor_size_mm: tuple[float, float] = (600.0, 600.0)
         self._floor_center_mm: tuple[float, float] = (200.0, 0.0)
 
@@ -104,79 +83,41 @@ class WebViewerServer:
         self._occupancy_seq_sent: int = -1
         self._last_occupancy_encode_time: float = 0.0
 
-        # Broadcast coalescing: the loop thread keeps a queue and always
-        # sends the latest state — broadcasts never pile up.
+        # Broadcast coalescing
         self._broadcast_queue = None
-        self._run_forever = None
 
-        # Active-client transition callbacks. Use ``add_active_clients_listener``
-        # to subscribe; the callback fires with the new count (int) whenever
-        # the count changes (including going to 0 when the last client
-        # disconnects). Typical use: enable Cozmo's camera on the 0→1
-        # transition and disable it on the 1→0 transition, so the camera
-        # only runs while someone is actually watching. (COZMO-22)
+        # Active-client transition callbacks (COZMO-22)
         self._active_clients_listeners: list = []
         self._last_active_count: int = 0
 
-        # Remote-control key updates. The browser sends a
-        # ``{"type": "control", "keys": [...]}`` message on every keydown/
-        # keyup; the most recent set is forwarded to the listener (e.g. a
-        # :class:`pycozmo.remote_control.RemoteControl` instance) which
-        # translates it into Cozmo commands. We hand off the raw set;
-        # the listener is responsible for any thread/async
-        # marshalling. (COZMO-25)
-        self._control_listener = None
-
-        # Navigation target listener. The browser sends a
-        # ``{"type": "navigate_to", "x": scene_x, "z": scene_z}`` message
-        # on ground-plane click; the listener (e.g. a navigation handler in
-        # main.py) receives world-frame coordinates. (COZMO-28)
-        self._navigate_listener = None
-
-        # Cube approach listener. The browser sends a
-        # ``{"type": "approach_cube", "cube_id": "cube_1"}`` message on
-        # cube click; the listener receives (cube_id_int, cube_pos_world).
-        # (COZMO-28)
-        self._approach_listener = None
-
-        # Dock listener. The browser sends a ``{"type": "dock"}`` message
-        # on 'z' keypress; the listener drives the robot back into the
-        # dock. (COZMO-28)
-        self._dock_listener = None
-
-        # Camera settings listener. The browser sends a
-        # ``{"type": "camera_settings", ...}`` message when the user
-        # adjusts camera controls. The listener receives a dict with
-        # keys: auto_exposure_enabled, gain, exposure_ms, color,
-        # resolution, jpeg_quality. (COZMO-30)
-        self._camera_settings_listener = None
-
-        # Current camera settings — echoed back to the browser on
-        # connect so the UI can initialize sliders/toggles correctly.
-        self._camera_settings: dict = {
-            "auto_exposure_enabled": True,
-            "gain": 0.0,
-            "exposure_ms": 20,
-            "color": False,
-            "resolution": "QVGA",
-            "jpeg_quality": 70,
-            "head_light": True,
-        }
-
-        # Latest robot telemetry (battery, charging, speed, head/lift).
-        # Updated from ``main.py``'s RobotState handler; included in the
-        # broadcast state so the browser can render a telemetry HUD.
+        # Latest robot telemetry
         self._telemetry: dict = {}
 
-        # Validate that at least websockets is available
-        if not HAS_WEBSOCKETS:
-            raise ImportError(
-                "The 'websockets' package is required for WebViewerServer. "
-                "Install it with: pip install websockets"
-            )
+        # Sub-modules
+        self._msg_router = MsgRouter(world_map=self.world_map)
+        self._file_server = FileServer()
 
-        # We run the server in a background thread
-        self._thread: threading.Thread | None = None
+        # MJPEG endpoints — closures that return (image, frame_id)
+        def _get_camera_frame():
+            return self._latest_image, self._image_id
+
+        def _get_annotated_frame():
+            return self._latest_annotated_image, self._annotated_image_id
+
+        def _get_floor_frame():
+            return self._latest_floor_image, self._floor_image_id
+
+        self._mjpeg_camera = MjpegEndpoint(_get_camera_frame)
+        self._mjpeg_annotated = MjpegEndpoint(_get_annotated_frame)
+        self._mjpeg_floor = MjpegEndpoint(_get_floor_frame)
+
+        self._ws_server = WSServer(
+            host=host,
+            port=port,
+            ws_handler=self._handler,
+            broadcast_fn=self._broadcast_loop,
+            register_routes=self._register_http_routes,
+        )
 
     # -- public interface (backwards compatible with World3DViewer) ---------
 
@@ -188,12 +129,7 @@ class WebViewerServer:
         cube_size: float = 44,
         marker_images=None,
     ):
-        """Deprecated — position is expected in world frame now.
-
-        Kept to avoid crashing old callers, but the world-map path
-        (``update_cube_measurement``) is preferred because it transforms and
-        fuses correctly. This stores the value into scene frame directly.
-        """
+        """Deprecated — position is expected in world frame now."""
         del marker_images, cube_size
         pos_gl = coords.world_to_scene_point(position)
         rot_gl = coords.world_to_scene_rotation(rotation_matrix)
@@ -212,7 +148,7 @@ class WebViewerServer:
         """Remove all cubes (compat shim)."""
         self.cubes.clear()
 
-    # -- WorldMap pass-through (the real API) -------------------------------
+    # -- WorldMap pass-through (the real API) --------------------------------
 
     def update_robot_pose(self, position, yaw_rad, origin_id=None, record_path=True):
         """Update the robot's world pose (mm, Anki frame) from ``cli.pose``."""
@@ -283,29 +219,18 @@ class WebViewerServer:
         self.world_map.reset_map()
 
     def update_telemetry(self, **kwargs) -> None:
-        """Store the latest robot telemetry for the browser HUD.
-
-        Called from ``main.py``'s RobotState handler with named fields:
-        ``charging`` (bool), ``on_charger`` (bool), ``battery_voltage``
-        (float, V), ``left_wheel_speed`` / ``right_wheel_speed`` (float,
-        mm/s), ``head_angle`` (float, degrees) and ``lift_height``
-        (float, mm). Included in the next broadcast.
-        """
+        """Store the latest robot telemetry for the browser HUD."""
         self._telemetry.update(kwargs)
 
     def broadcast(self):
-        """Notify the server that the world state changed.
-
-        The server coalesces notifications and sends the latest state once,
-        so rapid ``broadcast()`` calls from the client thread can never
-        queue up and starve the WebSocket/MJPEG handlers on the loop.
-        """
+        """Notify the server that the world state changed."""
         if not self._clients or self._broadcast_queue is None:
             return
-        if self._loop is None or not self._loop.is_running():
+        loop = self._ws_server.loop
+        if loop is None or not loop.is_running():
             return
         try:
-            self._loop.call_soon_threadsafe(self._broadcast_queue.put_nowait, True)
+            loop.call_soon_threadsafe(self._broadcast_queue.put_nowait, True)
         except RuntimeError:
             pass
 
@@ -314,27 +239,19 @@ class WebViewerServer:
         return True
 
     def push_frame(self, image):
-        """Publish the latest camera frame (PIL image) for MJPEG streaming.
-
-        JPEG encoding is deferred to the server's event loop, so this never
-        blocks the caller (the pycozmo packet-processing thread).
-        """
+        """Publish the latest camera frame for MJPEG streaming."""
         self._latest_image = image
         self._image_id += 1
 
     def push_annotated_frame(self, image):
-        """Publish the latest annotated camera frame (PIL image) for MJPEG streaming.
-
-        The annotated frame includes detection overlays (bounding boxes, labels).
-        """
+        """Publish the latest annotated camera frame for MJPEG streaming."""
         self._latest_annotated_image = image
         self._annotated_image_id += 1
 
     def push_floor_frame(self, image):
-        """Publish the latest floor-projected frame (numpy BGR) for MJPEG."""
+        """Publish the latest floor-projected frame for MJPEG."""
         import cv2
 
-        # Convert BGR numpy to PIL RGB for the encoder
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         from PIL import Image
 
@@ -344,13 +261,7 @@ class WebViewerServer:
     def push_occupancy_grid(
         self, grid_image, origin_x: float = 0.0, origin_y: float = 0.0
     ) -> None:
-        """Publish the occupancy grid as a base64-encoded PNG for WebSocket.
-
-        Re-encoding is throttled to ``OCCUPANCY_SEND_INTERVAL_S`` — the map
-        changes only a few cells per frame, so anything faster just wastes
-        CPU (and the caller runs on the pycozmo packet thread). The PNG is
-        only embedded in a broadcast when its sequence bumps.
-        """
+        """Publish the occupancy grid as a base64-encoded PNG for WebSocket."""
         import base64
 
         import cv2
@@ -375,20 +286,16 @@ class WebViewerServer:
 
     def close(self):
         """Stop the background server."""
-        if self._loop and self._loop.is_running():
+        if self._ws_server.loop and self._ws_server.loop.is_running():
             try:
-                asyncio.run_coroutine_threadsafe(self._shutdown(), self._loop)
+                asyncio.run_coroutine_threadsafe(
+                    self._ws_server.shutdown(), self._ws_server.loop
+                )
             except RuntimeError:
-                pass  # Loop already closed
+                pass
 
     def add_active_clients_listener(self, callback) -> None:
-        """Subscribe to active-client-count transitions.
-
-        ``callback(active_count: int)`` is called whenever the number of
-        connected WebSocket clients changes (0→1, 1→0, 1→2, etc.). Multiple
-        listeners may be registered. Typical use: turn Cozmo's camera on
-        when the first browser tab opens and off when the last one closes, (COZMO-22)
-        """
+        """Subscribe to active-client-count transitions."""
         self._active_clients_listeners.append(callback)
 
     @property
@@ -397,67 +304,28 @@ class WebViewerServer:
         return self._last_active_count
 
     def set_control_listener(self, callback) -> None:
-        """Subscribe to browser key updates for remote control.
-
-        ``callback(keys: set[str])`` is invoked (on the asyncio loop
-        thread) whenever a ``{"type": "control", "keys": [...]}`` message
-        arrives from any connected browser. The set is already normalized
-        to lowercase single-character keys. Pass ``None`` to unsubscribe.
-        Only the most recent listener is stored — remote control is a
-        single-user feature. (COZMO-25)
-        """
-        self._control_listener = callback
+        """Subscribe to browser key updates for remote control."""
+        self._msg_router.set_control_listener(callback)
 
     def set_navigate_listener(self, callback) -> None:
-        """Subscribe to browser click-to-navigate events.
-
-        ``callback(target_world_x, target_world_z)`` is invoked (on the
-        asyncio loop thread) whenever a ``{"type": "navigate_to", "x":,
-        "z":}`` message arrives. Coordinates are converted from scene
-        frame to world frame before delivery. Pass ``None`` to unsubscribe.
-
-        ``callback(None)`` is invoked on ``{"type": "navigate_cancel"}``.
-        (COZMO-28)
-        """
-        self._navigate_listener = callback
+        """Subscribe to browser click-to-navigate events."""
+        self._msg_router.set_navigate_listener(callback)
 
     def set_approach_listener(self, callback) -> None:
-        """Subscribe to browser cube-click events.
-
-        ``callback(cube_id_int, cube_pos_world_x, cube_pos_world_y)``
-        is invoked whenever a ``{"type": "approach_cube", "cube_id": ...}``
-        message arrives. Looks up the cube's current world position from
-        the world map. Pass ``None`` to unsubscribe. (COZMO-28)
-        """
-        self._approach_listener = callback
+        """Subscribe to browser cube-click events."""
+        self._msg_router.set_approach_listener(callback)
 
     def set_dock_listener(self, callback) -> None:
-        """Subscribe to browser dock requests.
-
-        ``callback()`` is invoked whenever a ``{"type": "dock"}`` message
-        arrives (user presses 'z'). The listener drives the robot back
-        into the dock. Pass ``None`` to unsubscribe. (COZMO-28)
-        """
-        self._dock_listener = callback
+        """Subscribe to browser dock requests."""
+        self._msg_router.set_dock_listener(callback)
 
     def set_camera_settings_listener(self, callback) -> None:
-        """Subscribe to browser camera-settings changes.
-
-        ``callback(settings: dict)`` is invoked whenever a
-        ``{"type": "camera_settings", ...}`` message arrives. The dict
-        contains: ``auto_exposure_enabled`` (bool), ``gain`` (float),
-        ``exposure_ms`` (int), ``color`` (bool), ``resolution`` (str),
-        ``jpeg_quality`` (int). Pass ``None`` to unsubscribe. (COZMO-30)
-        """
-        self._camera_settings_listener = callback
+        """Subscribe to browser camera-settings changes."""
+        self._msg_router.set_camera_settings_listener(callback)
 
     def update_camera_settings(self, **kwargs) -> None:
-        """Update the stored camera settings (called from the listener).
-
-        Merges ``kwargs`` into ``_camera_settings`` so the next broadcast
-        includes the latest values for the browser to display.
-        """
-        self._camera_settings.update(kwargs)
+        """Update the stored camera settings (called from the listener)."""
+        self._msg_router.set_camera_settings(kwargs)
 
     # -- internal -----------------------------------------------------------
 
@@ -473,11 +341,8 @@ class WebViewerServer:
             self._occupancy_seq_sent,
             self._start_time,
             force_occupancy,
-            camera_settings=self._camera_settings,
+            camera_settings=self._msg_router.camera_settings,
         )
-        # ``build_state_json`` is a pure function and can't advance our
-        # sent-seq bookkeeping; keep it in sync here so an unchanged
-        # occupancy PNG is dropped from subsequent broadcasts.
         if self._latest_occupancy_png is not None and (
             force_occupancy or self._occupancy_seq != self._occupancy_seq_sent
         ):
@@ -485,14 +350,10 @@ class WebViewerServer:
         return msg
 
     async def _broadcast_loop(self):
-        """Coalescing broadcaster: send the latest state, never a backlog.
-
-        Waits for a ``broadcast()`` notification, drains any burst that
-        arrived meanwhile, and sends a single, up-to-date state message.
-        """
+        """Coalescing broadcaster: send the latest state, never a backlog."""
         while True:
             await self._broadcast_queue.get()
-            await asyncio.sleep(0.005)  # coalesce bursts within one frame
+            await asyncio.sleep(0.005)
             while not self._broadcast_queue.empty():
                 self._broadcast_queue.get_nowait()
             if not self._clients:
@@ -510,121 +371,20 @@ class WebViewerServer:
                 timeout=2.0,
             )
         except asyncio.TimeoutError:
-            # A client is too slow to keep up — drop this round rather than
-            # blocking the event loop (and with it, the MJPEG stream).
             pass
 
     async def _handler(self, websocket):
         self._clients.add(websocket)
         self._fire_active_clients_change()
         try:
-            # Send current state immediately on connect
             await websocket.send(self._build_state_json(force_occupancy=True))
             async for raw in websocket:
-                try:
-                    msg = json.loads(raw)
-                except (json.JSONDecodeError, TypeError):
-                    continue
-                mtype = msg.get("type")
-                if mtype == "config":
-                    # Config messages from the browser were historically
-                    # used to set brightness/gamma. Those are gone now
-                    # (see COZMO-24) — the image is the raw Cozmo feed.
-                    # Anything still arriving on this channel is from an
-                    # old version of the viewer and is ignored.
-                    pass
-                elif mtype == "control":
-                    # Remote-control key update from the browser. The
-                    # listener (e.g. a RemoteControl instance) decides
-                    # what to do with the keys. We hand off the raw set;
-                    # the listener is responsible for any thread/async
-                    # marshalling. (COZMO-25)
-                    keys = msg.get("keys") or []
-                    listener = self._control_listener
-                    if listener is not None:
-                        try:
-                            listener(set(keys))
-                        except Exception as e:  # noqa: BLE001
-                            print(f"⚠️  control listener failed: {e}")
-                elif mtype == "navigate_to":
-                    # Click-to-navigate from browser. Convert scene coords
-                    # to world frame and forward to listener. (COZMO-28)
-                    listener = self._navigate_listener
-                    if listener is not None:
-                        try:
-                            scene_x = msg.get("x", 0)
-                            scene_z = msg.get("z", 0)
-                            world_pos = coords.scene_to_world_point(
-                                np.array([scene_x, 0, scene_z])
-                            )
-                            # Pass (world_forward, world_left) = (pos[0], pos[1])
-                            listener(float(world_pos[0]), float(world_pos[1]))
-                        except Exception as e:  # noqa: BLE001
-                            print(f"⚠️  navigate listener failed: {e}")
-                elif mtype == "navigate_cancel":
-                    # Navigation cancelled by browser. (COZMO-28)
-                    listener = self._navigate_listener
-                    if listener is not None:
-                        try:
-                            listener(None)
-                        except Exception as e:  # noqa: BLE001
-                            print(f"⚠️  navigate cancel failed: {e}")
-                elif mtype == "approach_cube":
-                    # Cube click from browser — look up cube position and
-                    # forward to listener. (COZMO-28)
-                    listener = self._approach_listener
-                    if listener is not None:
-                        try:
-                            cube_id_str = msg.get("cube_id", "")
-                            # "cube_1" -> 0 (0-indexed for world map)
-                            cube_idx = int(cube_id_str.replace("cube_", "")) - 1
-                            world = self.world_map.get_world_state()
-                            cubes = world.get("cubes", {})
-                            if cube_idx in cubes:
-                                pos = cubes[cube_idx]["position"]
-                                listener(cube_idx, float(pos[0]), float(pos[1]))
-                            else:
-                                print(
-                                    f"⚠️  approach_cube: {cube_id_str} not in world map"
-                                )
-                        except Exception as e:  # noqa: BLE001
-                            print(f"⚠️  approach listener failed: {e}")
-                elif mtype == "dock":
-                    # User pressed 'z' — drive robot back into dock. (COZMO-28)
-                    listener = self._dock_listener
-                    if listener is not None:
-                        try:
-                            listener()
-                        except Exception as e:  # noqa: BLE001
-                            print(f"⚠️  dock listener failed: {e}")
-                elif mtype == "camera_settings":
-                    # Camera parameter changes from the browser. (COZMO-30)
-                    listener = self._camera_settings_listener
-                    if listener is not None:
-                        try:
-                            settings = {
-                                "auto_exposure_enabled": msg.get(
-                                    "auto_exposure_enabled", True
-                                ),
-                                "gain": float(msg.get("gain", 0.0)),
-                                "exposure_ms": int(msg.get("exposure_ms", 100)),
-                                "color": msg.get("color", False),
-                                "resolution": msg.get("resolution", "QVGA"),
-                                "jpeg_quality": int(msg.get("jpeg_quality", 70)),
-                                "head_light": msg.get("head_light", True),
-                            }
-                            self._camera_settings.update(settings)
-                            listener(settings)
-                        except Exception as e:  # noqa: BLE001
-                            print(f"⚠️  camera_settings listener failed: {e}")
+                self._msg_router.route(raw)
         finally:
             self._clients.discard(websocket)
             self._fire_active_clients_change()
-            # Last browser tab gone. Make sure the controller stops
-            # driving Cozmo (its idle-stop window will also catch this,
-            # but stopping immediately avoids a brief coast). (COZMO-25)
             if not self._clients:
-                listener = self._control_listener
+                listener = self._msg_router._control_listener
                 if listener is not None:
                     try:
                         listener(set())
@@ -632,13 +392,6 @@ class WebViewerServer:
                         print(f"⚠️  control listener (final stop) failed: {e}")
 
     def _fire_active_clients_change(self) -> None:
-        """Notify listeners when the active-client count changes.
-
-        Runs on the asyncio event-loop thread (it's called from
-        ``_handler``). Listeners are run inline — they should be
-        non-blocking or hand off to another thread. Errors are swallowed
-        so a buggy listener doesn't break the WebSocket. (COZMO-22)
-        """
         count = len(self._clients)
         if count == self._last_active_count:
             return
@@ -649,227 +402,22 @@ class WebViewerServer:
             except Exception as e:  # noqa: BLE001
                 print(f"⚠️  active-clients listener failed: {e}")
 
-    async def _shutdown(self):
-        for ws in list(self._clients):
-            await ws.close()
-        self._clients.clear()
-        if self._run_forever is not None and not self._run_forever.done():
-            self._run_forever.set_result(None)
-
-    # -- static file serving (aiohttp) -------------------------------------
-
-    async def _serve_index(self, request):
-        """Serve index.html from the static directory."""
-        viewer_dir = os.path.join(os.path.dirname(__file__), "static")
-        return web.FileResponse(os.path.join(viewer_dir, "index.html"))
-
-    async def _serve_static(self, request):
-        """Serve static files from the static directory."""
-        viewer_dir = os.path.join(os.path.dirname(__file__), "static")
-        filename = request.match_info["filename"]
-        filepath = os.path.join(viewer_dir, filename)
-        if os.path.isfile(filepath):
-            return web.FileResponse(filepath)
-        raise web.HTTPNotFound()
-
-    async def _serve_video(self, request):
-        """MJPEG streaming endpoint — pushes latest camera frame to browser."""
-        response = web.StreamResponse(
-            status=200,
-            reason="OK",
-            headers={
-                "Content-Type": "multipart/x-mixed-replace; boundary=frame",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            },
-        )
-        await response.prepare(request)
-
-        boundary = "frame"
-        last_frame_id = -1
-        while True:
-            try:
-                current_id = self._image_id
-                image = self._latest_image
-                if current_id == last_frame_id or image is None:
-                    await asyncio.sleep(0.01)
-                    continue
-
-                last_frame_id = current_id
-                jpeg = await asyncio.to_thread(encode_jpeg, image, 70)
-                header = (
-                    f"--{boundary}\r\n"
-                    f"Content-Type: image/jpeg\r\n"
-                    f"Content-Length: {len(jpeg)}\r\n\r\n"
-                ).encode()
-                await response.write(header + jpeg + b"\r\n")
-            except (ConnectionResetError, ConnectionError, asyncio.CancelledError):
-                break
-
-        return response
-
-    async def _serve_annotated_video(self, request):
-        """MJPEG streaming endpoint — pushes annotated camera frame to browser."""
-        response = web.StreamResponse(
-            status=200,
-            reason="OK",
-            headers={
-                "Content-Type": "multipart/x-mixed-replace; boundary=frame",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            },
-        )
-        await response.prepare(request)
-
-        boundary = "frame"
-        last_frame_id = -1
-        while True:
-            try:
-                current_id = self._annotated_image_id
-                image = self._latest_annotated_image
-                if current_id == last_frame_id or image is None:
-                    await asyncio.sleep(0.01)
-                    continue
-
-                last_frame_id = current_id
-                jpeg = await asyncio.to_thread(encode_jpeg, image, 70)
-                header = (
-                    f"--{boundary}\r\n"
-                    f"Content-Type: image/jpeg\r\n"
-                    f"Content-Length: {len(jpeg)}\r\n\r\n"
-                ).encode()
-                await response.write(header + jpeg + b"\r\n")
-            except (ConnectionResetError, ConnectionError, asyncio.CancelledError):
-                break
-
-        return response
-
-    async def _serve_floor_video(self, request):
-        """MJPEG streaming endpoint — pushes floor-projected frame to browser."""
-        response = web.StreamResponse(
-            status=200,
-            reason="OK",
-            headers={
-                "Content-Type": "multipart/x-mixed-replace; boundary=frame",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            },
-        )
-        await response.prepare(request)
-
-        boundary = "frame"
-        last_frame_id = -1
-        while True:
-            try:
-                current_id = self._floor_image_id
-                image = self._latest_floor_image
-                if current_id == last_frame_id or image is None:
-                    await asyncio.sleep(0.01)
-                    continue
-
-                last_frame_id = current_id
-                jpeg = await asyncio.to_thread(encode_jpeg, image, 70)
-                header = (
-                    f"--{boundary}\r\n"
-                    f"Content-Type: image/jpeg\r\n"
-                    f"Content-Length: {len(jpeg)}\r\n\r\n"
-                ).encode()
-                await response.write(header + jpeg + b"\r\n")
-            except (ConnectionResetError, ConnectionError, asyncio.CancelledError):
-                break
-
-        return response
-
     # -- server lifecycle ---------------------------------------------------
 
     def start(self):
         """Start the WebSocket + HTTP server in a background thread."""
-        if self._thread and self._thread.is_alive():
+        if self._ws_server._thread and self._ws_server._thread.is_alive():
             return
-        self._kill_stale_ports()
-        self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._run_server, daemon=True)
-        self._thread.start()
-
-    def _kill_stale_ports(self):
-        """Kill any process still holding our ports from a previous run."""
-        import socket
-        import subprocess
-
-        for port in (self.port, self.port + 1):
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(0.5)
-                result = s.connect_ex(("127.0.0.1", port))
-                s.close()
-                if result == 0:
-                    # Port in use — find and kill the process
-                    out = subprocess.run(
-                        ["lsof", "-ti", f":{port}"],
-                        capture_output=True,
-                        text=True,
-                        timeout=3,
-                        check=False,
-                    )
-                    for pid in out.stdout.strip().splitlines():
-                        subprocess.run(
-                            ["kill", "-9", pid],
-                            capture_output=True,
-                            timeout=3,
-                            check=False,
-                        )
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-
-    def _run_server(self):
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_until_complete(self._serve())
-
-    async def _serve(self):
-        # Broadcast queue (created and used only on the loop thread)
         self._broadcast_queue = asyncio.Queue()
-        broadcast_task = asyncio.create_task(self._broadcast_loop())
+        self._ws_server.start()
 
-        # WebSocket server
-        ws_server = await websockets.serve(
-            self._handler,
-            self.host,
-            self.port,
-            reuse_address=True,
-        )
-
-        # HTTP server (if aiohttp available) on port+1
-        http_runner = None
-        if HAS_AIOHTTP:
-            app = web.Application()
-            app.router.add_get("/", self._serve_index)
-            app.router.add_get("/video", self._serve_video)
-            app.router.add_get("/annotated-video", self._serve_annotated_video)
-            app.router.add_get("/floor-video", self._serve_floor_video)
-            app.router.add_get("/{filename}", self._serve_static)
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, self.host, self.port + 1)
-            await site.start()
-            http_runner = runner
-            print(f"✅ Web viewer HTTP  at http://{self.host}:{self.port + 1}")
-        else:
-            print("⚠️  aiohttp not installed — HTTP serving disabled")
-            print(
-                "   Open the HTML file directly or install aiohttp: pip install aiohttp"
-            )
-
-        bind_note = " (all interfaces)" if self.host == "0.0.0.0" else ""
-        print(f"✅ Web viewer WS    at ws://{self.host}:{self.port}{bind_note}")
-
-        self._run_forever = asyncio.get_running_loop().create_future()
-        try:
-            await self._run_forever
-        finally:
-            broadcast_task.cancel()
-            ws_server.close()
-            if http_runner:
-                await http_runner.cleanup()
+    def _register_http_routes(self, app) -> None:
+        """Mount FileServer + MjpegEndpoint routes on the aiohttp app."""
+        app.router.add_get("/", self._file_server.serve_index)
+        app.router.add_get("/video", self._mjpeg_camera.handle)
+        app.router.add_get("/annotated-video", self._mjpeg_annotated.handle)
+        app.router.add_get("/floor-video", self._mjpeg_floor.handle)
+        app.router.add_get("/{filename}", self._file_server.serve_static)
 
 
 # ---------------------------------------------------------------------------
