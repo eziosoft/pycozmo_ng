@@ -8,6 +8,7 @@ The interface is the web viewer (http://<this-machine-ip>:8766).
 
 import argparse
 import logging
+import math
 import time
 
 import pycozmo
@@ -84,7 +85,7 @@ def main():
                 pycozmo.robot.MAX_HEAD_ANGLE.radians
                 - pycozmo.robot.MIN_HEAD_ANGLE.radians
             ) / 80.0
-            cozmo.set_head_angle(angle.degrees)
+            cozmo.set_head_angle(math.degrees(angle))
             time.sleep(1.0)
 
             print("Initializing vision pipeline...")

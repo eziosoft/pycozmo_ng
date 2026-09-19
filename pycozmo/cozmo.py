@@ -309,7 +309,7 @@ class Cozmo:
         Args:
             host: Robot IP address (default: 172.31.1.1 on Cozmo AP)
             port: Robot port (default: 5551)
-            **kwargs: Passed to pycozmo.connect()
+            **kwargs: Passed to Client constructor.
 
         Returns:
             Self for chaining.
@@ -317,7 +317,13 @@ class Cozmo:
         if self._connected:
             return self
 
-        self._cli = pycozmo.connect(host=host, port=port, **kwargs)
+        self._cli = pycozmo.Client(
+            robot_addr=(host, port),
+            **kwargs,
+        )
+        self._cli.start()
+        self._cli.connect()
+        self._cli.wait_for_robot()
         self._brain.cli = self._cli
         self._connected = True
         return self
@@ -326,6 +332,7 @@ class Cozmo:
         """Disconnect from the robot."""
         if self._connected and self._cli:
             self._cli.disconnect()
+            self._cli.stop()
             self._connected = False
 
     def __enter__(self) -> "Self":
