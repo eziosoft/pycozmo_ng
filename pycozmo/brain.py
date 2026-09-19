@@ -183,6 +183,7 @@ class Brain:
     ):
         """Internal handler for camera images — runs the full vision pipeline."""
         self.frame_handler.on_raw_camera_image(cli, image)
+        self.web_streamer.push_raw_frame(image)
 
         # Frame skipping for performance
         if not hasattr(self, "_vision_frame_counter"):
