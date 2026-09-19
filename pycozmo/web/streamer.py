@@ -38,7 +38,6 @@ class WebStreamer:
         self.frame_state.latest_annotated_frame = annotated_image
         with self.frame_state.detections_lock:
             self.frame_state.latest_detections = detections
-        self._stamp_detections_seen(detections)
         if annotated_image is not None:
             self.web_viewer.push_annotated_frame(annotated_image)
 
@@ -78,15 +77,6 @@ class WebStreamer:
             self.frame_state.fps = self.frame_state.frame_count / elapsed
             self.frame_state.frame_count = 0
             self.frame_state.start_time = time.time()
-
-    def _stamp_detections_seen(self, detections) -> None:
-        """Record the current frame index for every detected cube."""
-        with self.frame_state.detections_lock:
-            detected_cube_ids = {det.cube_id for det in detections}
-        for cube_id in detected_cube_ids:
-            self.frame_state.cube_tracking.last_seen_frame[cube_id] = (
-                self.frame_state.frame_count
-            )
 
     # --- WebSocket broadcast -------------------------------------------------
 
