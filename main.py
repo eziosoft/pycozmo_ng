@@ -182,7 +182,7 @@ def main():
 
             brain.cli = cli
             cli.add_handler(
-                pycozmo.event.EvtNewRawCameraImage, brain.vision.on_raw_camera_image
+                pycozmo.event.EvtNewRawCameraImage, brain.frame_handler.on_raw_camera_image
             )
             cli.add_handler(
                 pycozmo.event.EvtRobotOnChargerChange,
@@ -223,13 +223,13 @@ def main():
 
             cli.add_handler(
                 pycozmo.event.EvtAnnotatedCameraImage,
-                brain.vision.on_annotated_camera_image,
+                brain.frame_handler.on_annotated_camera_image,
             )
 
             if floor_enabled:
                 cli.add_handler(
                     pycozmo.event.EvtFloorProjectedImage,
-                    brain.vision.on_floor_projected_image,
+                    brain.frame_handler.on_floor_projected_image,
                 )
                 print("Floor projection ENABLED")
 
@@ -349,7 +349,7 @@ def main():
                     pass
             else:
                 print("\nStarting headless run...\n")
-                print("Open http://<this-machine-ip>:8766 in a browser\n")
+                print("Open http://<this-machine-ip>:8765 in a browser\n")
 
                 brain.run(cli)
                 brain.cubes.stop_cube_light_worker()

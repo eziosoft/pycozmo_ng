@@ -1,6 +1,14 @@
 """
 PyCozmo - a pure-Python Cozmo robot communication library.
 
+Main entry point:
+    from pycozmo import Cozmo
+
+    cozmo = Cozmo()
+    with cozmo.connect():
+        cozmo.vision.start()
+        print(cozmo.sensors.battery_voltage)
+        cozmo.navigator.drive_to(x=100, y=0)
 """
 
 import sys
@@ -41,12 +49,14 @@ from .protocol import (  # noqa: F401
 from .run import *
 from .transport import conn, frame, window  # noqa: F401
 from .vision import camera  # noqa: F401
+from .cozmo import Cozmo
 
 __version__ = "0.8.0"
 
 __all__ = [
     "ROBOT_ADDR",
     "Client",
+    "Cozmo",
     "Frame",
     "connect",
     "logger",

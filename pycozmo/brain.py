@@ -1,14 +1,9 @@
-"""Brain — top-level orchestrator for the Cozmo robot.
+"""Brain — internal orchestrator for the Cozmo robot.
 
 Creates typed state containers and wires them to domain classes.
 Domain classes receive the specific state container they need, not
-a reference to Brain itself.
-
-Usage::
-
-    brain = Brain()
-    brain.run(cli)
-
+a reference to Brain itself. This is an INTERNAL class - use Cozmo
+as the public API.
 """
 
 import time
@@ -29,19 +24,20 @@ from pycozmo.vision.detection_pipeline import (
     DetectionPipeline,
     create_default_detection_pipeline,
 )
-from pycozmo.vision.display import VisionDisplay
 from pycozmo.vision.events import DetectionEventDispatcher
 from pycozmo.vision.floor_pipeline import FloorPipeline
+from pycozmo.vision.frame_handler import FrameHandler
 from pycozmo.vision.frame_state import FrameState
+from pycozmo.web.streamer import WebStreamer
 from pycozmo.web.viewer import WebBridge
 from pycozmo.web.viewer_server import WebViewerServer
 
 
 class Brain:
-    """Cozmo robot brain — orchestrates vision, navigation, cubes, and web viewer.
+    """Internal brain — orchestrates vision, navigation, cubes, and web viewer.
 
     Creates typed state containers and passes them to domain classes.
-    Brain itself is a thin lifecycle runner, not a shared-memory bus.
+    Brain is an internal implementation detail; use Cozmo class as public API.
     """
 
     def __init__(self):
@@ -55,7 +51,7 @@ class Brain:
 
         # Web viewer
         self.web_viewer = WebViewerServer()
-        self.web_viewer.start()
+        self.web_streamer = WebStreamer(self.web_viewer, self.frame_state)
 
         # Vision components (composition root)
         self.detection_pipeline: DetectionPipeline | None = None
@@ -67,7 +63,7 @@ class Brain:
         self._remote_control = None
 
         # Domain sub-components — each receives the state it needs
-        self.vision = VisionDisplay(
+        self.frame_handler = FrameHandler(
             self.frame_state, self.cube_tracking, self.detection_pipeline
         )
         self.navigator = Navigator(self.dock_state)
@@ -75,11 +71,11 @@ class Brain:
         self.web = WebBridge(self.frame_state, self.cube_tracking, self.dock_state)
 
         # Wire cross-domain references
-        self.vision.web_viewer = self.web_viewer
-        self.vision.web = self.web
+        self.frame_handler.floor_pipeline = None  # Set after setup_vision
         self.navigator.cli = self.cli
         self.navigator.web_viewer = self.web_viewer
         self.web.web_viewer = self.web_viewer
+        self.web_streamer.web_viewer = self.web_viewer  # For remote control listeners
 
     @property
     def cli(self):
@@ -124,6 +120,9 @@ class Brain:
         )
         self.detection_pipeline.enable_face_detection = enable_face_detection
 
+        # Update frame handler with the new detection pipeline
+        self.frame_handler.detection_pipeline = self.detection_pipeline
+
         # Annotation engine (pure drawing)
         self.annotation_engine = AnnotationEngine()
 
@@ -148,9 +147,8 @@ class Brain:
                 floor_edge_margin_px=floor_edge_margin_px,
             )
 
-        # Wire floor pipeline to VisionDisplay
-        self.vision.floor_pipeline = self.floor_pipeline
-        self.vision.detection_pipeline = self.detection_pipeline
+        # Wire floor pipeline to FrameHandler
+        self.frame_handler.floor_pipeline = self.floor_pipeline
 
         # Wire web bridge to use detection pipeline
         self.web.vision_processor = self.detection_pipeline
@@ -225,10 +223,13 @@ class Brain:
                 self.detection_pipeline.robot_center_result,
             )
 
-            # Dispatch annotated image event
-            cli.dispatch(
-                event.EvtAnnotatedCameraImage, cli, annotated_image, cube_detections
+            # Update frame state via frame handler
+            self.frame_handler.on_annotated_camera_image(
+                cli, annotated_image, cube_detections
             )
+
+            # Push to web streamer
+            self.web_streamer.push_annotated_frame(annotated_image, cube_detections)
 
             # Dispatch cube/face events
             self.event_dispatcher.dispatch_cube_events(cli, cube_detections)
@@ -244,6 +245,16 @@ class Brain:
                     cli.dispatch(event.EvtFloorProjectedImage, cli, floor_img, occ_grid)
                 # Store occupancy map image for web viewer
                 self.frame_state.latest_occupancy_map_image = occ_map_image
+
+                # Update frame handler with floor image
+                self.frame_handler.on_floor_projected_image(
+                    cli, floor_img, occ_grid
+                )
+
+                # Push to web streamer
+                self.web_streamer.push_floor_frame(
+                    floor_img, occ_grid, self.floor_pipeline
+                )
 
         except (OSError, ValueError, RuntimeError) as e:
             logger_cubes.error(f"Error processing camera image: {e}", exc_info=True)
@@ -389,6 +400,19 @@ class Brain:
             self.web_viewer.clear_path()
 
     # ------------------------------------------------------------------
+    # Web streamer lifecycle
+    # ------------------------------------------------------------------
+
+    def start_web_viewer(self, port: int = 8765) -> None:
+        """Start the web viewer server."""
+        self.web_viewer.port = port
+        self.web_streamer.start()
+
+    def stop_web_viewer(self) -> None:
+        """Stop the web viewer server."""
+        self.web_streamer.stop()
+
+    # ------------------------------------------------------------------
     # Main run loop
     # ------------------------------------------------------------------
 
@@ -424,4 +448,4 @@ class Brain:
             time.sleep(0.05)
 
         self.stop_remote_control()
-        self.web_viewer.close()
+        self.stop_web_viewer()
