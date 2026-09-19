@@ -32,7 +32,6 @@ def setup_basic_logging(
     robot_log_level: str | None = None,
     target=sys.stderr,
 ) -> None:
-
     if log_level is None:
         log_level = os.environ.get("PYCOZMO_LOG_LEVEL", logging.INFO)
     if protocol_log_level is None:
@@ -62,6 +61,8 @@ def setup_basic_logging(
 
 @contextmanager
 def connect(
+    host: str = "172.31.1.1",
+    port: int = 5551,
     log_level: str | None = None,
     protocol_log_level: str | None = None,
     protocol_log_messages: list | None = None,
@@ -70,7 +71,6 @@ def connect(
     enable_animations: bool = True,
     enable_procedural_face: bool = True,
 ) -> client.Client:
-
     setup_basic_logging(
         log_level=log_level,
         protocol_log_level=protocol_log_level,
@@ -79,6 +79,7 @@ def connect(
 
     try:
         cli = client.Client(
+            robot_addr=(host, port),
             protocol_log_messages=protocol_log_messages,
             auto_initialize=auto_initialize,
             enable_animations=enable_animations,
