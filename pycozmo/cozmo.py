@@ -10,12 +10,14 @@ Usage:
 
     cozmo = Cozmo()
     with cozmo.connect():
-        cozmo.vision.start()
-        print(cozmo.sensors.battery_voltage)
-        cozmo.navigator.drive_to(x=100, y=0)
-        cozmo.web_viewer.start()
+        cozmo.setup_vision(camera_calibration=cal)
+        cozmo.enable_camera()
+        cozmo.run()
 """
 
+from __future__ import annotations
+
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -23,7 +25,14 @@ if TYPE_CHECKING:
 
 import pycozmo
 from pycozmo.brain import Brain
+from pycozmo.event import (
+    EvtRobotOnChargerChange,
+    EvtRobotPickedUpChange,
+    EvtRobotChargingChange,
+    EvtRobotStateUpdated,
+)
 from pycozmo.navigation.world_map import WorldMap
+from pycozmo.protocol import protocol_encoder
 from pycozmo.vision.detection_pipeline import DetectionPipeline
 from pycozmo.web.viewer_server import WebViewerServer
 
@@ -34,21 +43,10 @@ class VisionAPI:
     def __init__(self, brain: Brain):
         self._brain = brain
 
-    def start(self, **kwargs):
-        """Start the vision pipeline.
-
-        Args:
-            **kwargs: Passed to Brain.setup_vision() (process_every_n_frames,
-                     undistort, enable_floor_projection, etc.)
-        """
-        if self._brain.detection_pipeline is not None:
-            return  # Already started
-        # Vision is set up in connect() - just ensure it's running
-        # The pipeline is already running via the event handler
-
-    def stop(self):
-        """Stop the vision pipeline."""
-        # Vision runs automatically with camera - stop camera to stop vision
+    @property
+    def annotation(self):
+        """Access the annotation engine for configuring display options."""
+        return self._brain.annotation_engine
 
     @property
     def latest_frame(self):
@@ -71,6 +69,11 @@ class VisionAPI:
         """Access the underlying detection pipeline for advanced use."""
         return self._brain.detection_pipeline
 
+    @property
+    def camera_calibration(self):
+        """Get the camera calibration (available after setup_vision)."""
+        return getattr(self._brain, "_camera_calibration", None)
+
 
 class CubesAPI:
     """High-level cube interface."""
@@ -92,6 +95,18 @@ class CubesAPI:
         cube = self.get_cube(cube_id)
         if cube:
             cube.set_lights(color)
+
+    def discover(self, cli) -> None:
+        """Discover available cubes and build factory_id mapping."""
+        self._brain.cubes.setup_cube_mapping(cli)
+
+    def start_lights(self, cli) -> None:
+        """Start the cube BLE keepalive cycler."""
+        self._brain.cubes.start_cube_light_worker(cli)
+
+    def stop_lights(self) -> None:
+        """Stop the cube BLE keepalive cycler."""
+        self._brain.cubes.stop_cube_light_worker()
 
 
 class NavigatorAPI:
@@ -213,8 +228,10 @@ class WebViewerAPI:
 
     @property
     def is_running(self) -> bool:
-        return self._web_viewer._ws_server._thread is not None and \
-               self._web_viewer._ws_server._thread.is_alive()
+        return (
+            self._web_viewer._ws_server._thread is not None
+            and self._web_viewer._ws_server._thread.is_alive()
+        )
 
 
 class Cozmo:
@@ -235,6 +252,7 @@ class Cozmo:
         self._brain = Brain()
         self._connected = False
         self._cli = None
+        self._camera_calibration = None
 
         # Public subsystem APIs (lazy-initialized)
         self._vision: VisionAPI | None = None
@@ -364,3 +382,194 @@ class Cozmo:
     def stop_all_motors(self):
         """Stop all motors."""
         self._cli.stop_all_motors()
+
+    # ------------------------------------------------------------------
+    # Vision setup
+    # ------------------------------------------------------------------
+
+    def setup_vision(
+        self,
+        camera_calibration=None,
+        calibration_timeout: float = 10.0,
+        process_every_n_frames: int = 1,
+        undistort: bool = False,
+        enable_floor_projection: bool = True,
+        floor_center_mm: tuple[float, float] = (200.0, 0.0),
+        floor_size_mm: tuple[float, float] = (600.0, 600.0),
+        mm_per_pixel: float = 5.0,
+        enable_face_detection: bool = True,
+    ):
+        """Set up the vision pipeline and register all internal event handlers.
+
+        Args:
+            camera_calibration: CameraCalibration instance. If None, retrieves
+                it from the robot automatically.
+            calibration_timeout: Seconds to wait for calibration retrieval.
+            process_every_n_frames: Run detection every Nth frame (1 = every frame).
+            undistort: Apply lens distortion correction.
+            enable_floor_projection: Enable bird's-eye floor view.
+            floor_center_mm: Floor projection center (x, y) in mm.
+            floor_size_mm: Floor projection size (w, h) in mm.
+            mm_per_pixel: Floor projection resolution.
+            enable_face_detection: Enable Haar cascade face detection.
+        """
+        if camera_calibration is None:
+            from pycozmo.vision.camera_calibration import CameraCalibrationRetriever
+
+            retriever = CameraCalibrationRetriever(self._cli)
+            camera_calibration = retriever.get_calibration(timeout=calibration_timeout)
+
+        self._camera_calibration = camera_calibration
+        self._brain._camera_calibration = camera_calibration
+        self._brain.setup_vision(
+            self._cli,
+            camera_calibration=camera_calibration,
+            process_every_n_frames=process_every_n_frames,
+            undistort=undistort,
+            enable_floor_projection=enable_floor_projection,
+            floor_center_mm=floor_center_mm,
+            floor_size_mm=floor_size_mm,
+            mm_per_pixel=mm_per_pixel,
+            enable_face_detection=enable_face_detection,
+        )
+        self._register_vision_handlers(enable_floor_projection)
+
+    def _register_vision_handlers(self, enable_floor_projection: bool) -> None:
+        """Register all event handlers needed by the vision pipeline."""
+        self._cli.add_handler(
+            EvtRobotOnChargerChange,
+            self._brain.navigator._on_charger_change,
+        )
+        self._cli.add_handler(
+            EvtRobotChargingChange,
+            self._brain.navigator._on_charging_change,
+        )
+        self._cli.add_handler(
+            pycozmo.protocol_encoder.ObjectConnectionState,
+            self._brain.cubes.on_object_connection_state,
+        )
+        self._cli.add_handler(
+            EvtRobotStateUpdated,
+            self._brain.web._on_robot_state_for_trail,
+        )
+        self._cli.add_handler(EvtRobotPickedUpChange, self._brain._on_picked_up)
+
+    # ------------------------------------------------------------------
+    # Annotation options
+    # ------------------------------------------------------------------
+
+    def set_vision_annotation_options(
+        self,
+        show_confidence: bool = True,
+        show_cube_id: bool = True,
+        box_thickness: int = 2,
+    ) -> None:
+        """Configure the annotation engine display options."""
+        if self._brain.annotation_engine is None:
+            return
+        self._brain.annotation_engine.show_confidence = show_confidence
+        self._brain.annotation_engine.show_cube_id = show_cube_id
+        self._brain.annotation_engine.box_thickness = box_thickness
+
+    # ------------------------------------------------------------------
+    # Robot center calibration
+    # ------------------------------------------------------------------
+
+    def calibrate_robot_center(
+        self,
+        timeout_s: float = 30.0,
+        resolution=None,
+    ) -> float | None:
+        """Calibrate the robot center by tilting head down and detecting circles.
+
+        Returns the lateral offset in mm, or None if detection failed.
+        """
+        if resolution is None:
+            resolution = protocol_encoder.ImageResolution.QVGA
+
+        print("Calibrating robot center (head to max-down)...")
+
+        # Temporarily enable camera with manual exposure for calibration
+        self._cli.enable_camera(enable=True, color=False, resolution=resolution)
+        self._cli.set_camera_params(
+            gain=8.0, exposure_ms=300, auto_exposure_enabled=False
+        )
+        time.sleep(2.0)
+
+        self._cli.set_head_angle(
+            pycozmo.robot.MIN_HEAD_ANGLE.radians, accel=30.0, max_speed=30.0
+        )
+        time.sleep(3.0)
+
+        # Collect multiple detections and average them
+        dp = self._brain.detection_pipeline
+        dp._robot_center_measured = False
+        offsets = []
+        for _ in range(int(timeout_s * 10)):
+            time.sleep(0.1)
+            rc = dp.robot_center_result
+            if rc is not None and rc.detected:
+                offsets.append(rc.lateral_offset_mm)
+                if len(offsets) >= 10:
+                    break
+
+        # Return head to normal and restore auto-exposure
+        self._cli.set_head_angle(0.0, accel=30.0, max_speed=30.0)
+        time.sleep(1.0)
+        self._brain.post_calibration(self._cli, resolution)
+
+        if offsets:
+            avg_offset = sum(offsets) / len(offsets)
+            dp.camera_lateral_offset_mm = avg_offset
+            dp._robot_center_measured = True
+            print(
+                f"   Robot center detected: "
+                f"lateral_offset={avg_offset:+.2f}mm "
+                f"(avg of {len(offsets)} frames)"
+            )
+            return avg_offset
+
+        print("   WARNING: Robot center NOT detected (circles not found)")
+        return None
+
+    # ------------------------------------------------------------------
+    # Remote control
+    # ------------------------------------------------------------------
+
+    def enable_remote_control(self) -> None:
+        """Wire browser keyboard input to Cozmo's motors."""
+        self._brain.install_remote_control(self._cli)
+
+    # ------------------------------------------------------------------
+    # Cube discovery and lights
+    # ------------------------------------------------------------------
+
+    def discover_cubes(self) -> None:
+        """Discover available cubes and build factory_id mapping."""
+        self._brain.cubes.setup_cube_mapping(self._cli)
+
+    def start_cube_lights(self) -> None:
+        """Start the cube BLE keepalive cycler."""
+        self._brain.cubes.start_cube_light_worker(self._cli)
+
+    def stop_cube_lights(self) -> None:
+        """Stop the cube BLE keepalive cycler."""
+        self._brain.cubes.stop_cube_light_worker()
+
+    # ------------------------------------------------------------------
+    # Localization
+    # ------------------------------------------------------------------
+
+    def set_origin(self) -> None:
+        """Set the localization origin to the current robot position."""
+        self._cli.conn.send(protocol_encoder.SetOrigin())
+        print("Origin set to current position")
+
+    # ------------------------------------------------------------------
+    # Main run loop
+    # ------------------------------------------------------------------
+
+    def run(self) -> None:
+        """Run the headless main loop. Blocks until disconnected or interrupted."""
+        self._brain.run(self._cli)
+        self._brain.cubes.stop_cube_light_worker()
