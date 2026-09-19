@@ -7,7 +7,7 @@ import time
 class FrameState:
     """Mutable container for frame lifecycle, detections, and camera state.
 
-    Owned by VisionDisplay; read by Brain.run() for staleness checks and
+    Owned by FrameHandler; read by Brain.run() for staleness checks and
     by WebBridge for streaming.
     """
 

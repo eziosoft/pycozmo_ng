@@ -3,6 +3,7 @@
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.logger import logger
 from pycozmo.navigation.dock_state import DockState
+from pycozmo.vision.detection_pipeline import DetectionPipeline
 from pycozmo.vision.frame_state import FrameState
 
 
@@ -10,7 +11,8 @@ class WebBridge:
     """Bridges vision/cube data to the web viewer for 3D display.
 
     Uses typed state containers via DI: :class:`FrameState`,
-    :class:`CubeTrackingState`, and :class:`DockState`.
+    :class:`CubeTrackingState`, :class:`DockState`, and
+    :class:`DetectionPipeline`.
     """
 
     def __init__(
@@ -18,14 +20,15 @@ class WebBridge:
         frame_state: FrameState,
         cube_tracking: CubeTrackingState,
         dock_state: DockState,
+        detection_pipeline: DetectionPipeline | None = None,
     ):
         self.fs = frame_state
         self.ct = cube_tracking
         self.ds = dock_state
+        self.detection_pipeline = detection_pipeline
         # Set by Brain after construction
         self.web_viewer = None
         self.cli = None
-        self.vision_processor = None
 
     def update_web_viewer(self):
         """Feed the latest cube and face measurements into the world map.
@@ -33,20 +36,20 @@ class WebBridge:
         Cubes that have been invalidated (moved, forget_cube) are
         suppressed until they are re-detected stably. (COZMO-34)
         """
-        if not self.vision_processor:
+        if not self.detection_pipeline:
             return
 
         head_angle = self.cli.head_angle.radians if self.cli is not None else 0.0
 
         # Read persistent lateral offset (updated automatically during
         # startup calibration and each cube approach)
-        lateral_offset = self.vision_processor.camera_lateral_offset_mm
+        lateral_offset = self.detection_pipeline.camera_lateral_offset_mm
 
         suppressed = self.ct.suppress.get("ids", set())
         fresh_frames = self.ct.suppress.get("fresh_frames", {})
         new_fresh_frames = {}
 
-        for m in self.vision_processor.get_cube_measurements():
+        for m in self.detection_pipeline.get_cube_measurements():
             cube_id = m["cube_id"]
             if cube_id in suppressed:
                 n = fresh_frames.get(cube_id, 0) + 1
@@ -72,7 +75,7 @@ class WebBridge:
         self.ct.suppress["fresh_frames"] = new_fresh_frames
 
         # Feed face measurements into world map
-        for fm in self.vision_processor.get_face_measurements():
+        for fm in self.detection_pipeline.get_face_measurements():
             self.web_viewer.update_face_measurement(
                 fm["face_id"],
                 fm["position"],

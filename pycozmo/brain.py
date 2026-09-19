@@ -68,7 +68,7 @@ class Brain:
         )
         self.navigator = Navigator(self.dock_state)
         self.cubes = CubeManager(self.cube_tracking)
-        self.web = WebBridge(self.frame_state, self.cube_tracking, self.dock_state)
+        self.web = WebBridge(self.frame_state, self.cube_tracking, self.dock_state, self.detection_pipeline)
 
         # Wire cross-domain references
         self.frame_handler.floor_pipeline = None  # Set after setup_vision
@@ -151,7 +151,7 @@ class Brain:
         self.frame_handler.floor_pipeline = self.floor_pipeline
 
         # Wire web bridge to use detection pipeline
-        self.web.vision_processor = self.detection_pipeline
+        self.web.detection_pipeline = self.detection_pipeline
 
         # Register camera image handler
         def on_camera_image(cli_arg, image):

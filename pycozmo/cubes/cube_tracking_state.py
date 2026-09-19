@@ -7,7 +7,7 @@ from pycozmo.cubes.cycler import CubeCycler
 class CubeTrackingState:
     """Mutable container for cube factory/object mapping, cycler, and movement.
 
-    Owned by CubeManager; read by VisionDisplay._stamp_detections_seen().
+    Owned by CubeManager; read by FrameHandler._stamp_detections_seen().
     """
 
     def __init__(self) -> None:
