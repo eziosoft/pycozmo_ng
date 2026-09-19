@@ -13,6 +13,7 @@ Main entry point:
 
 import sys
 
+# ruff: noqa: I001 - logger must be imported first to avoid circular imports
 from .logger import *
 
 # Re-export moved modules so `from . import X` still works in root-level files.
