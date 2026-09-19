@@ -3,12 +3,11 @@
 
 Connects to Cozmo, initializes vision processor, and runs the headless loop.
 All reusable logic lives in pycozmo; this file is only argparse + wiring.
-The interface is the web viewer (http://<this-machine-ip>:8766).
+The interface is the web viewer (http://<this-machine-ip>:8765).
 """
 
 import argparse
 import logging
-import math
 import time
 
 import pycozmo
@@ -80,12 +79,16 @@ def main():
         with cozmo.connect():
             print("Connected!\n")
 
+            print("Starting web viewer...")
+            cozmo.web_viewer.start()
+            time.sleep(1.0)
+
             print("Positioning robot...")
             angle = (
                 pycozmo.robot.MAX_HEAD_ANGLE.radians
                 - pycozmo.robot.MIN_HEAD_ANGLE.radians
             ) / 80.0
-            cozmo.set_head_angle(math.degrees(angle))
+            cozmo.cli.set_head_angle(angle)
             time.sleep(1.0)
 
             print("Initializing vision pipeline...")
@@ -120,8 +123,6 @@ def main():
             cozmo.enable_remote_control()
 
             cozmo.set_origin()
-
-            cozmo.web_viewer.start()
 
             print("Open http://<this-machine-ip>:8765 in a browser\n")
 
