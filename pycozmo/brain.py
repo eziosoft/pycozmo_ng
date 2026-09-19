@@ -25,7 +25,10 @@ from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
 from pycozmo.protocol import protocol_encoder
 from pycozmo.vision.annotation import AnnotationEngine
-from pycozmo.vision.detection_pipeline import DetectionPipeline
+from pycozmo.vision.detection_pipeline import (
+    DetectionPipeline,
+    create_default_detection_pipeline,
+)
 from pycozmo.vision.display import VisionDisplay
 from pycozmo.vision.events import DetectionEventDispatcher
 from pycozmo.vision.floor_pipeline import FloorPipeline
@@ -115,8 +118,10 @@ class Brain:
         are registered on the client.
         """
 
-        # Detection pipeline (core detection logic)
-        self.detection_pipeline = DetectionPipeline(camera_calibration)
+        # Detection pipeline (core detection logic) - uses factory for DI
+        self.detection_pipeline = create_default_detection_pipeline(
+            camera_calibration=camera_calibration,
+        )
         self.detection_pipeline.enable_face_detection = enable_face_detection
 
         # Annotation engine (pure drawing)
