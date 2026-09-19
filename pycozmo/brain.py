@@ -238,7 +238,7 @@ class Brain:
                 if floor_img is not None:
                     cli.dispatch(event.EvtFloorProjectedImage, cli, floor_img, occ_grid)
                 # Store occupancy map image for web viewer
-                self.detection_pipeline.latest_occupancy_map_image = occ_map_image
+                self.frame_state.latest_occupancy_map_image = occ_map_image
 
         except (OSError, ValueError, RuntimeError) as e:
             logger_cubes.error(f"Error processing camera image: {e}", exc_info=True)

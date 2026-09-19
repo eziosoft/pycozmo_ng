@@ -73,11 +73,11 @@ class VisionDisplay:
             self.detection_pipeline is not None
             and self.floor_pipeline is not None
             and self.floor_pipeline.occupancy_enabled
-            and self.detection_pipeline.latest_occupancy_map_image is not None
+            and self.fs.latest_occupancy_map_image is not None
         ):
             occ = self.floor_pipeline.occupancy_map
             self.web_viewer.push_occupancy_grid(
-                self.detection_pipeline.latest_occupancy_map_image,
+                self.fs.latest_occupancy_map_image,
                 occ.origin[0],
                 occ.origin[1],
             )
