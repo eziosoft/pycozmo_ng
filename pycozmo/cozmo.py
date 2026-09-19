@@ -372,19 +372,17 @@ class Cozmo:
 
     def set_head_angle(self, angle_deg: float, **kwargs):
         """Set head angle in degrees."""
-        self._cli.set_head_angle(pycozmo.util.Angle(degrees=angle_deg), **kwargs)
+        self._cli.set_head_angle(
+            pycozmo.util.Angle(degrees=angle_deg).radians, **kwargs
+        )
 
     def set_lift_height(self, height_mm: float, **kwargs):
         """Set lift height in mm."""
-        self._cli.set_lift_height(pycozmo.util.Distance(mm=height_mm), **kwargs)
+        self._cli.set_lift_height(height_mm, **kwargs)
 
     def drive_wheels(self, left_mmps: float, right_mmps: float, **kwargs):
         """Drive wheels at specified speeds (mm/s)."""
-        self._cli.drive_wheels(
-            pycozmo.util.Speed(mmps=left_mmps),
-            pycozmo.util.Speed(mmps=right_mmps),
-            **kwargs,
-        )
+        self._cli.drive_wheels(left_mmps, right_mmps, **kwargs)
 
     def stop_all_motors(self):
         """Stop all motors."""
