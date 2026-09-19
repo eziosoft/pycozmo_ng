@@ -68,7 +68,12 @@ class Brain:
         )
         self.navigator = Navigator(self.dock_state)
         self.cubes = CubeManager(self.cube_tracking)
-        self.web = WebBridge(self.frame_state, self.cube_tracking, self.dock_state, self.detection_pipeline)
+        self.web = WebBridge(
+            self.frame_state,
+            self.cube_tracking,
+            self.dock_state,
+            self.detection_pipeline,
+        )
 
         # Wire cross-domain references
         self.frame_handler.floor_pipeline = None  # Set after setup_vision
@@ -177,6 +182,8 @@ class Brain:
         undistort: bool,
     ):
         """Internal handler for camera images — runs the full vision pipeline."""
+        self.frame_handler.on_raw_camera_image(cli, image)
+
         # Frame skipping for performance
         if not hasattr(self, "_vision_frame_counter"):
             self._vision_frame_counter = 0
@@ -247,9 +254,7 @@ class Brain:
                 self.frame_state.latest_occupancy_map_image = occ_map_image
 
                 # Update frame handler with floor image
-                self.frame_handler.on_floor_projected_image(
-                    cli, floor_img, occ_grid
-                )
+                self.frame_handler.on_floor_projected_image(cli, floor_img, occ_grid)
 
                 # Push to web streamer
                 self.web_streamer.push_floor_frame(
