@@ -110,7 +110,7 @@ class CameraCalibrationRetriever:
                         return calib
             else:
                 logger.error("Timeout waiting for calibration")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error retrieving calibration: {e}")
 
         raise RuntimeError("Failed to retrieve camera calibration from Cozmo")
@@ -151,7 +151,7 @@ class CameraCalibrationRetriever:
                     return CameraCalibration(
                         fx=fx, fy=fy, cx=cx, cy=cy, k1=k1, k2=k2, k3=k3, p1=p1, p2=p2
                     )
-            except:
+            except (struct.error, ValueError):
                 pass
 
         # Try float64 format (9 values = 72 bytes)
@@ -173,7 +173,7 @@ class CameraCalibrationRetriever:
                     return CameraCalibration(
                         fx=fx, fy=fy, cx=cx, cy=cy, k1=k1, k2=k2, k3=k3, p1=p1, p2=p2
                     )
-            except:
+            except (struct.error, ValueError):
                 pass
 
         logger.warning(f"Could not parse {len(data_bytes)} bytes of calibration data")

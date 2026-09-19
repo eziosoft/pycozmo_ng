@@ -51,10 +51,8 @@ def str_to_image(sim: str) -> Image:
             line = s.readline().strip()
             if line:
                 break
-        x = 0
-        for c in line:
+        for x, c in enumerate(line):
             px[x, y] = 1 if c and c != "." else 0
-            x += 1
     return im
 
 

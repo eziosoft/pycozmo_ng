@@ -161,12 +161,7 @@ class LiftPosition:
             self._height = util.Distance(mm=height_mm)
 
     def __repr__(self):
-        return "<%s height=%s ratio=%s angle=%s>" % (
-            self.__class__.__name__,
-            self._height,
-            self.ratio,
-            self.angle,
-        )
+        return f"<{self.__class__.__name__} height={self._height} ratio={self.ratio} angle={self.angle}>"
 
     @property
     def height(self) -> util.Distance:

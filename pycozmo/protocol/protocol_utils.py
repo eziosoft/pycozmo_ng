@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-_struct_cache = dict()  # type: Dict[Tuple[str, int], struct.Struct]
+_struct_cache = {}  # type: Dict[Tuple[str, int], struct.Struct]
 
 
 def _get_struct(fmt: str, length: int) -> struct.Struct:
@@ -183,13 +183,13 @@ class BinaryReader:
 
     def seek_set(self, offset: int) -> None:
         if offset < 0 or offset > len(self._buffer):
-            ValueError("Invalid offset.")
+            raise ValueError("Invalid offset.")
         self._index = offset
 
     def seek_cur(self, offset: int) -> None:
         offset += self._index
         if offset < 0 or offset > len(self._buffer):
-            ValueError("Invalid offset.")
+            raise ValueError("Invalid offset.")
         self._index = offset
 
     def tell(self):

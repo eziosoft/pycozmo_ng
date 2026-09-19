@@ -6,8 +6,8 @@ and accumulates votes in a fixed-size world-frame grid centered on the robot's
 starting position.
 """
 
-import numpy as np
 import cv2
+import numpy as np
 
 from pycozmo import logger
 

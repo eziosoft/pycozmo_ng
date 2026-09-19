@@ -42,7 +42,7 @@ class Angle:
             (cannot be combined with ``radians``)
     """
 
-    __slots__ = "_radians"
+    __slots__ = ("_radians",)
 
     def __init__(self, radians: float | None = None, degrees: float | None = None):
         if radians is None and degrees is None:
@@ -57,11 +57,7 @@ class Angle:
         self._radians = float(radians)  # type: ignore
 
     def __repr__(self):
-        return "<%s %.2f radians (%.2f degrees)>" % (
-            self.__class__.__name__,
-            self.radians,
-            self.degrees,
-        )
+        return f"<{self.__class__.__name__} {self.radians:.2f} radians ({self.degrees:.2f} degrees)>"
 
     def __add__(self, other):
         if not isinstance(other, Angle):
@@ -138,7 +134,7 @@ class Distance:
             represent (cannot be combined with ``distance_mm``).
     """
 
-    __slots__ = "_mm"
+    __slots__ = ("_mm",)
 
     def __init__(self, mm: float | None = None, inches: float | None = None):
         if mm is None and inches is None:
@@ -153,11 +149,7 @@ class Distance:
         self._mm = mm  # type: float   # type: ignore
 
     def __repr__(self):
-        return "<%s %.2f mm (%.2f inches)>" % (
-            self.__class__.__name__,
-            self.mm,
-            self.inches,
-        )
+        return f"<{self.__class__.__name__} {self.mm:.2f} mm ({self.inches:.2f} inches)>"
 
     def __add__(self, other):
         if not isinstance(other, Distance):
@@ -198,13 +190,13 @@ class Speed:
         mmps (float): The number of millimeters per second the speed should represent.
     """
 
-    __slots__ = "_mmps"
+    __slots__ = ("_mmps",)
 
     def __init__(self, mmps: float):
         self._mmps = mmps
 
     def __repr__(self):
-        return "<%s %.2f mmps>" % (self.__class__.__name__, self.mmps)
+        return f"<{self.__class__.__name__} {self.mmps:.2f} mmps>"
 
     def __add__(self, other):
         if not isinstance(other, Speed):
@@ -282,12 +274,7 @@ class Vector3:
         return self._x, self._y, self._z
 
     def __repr__(self):
-        return "<%s x: %.2f y: %.2f z: %.2f>" % (
-            self.__class__.__name__,
-            self.x,
-            self.y,
-            self.z,
-        )
+        return f"<{self.__class__.__name__} x: {self.x:.2f} y: {self.y:.2f} z: {self.z:.2f}>"
 
     def __add__(self, other):
         if not isinstance(other, Vector3):
@@ -395,20 +382,19 @@ class Matrix44:
 
     def __repr__(self):
         return (
-            "<%s: "
-            "%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f "
-            "%.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f>"
-            % (self.__class__.__name__, *self.in_row_order)
+            "<{}: "
+            "{:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} "
+            "{:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}>".format(self.__class__.__name__, *self.in_row_order)
         )
 
     @property
     def tabulated_string(self):
         """str: A multi-line string formatted with tabs to show the matrix contents."""
         return (
-            "%.1f\t%.1f\t%.1f\t%.1f\n"
-            "%.1f\t%.1f\t%.1f\t%.1f\n"
-            "%.1f\t%.1f\t%.1f\t%.1f\n"
-            "%.1f\t%.1f\t%.1f\t%.1f" % self.in_row_order
+            "{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\n"
+            "{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\n"
+            "{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}\n"
+            "{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}".format(*self.in_row_order)
         )
 
     @property
@@ -600,14 +586,7 @@ class Quaternion:
         self._q3 = q3  # type: float   # type: ignore
 
     def __repr__(self):
-        return "<%s q0: %.2f q1: %.2f q2: %.2f q3: %.2f (angle_z: %s)>" % (
-            self.__class__.__name__,
-            self.q0,
-            self.q1,
-            self.q2,
-            self.q3,
-            self.angle_z,
-        )
+        return f"<{self.__class__.__name__} q0: {self.q0:.2f} q1: {self.q1:.2f} q2: {self.q2:.2f} q3: {self.q3:.2f} (angle_z: {self.angle_z})>"
 
     def to_matrix(
         self, pos_x: float = 0.0, pos_y: float = 0.0, pos_z: float = 0.0
@@ -797,12 +776,7 @@ class Pose:
         return cls(0.0, 0.0, 0.0, q0=1.0, q1=0.0, q2=0.0, q3=0.0, origin_id=-1)
 
     def __repr__(self):
-        return "<%s %s %s origin_id=%d>" % (
-            self.__class__.__name__,
-            self.position,
-            self.rotation,
-            self.origin_id,
-        )
+        return f"<{self.__class__.__name__} {self.position} {self.rotation} origin_id={self.origin_id}>"
 
     def __add__(self, other):
         if not isinstance(other, Pose):

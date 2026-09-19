@@ -10,8 +10,8 @@ The output image is an orthographic top-down view of the floor, useful for
 occupancy mapping and navigation.
 """
 
-import numpy as np
 import cv2
+import numpy as np
 
 from pycozmo import logger
 from pycozmo.util.coords import CAMERA_TO_BODY_OFFSET, _head_tilt_matrix

@@ -15,10 +15,9 @@ import logging
 import time
 
 import pycozmo
-from pycozmo import vision
 from pycozmo.brain import Brain
-from pycozmo.vision.camera_calibration import CameraCalibrationRetriever
 from pycozmo.logger import logger_cubes
+from pycozmo.vision.camera_calibration import CameraCalibrationRetriever
 from pycozmo.wifi import connect_to_cozmo_wifi
 
 
@@ -194,15 +193,15 @@ def main():
                 brain.navigator._on_charging_change,
             )
 
-            print("Initializing vision processor with cubeDetector.py...")
+            print("Initializing vision pipeline with cubeDetector.py...")
             undistort_enabled = not args.no_undistort
             print(
                 f"   Undistortion: {'ENABLED' if undistort_enabled else 'DISABLED (default - undistortion may cause warping)'}"
             )
             floor_enabled = not args.no_floor_projection
             face_enabled = not args.no_face_detection
-            vision_processor = vision.AnnotatedVisionProcessor(
-                client=cli,
+            brain.setup_vision(
+                cli,
                 camera_calibration=camera_calibration,
                 process_every_n_frames=max(1, args.process_every_n_frames),
                 undistort=undistort_enabled,
@@ -217,11 +216,10 @@ def main():
             if face_enabled:
                 print("Face detection ENABLED (orange globes in 3D viewer)")
 
-            brain.vision_processor = vision_processor
-
-            vision_processor.show_confidence = True
-            vision_processor.show_cube_id = True
-            vision_processor.box_thickness = 2
+            # Configure annotation engine
+            brain.annotation_engine.show_confidence = True
+            brain.annotation_engine.show_cube_id = True
+            brain.annotation_engine.box_thickness = 2
 
             cli.add_handler(
                 pycozmo.event.EvtAnnotatedCameraImage,
@@ -291,11 +289,11 @@ def main():
                 time.sleep(3.0)  # Let head settle and camera see circles
 
                 # Collect multiple detections and average them
-                vision_processor._robot_center_measured = False
+                brain.detection_pipeline._robot_center_measured = False
                 offsets = []
                 for _ in range(300):  # up to 30s
                     time.sleep(0.1)
-                    rc = vision_processor.robot_center_result
+                    rc = brain.detection_pipeline.robot_center_result
                     if rc is not None and rc.detected:
                         offsets.append(rc.lateral_offset_mm)
                         if len(offsets) >= 10:
@@ -308,8 +306,8 @@ def main():
 
                 if offsets:
                     avg_offset = sum(offsets) / len(offsets)
-                    vision_processor.camera_lateral_offset_mm = avg_offset
-                    vision_processor._robot_center_measured = True
+                    brain.detection_pipeline.camera_lateral_offset_mm = avg_offset
+                    brain.detection_pipeline._robot_center_measured = True
                     print(
                         f"   Robot center detected: "
                         f"lateral_offset={avg_offset:+.2f}mm "
@@ -360,7 +358,7 @@ def main():
 
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError) as e:
         print(f"\nError: {e}")
         import traceback
 

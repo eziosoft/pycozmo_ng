@@ -13,12 +13,11 @@ from collections.abc import Iterable
 import numpy as np
 from PIL import Image
 
-from pycozmo.display import procedural_face
-from pycozmo.protocol import protocol_encoder
-
 from pycozmo import image_encoder, lights, logger
 from pycozmo.animation import anim_encoder
+from pycozmo.display import procedural_face
 from pycozmo.json_loader import find_file, load_json_file
+from pycozmo.protocol import protocol_encoder
 from pycozmo.util import robot
 
 __all__ = [
@@ -152,13 +151,11 @@ class PreprocessedClip:
                 buf = bytes(encoder.encode())
                 pkt = protocol_encoder.DisplayImage(image=buf)
                 keyframes[keyframe.trigger_time_ms].append(pkt)
-            elif isinstance(keyframe, anim_encoder.AnimRobotAudio) or isinstance(
-                keyframe, anim_encoder.AnimEvent
-            ):
+            elif isinstance(keyframe, (anim_encoder.AnimRobotAudio, anim_encoder.AnimEvent)):
                 # TODO
                 pass
             else:
-                raise RuntimeError(f"Unexpected keyframe type '{type(keyframe)}'")
+                raise TypeError(f"Unexpected keyframe type '{type(keyframe)}'")
         ppclip = cls(keyframes=keyframes)
         return ppclip
 

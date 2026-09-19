@@ -94,14 +94,14 @@ class CubeCycler:
             # Collect data for cycle_ms
             self._stop.wait(self._cycle_ms / 1000.0)
 
-        except Exception:
+        except Exception:  # noqa: BLE001
             self._stats["errors"] += 1
         finally:
             # Disconnect
             try:
                 cli.conn.send(pe.ObjectConnect(factory_id=factory_id, connect=False))
                 self._stop.wait(0.05)  # brief pause for disconnect to propagate
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
             with self._lock:
                 if self._current_cube_id == cube_id:

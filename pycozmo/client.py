@@ -12,13 +12,12 @@ from threading import Event, Lock, Timer
 import numpy as np
 from PIL import Image
 
-from pycozmo.sound import audio
-from pycozmo.protocol import protocol_declaration, protocol_encoder
-from pycozmo.vision import camera
-
 from pycozmo.animation import anim, anim_controller, anim_encoder
+from pycozmo.protocol import protocol_declaration, protocol_encoder
+from pycozmo.sound import audio
 from pycozmo.transport import conn
 from pycozmo.util import filter, object, robot, robot_debug
+from pycozmo.vision import camera
 
 from . import (
     event,
@@ -92,8 +91,8 @@ class Client(event.Dispatcher):
         # Camera state
         self.last_image_timestamp = None
         # Object state
-        self.available_objects = dict()
-        self.connected_objects = dict()
+        self.available_objects = {}
+        self.connected_objects = {}
         # Filters
         self.packet_type_filter = filter.Filter()
         self.packet_type_filter.deny_ids({protocol_declaration.PacketType.PING.value})
@@ -234,7 +233,7 @@ class Client(event.Dispatcher):
             if not done.wait(timeout):
                 raise exception.Timeout(
                     "Timed out waiting for factory_ids: {}".format(
-                        ", ".join("0x%08x" % f for f in remaining)
+                        ", ".join(f"0x{f:08x}" for f in remaining)
                     )
                 )
         finally:

@@ -3,6 +3,7 @@
 import time
 
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
+from pycozmo.vision.detection_pipeline import DetectionPipeline
 from pycozmo.vision.floor_pipeline import FloorPipeline
 from pycozmo.vision.frame_state import FrameState
 
@@ -11,13 +12,20 @@ class VisionDisplay:
     """Handles frames, detection state, and web viewer streaming.
 
     Uses :class:`FrameState` for frame/detection data,
-    :class:`CubeTrackingState` for cube last-seen timestamps, and
-    :class:`FloorPipeline` for floor projection results.
+    :class:`CubeTrackingState` for cube last-seen timestamps,
+    :class:`FloorPipeline` for floor projection results, and
+    :class:`DetectionPipeline` for occupancy map image.
     """
 
-    def __init__(self, frame_state: FrameState, cube_tracking: CubeTrackingState):
+    def __init__(
+        self,
+        frame_state: FrameState,
+        cube_tracking: CubeTrackingState,
+        detection_pipeline: DetectionPipeline | None = None,
+    ):
         self.fs = frame_state
         self.ct = cube_tracking
+        self.detection_pipeline = detection_pipeline
         # Set by Brain after construction (web_viewer, web, floor_pipeline are cross-domain)
         self.web_viewer = None
         self.web = None
@@ -62,14 +70,14 @@ class VisionDisplay:
         self.web_viewer.push_floor_frame(floor_image)
         # Push occupancy map image if available
         if (
-            self.vision_processor is not None
+            self.detection_pipeline is not None
             and self.floor_pipeline is not None
             and self.floor_pipeline.occupancy_enabled
-            and self.vision_processor.latest_occupancy_map_image is not None
+            and self.detection_pipeline.latest_occupancy_map_image is not None
         ):
             occ = self.floor_pipeline.occupancy_map
             self.web_viewer.push_occupancy_grid(
-                self.vision_processor.latest_occupancy_map_image,
+                self.detection_pipeline.latest_occupancy_map_image,
                 occ.origin[0],
                 occ.origin[1],
             )

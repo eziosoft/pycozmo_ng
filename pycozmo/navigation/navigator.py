@@ -119,7 +119,7 @@ class Navigator:
                     )
                     self.cli.go_to_pose(target_pose, relative_to_robot=False)
                     print("Arrived at target")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Navigation error: {e}")
 
         t = threading.Thread(target=_nav_thread, daemon=True)
@@ -403,7 +403,7 @@ class Navigator:
                     print("Docked and pose reset - dock is now origin")
                 elif not docked:
                     print("Docking did not complete - no pose reset")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 print(f"Dock error: {e}")
 
         t = threading.Thread(target=_dock_thread, daemon=True)

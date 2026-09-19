@@ -9,10 +9,9 @@ from collections.abc import Iterable
 from threading import Lock, Thread
 from typing import Any
 
+from pycozmo import event, image_encoder, logger, util
 from pycozmo.display import procedural_face
 from pycozmo.protocol import protocol_encoder
-
-from pycozmo import event, image_encoder, logger, util
 from pycozmo.util import robot
 
 

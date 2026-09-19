@@ -117,7 +117,7 @@ class AnimClip(AnimBase):
             elif isinstance(keyframe, AnimTurnToRecordedHeading):
                 data["keyframes"]["TurnToRecordedHeadingKeyFrame"].append(keyframe_data)
             else:
-                raise RuntimeError("Unexpected keyframe type.")
+                raise TypeError("Unexpected keyframe type.")
         return data
 
     @classmethod
@@ -192,7 +192,7 @@ class AnimClip(AnimBase):
             elif isinstance(keyframe, AnimEvent):
                 event_arr.append(fbkf)
             else:
-                raise RuntimeError("Unexpected keyframe type.")
+                raise TypeError("Unexpected keyframe type.")
 
         CozmoAnim.Keyframes.KeyframesStartHeadAngleKeyFrameVector(
             builder, len(head_angle_arr)

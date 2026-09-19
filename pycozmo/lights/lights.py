@@ -49,7 +49,7 @@ class Color:
         self,
         int_color: int | None = None,
         rgb: tuple[int, int, int] | None = None,
-        name: str = None,
+        name: str | None = None,
     ) -> None:
         self.name = name
         if int_color is not None:

@@ -11,6 +11,8 @@ from queue import Empty, Queue
 from threading import Lock, Thread
 from typing import Any
 
+from pycozmo import event, exception
+from pycozmo.logger import logger, logger_protocol
 from pycozmo.protocol import protocol_declaration, protocol_encoder
 from pycozmo.protocol.protocol_ast import PacketType
 from pycozmo.protocol.protocol_base import Packet
@@ -19,9 +21,6 @@ from pycozmo.protocol.protocol_declaration import (
     MAX_SEQ,
     OOB_SEQ,
 )
-
-from pycozmo import event, exception
-from pycozmo.logger import logger, logger_protocol
 from pycozmo.transport.frame import Frame
 from pycozmo.transport.window import ReceiveWindow, SendWindow
 from pycozmo.util import filter
@@ -81,7 +80,7 @@ class SendThread(Thread):
                 resend_pkts = self._resend_messages()
                 new_pkts, last_ack = self._collect_messages()
                 self._send_packets(resend_pkts + new_pkts, last_ack)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
 
     def _collect_messages(self) -> tuple[list, int]:
@@ -256,14 +255,14 @@ class ReceiveThread(Thread):
 
                 raw_frame, address = self.sock.recvfrom(self.buffer_size)
                 self.received_bytes += len(raw_frame)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.discarded_frames += 1
                 logger_protocol.error(f"Failed to receive frame. {e}")
                 continue
 
             try:
                 frame = Frame.from_bytes(raw_frame)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.discarded_frames += 1
                 logger_protocol.error(f"Failed to decode frame. {e}")
                 continue
@@ -282,7 +281,7 @@ class ReceiveThread(Thread):
                         self.handle_frame(frame)
                 else:
                     logger_protocol.debug(f"Got unexpected {frame.type} from {address}")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger_protocol.error(f"Failed to handle frame. {e}")
                 continue
 
@@ -431,7 +430,7 @@ class Connection(Thread, event.Dispatcher):
                 evt, args, kwargs = self.queue.get(timeout=self.RUN_INTERVAL)
             except Empty:
                 evt, args, kwargs = None, [], {}
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Failed to get from event queue. {e}")
                 continue
 
@@ -447,7 +446,7 @@ class Connection(Thread, event.Dispatcher):
             if evt:
                 try:
                     self.dispatch(evt, *args, **kwargs)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     logger.error(f"Failed to process event {evt}. {e}")
 
     def connect(self) -> None:

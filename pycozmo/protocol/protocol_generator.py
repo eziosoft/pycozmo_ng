@@ -107,9 +107,7 @@ class ProtocolGenerator:
     def generate_farray_validation(
         self, argument: protocol_declaration.FArrayArgument
     ) -> None:
-        if isinstance(
-            argument.data_type, protocol_declaration.FloatArgument
-        ) or isinstance(argument.data_type, protocol_declaration.DoubleArgument):
+        if isinstance(argument.data_type, (protocol_declaration.FloatArgument, protocol_declaration.DoubleArgument)):
             element_validation = (
                 "lambda name, value_inner: validate_float(name, value_inner)"
             )
@@ -154,9 +152,7 @@ class ProtocolGenerator:
                 f"Unexpected varray length type '{argument.length_type.__class__.__name__}' for '{argument.name}'"
             )
 
-        if isinstance(
-            argument.data_type, protocol_declaration.FloatArgument
-        ) or isinstance(argument.data_type, protocol_declaration.DoubleArgument):
+        if isinstance(argument.data_type, (protocol_declaration.FloatArgument, protocol_declaration.DoubleArgument)):
             element_validation = (
                 "lambda name, value_inner: validate_float(name, value_inner)"
             )
@@ -257,9 +253,7 @@ class ProtocolGenerator:
     def {argument.name}(self, value):
         self._{argument.name} = """
                 )
-                if isinstance(
-                    argument, protocol_declaration.FloatArgument
-                ) or isinstance(argument, protocol_declaration.DoubleArgument):
+                if isinstance(argument, (protocol_declaration.FloatArgument, protocol_declaration.DoubleArgument)):
                     self.f.write(f'validate_float("{argument.name}", value)\n')
                 elif isinstance(argument, protocol_declaration.BoolArgument):
                     self.f.write(f'validate_bool("{argument.name}", value)\n')

@@ -1,7 +1,7 @@
 """Web viewer bridge — feeds measurements into world map, robot state trail."""
 
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
-from pycozmo.logger import logger_cubes
+from pycozmo.logger import logger
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.vision.frame_state import FrameState
 
@@ -54,7 +54,7 @@ class WebBridge:
                 if n < self.ct.suppress["fresh_frames_needed"]:
                     continue
                 suppressed.discard(cube_id)
-                logger_cubes.info(
+                logger.info(
                     "Cube %d re-settled - re-enabling measurements", cube_id + 1
                 )
 
@@ -93,8 +93,8 @@ class WebBridge:
             self.web_viewer.update_robot_pose(
                 pos, yaw, origin_id=pose.origin_id, record_path=True
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except (AttributeError, ValueError) as e:
+            logger.debug(f"Failed to update robot pose: {e}")
 
         try:
             with self.ds.lock:
@@ -110,7 +110,7 @@ class WebBridge:
                 lift_height=round(c.lift_position.height.mm, 1),
                 cliff_data=c.cliff_data,
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except (AttributeError, ValueError) as e:
+            logger.debug(f"Failed to update telemetry: {e}")
 
         self.web_viewer.broadcast()

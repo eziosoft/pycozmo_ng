@@ -9,9 +9,8 @@ import time
 
 import numpy as np
 
-from pycozmo.display.emotions import DecayGraph, Node
-
 from pycozmo import logger
+from pycozmo.display.emotions import DecayGraph, Node
 from pycozmo.json_loader import get_json_files, load_json_file
 
 __all__ = [

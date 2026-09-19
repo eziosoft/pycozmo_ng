@@ -4,6 +4,7 @@ Cozmo protocol frame representation and encoding and decoding.
 
 """
 
+from pycozmo.logger import logger_protocol
 from pycozmo.protocol.protocol_ast import FrameType, PacketType
 from pycozmo.protocol.protocol_base import Packet, UnknownCommand, UnknownEvent
 from pycozmo.protocol.protocol_declaration import (
@@ -20,8 +21,6 @@ from pycozmo.protocol.protocol_encoder import (
     Ping,
 )
 from pycozmo.protocol.protocol_utils import BinaryReader, BinaryWriter
-
-from pycozmo.logger import logger_protocol
 
 __all__ = [
     "Frame",
