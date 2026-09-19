@@ -81,9 +81,9 @@ def main():
 
             print("Positioning robot...")
             angle = (
-                            pycozmo.robot.MAX_HEAD_ANGLE.radians
-                            - pycozmo.robot.MIN_HEAD_ANGLE.radians
-                    ) / 80.0
+                pycozmo.robot.MAX_HEAD_ANGLE.radians
+                - pycozmo.robot.MIN_HEAD_ANGLE.radians
+            ) / 80.0
             cozmo.set_head_angle(angle.degrees)
             time.sleep(1.0)
 
@@ -95,7 +95,7 @@ def main():
                 mm_per_pixel=args.floor_resolution,
             )
 
-            cozmo.set_annotation_options(
+            cozmo.set_vision_annotation_options(
                 show_confidence=True, show_cube_id=True, box_thickness=2
             )
 
@@ -119,6 +119,8 @@ def main():
             cozmo.enable_remote_control()
 
             cozmo.set_origin()
+
+            cozmo.web_viewer.start()
 
             print("Open http://<this-machine-ip>:8765 in a browser\n")
 
