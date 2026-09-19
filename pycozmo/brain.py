@@ -243,6 +243,9 @@ class Brain:
             self.event_dispatcher.dispatch_cube_events(cli, cube_detections)
             self.event_dispatcher.dispatch_face_events(cli, face_detections)
 
+            # Feed cube measurements to web viewer for 3D display
+            self.web.update_web_viewer()
+
             # Floor projection (optional)
             if self.floor_pipeline is not None:
                 robot_pose = cli.pose if hasattr(cli, "pose") else None
