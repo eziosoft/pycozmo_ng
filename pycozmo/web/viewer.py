@@ -39,6 +39,10 @@ class WebBridge:
         if not self.detection_pipeline:
             return
 
+        measurements = self.detection_pipeline.get_cube_measurements()
+        if measurements:
+            logger.debug("update_web_viewer: %d cube measurements", len(measurements))
+
         head_angle = self.cli.head_angle.radians if self.cli is not None else 0.0
 
         # Read persistent lateral offset (updated automatically during
