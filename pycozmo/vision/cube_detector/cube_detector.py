@@ -330,8 +330,9 @@ class CozmoCubeDetector:
             blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
         )
 
-        # Find contours
-        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        # Find contours (CHAIN_APPROX_NONE gives full contour for better
+        # polygon approximation and cornerSubPix refinement)
+        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
 
         # Filter and sort contours by area
         h, w = img.shape[:2]
@@ -343,9 +344,23 @@ class CozmoCubeDetector:
 
         results = []
         for cnt in contours[:40]:  # Check up to 40 largest contours
-            # Approximate polygon
+            # Refine contour corners with sub-pixel accuracy before
+            # polygon approximation — gives approxPolyDP better input
+            # and produces more accurate quads for solvePnP.
+            if len(cnt) >= 4:
+                try:
+                    refined_cnt = cv2.cornerSubPix(
+                        img, cnt.reshape(-1, 2).astype(np.float32),
+                        (5, 5), (-1, -1),
+                        (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, 0.01)
+                    ).reshape(-1, 1, 2).astype(np.int32)
+                    cnt = refined_cnt
+                except cv2.error:
+                    pass
+
+            # Approximate polygon with tighter epsilon to preserve detail
             peri = cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+            approx = cv2.approxPolyDP(cnt, 0.01 * peri, True)
 
             if len(approx) == 4 and cv2.isContourConvex(approx):
                 _x, _y, rw, rh = cv2.boundingRect(approx)
