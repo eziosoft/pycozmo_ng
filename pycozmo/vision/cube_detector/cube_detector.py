@@ -232,7 +232,7 @@ class CozmoCubeDetector:
         max_detections=None,
         min_area=100,
         max_area_ratio=0.8,
-        denoise_strength=7,
+        denoise_strength=3,
     ):
         """
         :param target_markers: List of 32x32 gray bitmaps (numpy arrays).

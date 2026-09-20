@@ -192,7 +192,7 @@
     // response) the <img> sits empty until the page is refreshed. Instead,
     // re-point the feed at a cache-busted URL until the first frame decodes;
     // the server hands back the latest frame on every request.
-    const FEED_RETRY_MS = 2500;
+    const FEED_RETRY_MS = 500;
     const FEED_MAX_RETRIES = 20;  // give up after ~50s so --no-camera feeds
                                   // don't hammer the server forever
     const feeds = [

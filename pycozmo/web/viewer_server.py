@@ -353,7 +353,7 @@ class WebViewerServer:
         """Coalescing broadcaster: send the latest state, never a backlog."""
         while True:
             await self._broadcast_queue.get()
-            await asyncio.sleep(0.005)
+            await asyncio.sleep(0.001)
             while not self._broadcast_queue.empty():
                 self._broadcast_queue.get_nowait()
             if not self._clients:
@@ -362,16 +362,12 @@ class WebViewerServer:
             await self._send_to_all(msg)
 
     async def _send_to_all(self, msg: str):
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(
-                    *[c.send(msg) for c in list(self._clients)],
-                    return_exceptions=True,
-                ),
-                timeout=2.0,
-            )
-        except asyncio.TimeoutError:
-            pass
+        """Send to each client individually with its own timeout."""
+        for client in list(self._clients):
+            try:
+                await asyncio.wait_for(client.send(msg), timeout=1.0)
+            except (asyncio.TimeoutError, ConnectionError, OSError):
+                pass
 
     async def _handler(self, websocket):
         self._clients.add(websocket)
