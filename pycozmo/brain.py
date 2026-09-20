@@ -254,16 +254,18 @@ class Brain:
                 )
                 if floor_img is not None:
                     cli.dispatch(event.EvtFloorProjectedImage, cli, floor_img, occ_grid)
-                # Store occupancy map image for web viewer
-                self.frame_state.latest_occupancy_map_image = occ_map_image
+                    # Store occupancy map image for web viewer
+                    self.frame_state.latest_occupancy_map_image = occ_map_image
 
-                # Update frame handler with floor image
-                self.frame_handler.on_floor_projected_image(cli, floor_img, occ_grid)
+                    # Update frame handler with floor image
+                    self.frame_handler.on_floor_projected_image(
+                        cli, floor_img, occ_grid
+                    )
 
-                # Push to web streamer
-                self.web_streamer.push_floor_frame(
-                    floor_img, occ_grid, self.floor_pipeline
-                )
+                    # Push to web streamer
+                    self.web_streamer.push_floor_frame(
+                        floor_img, occ_grid, self.floor_pipeline
+                    )
 
         except (OSError, ValueError, RuntimeError) as e:
             logger_cubes.error(f"Error processing camera image: {e}", exc_info=True)

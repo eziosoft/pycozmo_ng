@@ -35,9 +35,6 @@ class WebStreamer:
 
     def push_annotated_frame(self, annotated_image, detections) -> None:
         """Publish annotated camera frame and update detections."""
-        self.frame_state.latest_annotated_frame = annotated_image
-        with self.frame_state.detections_lock:
-            self.frame_state.latest_detections = detections
         if annotated_image is not None:
             self.web_viewer.push_annotated_frame(annotated_image)
 
@@ -45,9 +42,8 @@ class WebStreamer:
         self, floor_image, occupancy_grid, floor_pipeline=None
     ) -> None:
         """Publish floor-projected frame and occupancy grid."""
-        self.frame_state.latest_floor_image = floor_image
-        self.frame_state.latest_occupancy_grid = occupancy_grid
-        self.web_viewer.push_floor_frame(floor_image)
+        if floor_image is not None:
+            self.web_viewer.push_floor_frame(floor_image)
 
         # Push occupancy map image if available
         if (
