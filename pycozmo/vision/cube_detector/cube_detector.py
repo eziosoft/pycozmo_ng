@@ -232,7 +232,7 @@ class CozmoCubeDetector:
         max_detections=None,
         min_area=100,
         max_area_ratio=0.8,
-        denoise_strength=3,
+        denoise_strength=7,
     ):
         """
         :param target_markers: List of 32x32 gray bitmaps (numpy arrays).
@@ -330,9 +330,8 @@ class CozmoCubeDetector:
             blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
         )
 
-        # Find contours (CHAIN_APPROX_NONE for full boundary,
-        # needed for Laplacian corner detection)
-        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+        # Find contours
+        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
         # Filter and sort contours by area
         h, w = img.shape[:2]
@@ -344,123 +343,111 @@ class CozmoCubeDetector:
 
         results = []
         for cnt in contours[:40]:  # Check up to 40 largest contours
-            # Engine approach: Laplacian curvature peaks for corner detection.
-            # Falls back to approxPolyDP if Laplacian fails.
-            if len(cnt) >= 10:
-                corners = self._find_corners_laplacian(cnt)
-            else:
-                corners = None
+            # Approximate polygon
+            peri = cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
 
-            if corners is None or len(corners) != 4 or not cv2.isContourConvex(corners.astype(np.int32)):
-                # Fallback: polygon approximation
-                peri = cv2.arcLength(cnt, True)
-                approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-                if len(approx) != 4 or not cv2.isContourConvex(approx):
-                    continue
-                corners = approx.reshape(4, 2).astype(np.float32)
-            else:
-                approx = corners.reshape(-1, 1, 2).astype(np.int32)
-
-            _x, _y, rw, rh = cv2.boundingRect(corners.astype(np.int32))
-            aspect = rw / rh if rh != 0 else 0
-            if not (0.3 < aspect < 3.0):
-                continue
-
-            patch = self._extract_patch(img, corners)
-            marker_id, score, marker_rotation = self._match_marker(patch)
-
-            if score > self.score_threshold:
-                pts = corners.astype(np.float32)
-
-                # Drop clips: a quad touching the image border is truncated
-                # and its solvePnP pose is garbage.
-                px, py = pts[:, 0], pts[:, 1]
-                if (
-                    px.min() < 2
-                    or py.min() < 2
-                    or px.max() > w - 3
-                    or py.max() > h - 3
-                ):
+            if len(approx) == 4 and cv2.isContourConvex(approx):
+                _x, _y, rw, rh = cv2.boundingRect(approx)
+                aspect = rw / rh if rh != 0 else 0
+                if not (0.3 < aspect < 3.0):
                     continue
 
-                # Sub-pixel corner refinement: contour corners are integer
-                # quantized; refining before solvePnP cuts pose jitter a lot.
-                try:
-                    refined = cv2.cornerSubPix(
-                        img,
-                        pts,
-                        (5, 5),
-                        (-1, -1),
-                        (
-                            cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
-                            30,
-                            0.01,
-                        ),
-                    )
-                    if np.all(np.isfinite(refined)):
-                        pts = refined
-                except cv2.error:
-                    pass
+                patch = self._extract_patch(img, approx)
+                marker_id, score, marker_rotation = self._match_marker(patch)
 
-                # Order points by angle from center (stable across all rotations)
-                center = pts.mean(axis=0)
+                if score > self.score_threshold:
+                    pts = approx.reshape(4, 2).astype(np.float32)
 
-                # Calculate angle of each point from center
-                angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
-
-                # Sort by angle to get clockwise ordering
-                sorted_indices = np.argsort(angles)
-                pts = pts[sorted_indices]
-
-                # Find which corner is closest to top-left (min x+y)
-                sums = pts.sum(axis=1)
-                top_left_idx = np.argmin(sums)
-
-                # Roll so top-left is at index 0
-                pts = np.roll(pts, -top_left_idx, axis=0)
-
-                # Apply marker_rotation correction
-                if marker_rotation != 0:
-                    pts = np.roll(pts, marker_rotation, axis=0)
-
-                ordered_pts = pts
-                ordered_pts_int = ordered_pts.astype(np.int32)
-
-                # Solve PnP for pose estimation.
-                success, rvec, tvec = self._solve_pose(ordered_pts)
-                if success:
-                    # Get cube orientation info
-                    cube_id, face_type, rotation_deg = self._get_cube_orientation(
-                        marker_id
-                    )
-
-                    # Convert to position and rotation matrix
-                    position = tvec.flatten()
-                    rotation_matrix, _ = cv2.Rodrigues(rvec)
-
-                    results.append(
-                        {
-                            "id": marker_id,
-                            "score": score,
-                            "rvec": rvec,
-                            "tvec": tvec,
-                            "corners": corners,
-                            "ordered_corners": ordered_pts_int,
-                            "marker_rotation": marker_rotation,
-                            "cube_id": cube_id,
-                            "face_type": face_type,
-                            "rotation": rotation_deg,
-                            "position": position,
-                            "rotation_matrix": rotation_matrix,
-                        }
-                    )
-
-                    # Early exit if we found enough markers
+                    # Drop clips: a quad touching the image border is truncated
+                    # and its solvePnP pose is garbage.
+                    px, py = pts[:, 0], pts[:, 1]
                     if (
-                        self.max_detections is not None
-                        and len(results) >= self.max_detections
+                        px.min() < 2
+                        or py.min() < 2
+                        or px.max() > w - 3
+                        or py.max() > h - 3
                     ):
-                        return results
+                        continue
+
+                    # Sub-pixel corner refinement: contour corners are integer
+                    # quantized; refining before solvePnP cuts pose jitter a lot.
+                    try:
+                        refined = cv2.cornerSubPix(
+                            img,
+                            pts,
+                            (5, 5),
+                            (-1, -1),
+                            (
+                                cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
+                                30,
+                                0.01,
+                            ),
+                        )
+                        if np.all(np.isfinite(refined)):
+                            pts = refined
+                    except cv2.error:
+                        pass
+
+                    # Order points by angle from center (stable across all rotations)
+                    center = pts.mean(axis=0)
+
+                    # Calculate angle of each point from center
+                    angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
+
+                    # Sort by angle to get clockwise ordering
+                    sorted_indices = np.argsort(angles)
+                    pts = pts[sorted_indices]
+
+                    # Find which corner is closest to top-left (min x+y)
+                    sums = pts.sum(axis=1)
+                    top_left_idx = np.argmin(sums)
+
+                    # Roll so top-left is at index 0
+                    pts = np.roll(pts, -top_left_idx, axis=0)
+
+                    # Apply marker_rotation correction
+                    if marker_rotation != 0:
+                        pts = np.roll(pts, marker_rotation, axis=0)
+
+                    ordered_pts = pts
+                    ordered_pts_int = ordered_pts.astype(np.int32)
+
+                    # Solve PnP for pose estimation.
+                    success, rvec, tvec = self._solve_pose(ordered_pts)
+                    if success:
+                        # Get cube orientation info
+                        cube_id, face_type, rotation_deg = self._get_cube_orientation(
+                            marker_id
+                        )
+
+                        # Convert to position and rotation matrix
+                        position = tvec.flatten()
+                        rotation_matrix, _ = cv2.Rodrigues(rvec)
+
+                        results.append(
+                            {
+                                "id": marker_id,
+                                "score": score,
+                                "rvec": rvec,
+                                "tvec": tvec,
+                                "corners": approx,
+                                "ordered_corners": ordered_pts_int,
+                                "marker_rotation": marker_rotation,
+                                "cube_id": cube_id,
+                                "face_type": face_type,
+                                "rotation": rotation_deg,
+                                "position": position,
+                                "rotation_matrix": rotation_matrix,
+                            }
+                        )
+
+                        # Early exit if we found enough markers
+                        if (
+                            self.max_detections is not None
+                            and len(results) >= self.max_detections
+                        ):
+                            return results
         return results
 
     def _solve_pose(self, image_points):
@@ -568,55 +555,6 @@ class CozmoCubeDetector:
         rect[3] = pts[np.argmax(diff)]
 
         return rect
-
-    def _find_corners_laplacian(self, contour):
-        """Find 4 corners using Laplacian curvature peaks (engine approach).
-
-        Mimics the engine's ExtractLaplacianPeaks: computes the second
-        derivative along the contour boundary, smooths it, and finds the
-        4 peaks of maximum |Laplacian| as corner positions. This gives
-        sub-pixel accurate corners for markers with rounded edges.
-
-        :param contour: Full contour from findContours (CHAIN_APPROX_NONE)
-        :return: (4, 2) float32 array of corner points, or None if invalid
-        """
-        c = contour.reshape(-1, 2).astype(np.float64)
-        n = len(c)
-        if n < 10:
-            return None
-
-        # Compute Laplacian (second derivative) along the contour.
-        # L[i] = |c[i-1] - 2*c[i] + c[i+1]|. High values at corners.
-        laplacian = np.zeros(n)
-        for i in range(n):
-            laplacian[i] = np.linalg.norm(
-                c[(i - 1) % n] - 2.0 * c[i] + c[(i + 1) % n]
-            )
-
-        # Smooth to reduce noise
-        kernel = cv2.getGaussianKernel(5, 1.0)
-        laplacian = cv2.filter2D(laplacian.reshape(-1, 1), -1, kernel, borderType=cv2.BORDER_REFLECT).ravel()
-
-        # Find local maxima in |L| via non-maximum suppression
-        peak_indices = []
-        for i in range(1, n - 1):
-            if laplacian[i] > laplacian[i - 1] and laplacian[i] >= laplacian[i + 1]:
-                peak_indices.append(i)
-
-        if not peak_indices:
-            # Fall back: use global top 4 by value
-            peak_indices = list(np.argsort(laplacian)[-4:])
-
-        # Sort by |L| descending, keep top 4
-        peak_indices.sort(key=lambda p: laplacian[p], reverse=True)
-        peak_indices = peak_indices[:4]
-        peak_indices.sort()
-
-        if len(peak_indices) < 4:
-            return None
-
-        # Convert peak indices to corner points and sort clockwise
-        return self._order_points(c[peak_indices].astype(np.float32))
 
     def _get_cube_orientation(self, marker_id):
         """
