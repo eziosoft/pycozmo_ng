@@ -11,7 +11,7 @@ Maintain a running knowledge base on the LIFIC issue tracker (project `COZMO`).
 
 ## Project Overview
 
-PyCozmo is a pure-Python library for direct Cozmo robot control over Wi-Fi, replacing the Cozmo app. This is the `cube_detection` branch implementing computer vision features.
+PyCozmo is a pure-Python library for direct Cozmo robot control over Wi-Fi, replacing the Cozmo app. This is the `develop` branch with full computer vision, navigation, and web viewer support.
 
 **Agent is responsible for this project.** User reviews results and sets direction. Goal: extend pycozmo with new features, maintain good code quality, and upstream working features as PRs to the real pycozmo repository.
 
@@ -54,10 +54,12 @@ pytest pycozmo/tests/ -v
 
 ```
 pycozmo/           # Main library
-├── brain.py       # Brain — top-level orchestrator (public API)
-├── client.py      # Client class (main entrypoint)
+├── cozmo.py       # Cozmo — public API for library users
+├── brain.py       # Brain — internal orchestrator (NOT public API)
+├── client.py      # Client class (low-level robot connection)
 ├── event.py       # Event dispatcher
 ├── exception.py   # Exception classes
+├── json_loader.py # JSON config loader
 ├── logger.py      # Logging setup
 ├── run.py         # connect(), setup_basic_logging()
 ├── image_encoder.py  # Image encoding utilities
@@ -79,28 +81,46 @@ pycozmo/           # Main library
 │   ├── emotions.py         # Emotion definitions
 │   └── expressions/        # Facial expression definitions
 ├── vision/        # Vision subsystem
-│   ├── camera.py          # Camera image decoding
-│   ├── processor.py       # AnnotatedVisionProcessor (cube detection pipeline)
-│   ├── display.py         # VisionDisplay — frame handlers, display, overlay
-│   ├── camera_calibration.py  # Camera calibration from robot NVRAM
-│   └── cube_detector/     # Cube detection module
-│       ├── cube_detector.py  # CozmoCubeDetector + CubeFusionTracker
-│       └── cube_faces/       # Marker templates (JPGs)
+│   ├── annotation.py        # AnnotationEngine — drawing/detection overlays
+│   ├── camera.py            # Camera image decoding
+│   ├── camera_calibration.py # Camera calibration from robot NVRAM
+│   ├── cube_detector/       # Cube detection module
+│   │   ├── cube_detector.py # CozmoCubeDetector + CubeFusionTracker
+│   │   └── cube_faces/      # Marker templates (JPGs, 6 faces × 3 cubes)
+│   ├── detection_pipeline.py # Core detection logic (DetectionPipeline, CubeDetection)
+│   ├── events.py            # DetectionEventDispatcher — cube/face events
+│   ├── face_detector.py     # FaceDetector (Haar cascade)
+│   ├── floor_pipeline.py    # FloorPipeline — floor projection + occupancy
+│   ├── floor_projector.py   # FloorProjector — bird's-eye floor view
+│   ├── floor_pipeline.py    # OccupancyMap — world-frame occupancy grid
+│   ├── frame_handler.py     # FrameHandler — processes camera frames → FrameState
+│   ├── frame_state.py       # FrameState — typed container for frame/detection state
+│   ├── interfaces.py        # Detector/tracker protocols (CubeDetector, etc.)
+│   ├── occupancy_map.py     # OccupancyMap — world-frame occupancy grid
+│   ├── processor.py         # DEPRECATED — backward compat only
+│   ├── robot_center.py      # RobotCenterDetector — two-ring calibration
+│   └── robot_center.py      # RobotCenterResult dataclass
 ├── navigation/    # Navigation subsystem
-│   ├── navigator.py  # Navigator — navigate, approach, dock
-│   └── world_map.py  # WorldMap — fused robot/cube poses, path trail
+│   ├── cube_approach.py     # CubeApproach — two-step standoff approach
+│   ├── dock_state.py        # DockState — charger/dock pose tracking
+│   ├── interfaces.py        # Navigation interfaces
+│   ├── navigator.py         # Navigator — navigate, approach, dock
+│   ├── steering.py          # steer_velocities, wrap_pi — differential drive
+│   ├── world_map.py         # WorldMap — fused robot/cube poses, path trail
+│   └── world_map_interfaces.py # WorldMap interface protocols
 ├── animation/     # Animation and behavior system
 │   ├── anim.py          # Anim — animation playback
 │   ├── anim_controller.py  # AnimController — animation scheduling
 │   ├── anim_encoder.py  # AnimEncoder — animation file encoding
 │   ├── activity.py      # Activity system
 │   ├── behavior.py      # Behavior system
+│   ├── CozmoAnim/       # Cozmo-specific animation data
 │   └── data/            # FlatBuffer data classes (auto-generated from Anki SDK)
 │       ├── AnimClip.py, AnimClips.py, Keyframes.py, ...
 │       └── (BackpackLights, BodyMotion, FaceAnimation, HeadAngle, etc.)
 ├── util/          # Utility modules
 │   ├── util.py      # Angle, Distance, Pose, Vector3, hex_dump, etc.
-│   ├── coords.py    # Coordinate transforms (camera→world)
+│   ├── coords.py    # Coordinate transforms (camera→world, world→scene)
 │   ├── filter.py    # Signal filtering
 │   ├── robot.py     # Robot, Head, LightCube classes
 │   ├── robot_debug.py  # Debug message tables
@@ -109,25 +129,42 @@ pycozmo/           # Main library
 │   └── lights.py    # Color class, predefined light states
 ├── cubes/         # Cube BLE management
 │   ├── cycler.py      # CubeCycler — rapid BLE cycling
+│   ├── cube_tracking_state.py # CubeTrackingState — factory mapping, BLE cycler, movement
 │   ├── manager.py     # CubeManager — mapping, connection state
 │   └── cube_imu.py    # CubeMoveDetector — accelerometer movement detection
 ├── web/           # Web viewer bridge
-│   ├── viewer.py      # WebBridge — streaming, telemetry
-│   ├── viewer_server.py  # WebSocket server for browser viewer
-│   └── static/        # Three.js browser viewer (HTML/CSS/JS)
+│   ├── __init__.py    # Exports: WebBridge, WebStreamer, WebViewerServer
+│   ├── file_server.py # FileServer — static file serving
+│   ├── mjpeg_streamer.py # MjpegEndpoint — MJPEG streaming
+│   ├── msg_router.py  # MsgRouter — browser WebSocket message dispatch
+│   ├── state_builder.py # build_state_json — world→scene serialization
+│   ├── streamer.py    # WebStreamer — MJPEG frames + WebSocket broadcasting
+│   ├── viewer.py      # WebBridge — feeds measurements into world map
+│   ├── viewer_server.py # WebViewerServer — thin composition root
+│   ├── ws_server.py   # WSServer — WebSocket + HTTP lifecycle
+│   └── static/        # Three.js browser viewer (index.html, style.css)
 ├── sound/         # SoundBank + audio encoding
 └── tests/         # Unit tests (pytest)
 ```
 
-## Branch: cube_detection
+## Branch: develop
 
-This branch adds:
-- Cube detection using marker-based vision (`pycozmo/vision/processor.py`)
-- Camera calibration retrieval (`pycozmo/vision/camera_calibration.py`)
-- 3D cube tracking and visualization
-- Head tilt compensation for accurate positioning
+This branch includes:
+- **Public API**: `Cozmo` class (`pycozmo/cozmo.py`) — high-level interface to all robot capabilities
+- **Vision pipeline**: DetectionPipeline with pluggable detectors, annotation engine, event dispatcher
+- **Floor projection**: Bird's-eye floor view with occupancy mapping
+- **Robot center calibration**: Two-ring marker detection for precise lateral offset measurement
+- **Face detection**: Haar cascade face detection with expression control
+- **3D web viewer**: Three.js browser viewer with WebSocket state broadcast, MJPEG camera streams, occupancy grid overlay, procedural face streaming
+- **Navigation**: Navigator with cube approach, docking, point-to-point steering
+- **Cube BLE management**: CubeCycler, CubeManager, CubeMoveDetector with IMU-based movement tracking
 
 ## Important Notes
+
+### Public API
+- **Use `Cozmo` class** (`from pycozmo import Cozmo`) as the library entry point
+- `Brain` is an internal orchestrator — do not import or use directly
+- Subsystem APIs are accessed through `Cozmo` properties: `.vision`, `.cubes`, `.navigator`, `.world_map`, `.sensors`, `.web_viewer`
 
 ### Camera Calibration
 - Cozmo's stored distortion coefficients are unreliable; zero distortion is used by default
@@ -135,10 +172,29 @@ This branch adds:
 - Calibration is retrieved from robot NVRAM via `CameraCalibrationRetriever`
 
 ### Cube Detection
-- Marker templates are in `pycozmo/vision/cube_detector/cube_faces/*.jpg`
+- Marker templates are in `pycozmo/vision/cube_detector/cube_faces/*.jpg` (6 faces × 3 cubes)
 - Cozmo has 3 light cubes (IDs 1-3)
 - `CubeFusionTracker` fuses multiple face detections into coherent 3D poses
 - Head tilt compensation required for accurate tracking
+- `DetectionPipeline` returns camera-frame measurements; world-frame fusion happens in `WorldMap`
+
+### Face Detection
+- Face detector uses Haar cascade (`FaceDetector`)
+- Face expression changes to `Happiness` when a face is detected
+- `face_detect_every_n_frames` setting reduces CPU cost (default: 1 = every frame)
+
+### Floor & Occupancy
+- Floor projection creates a bird's-eye view of the area
+- OccupancyMap accumulates a world-frame grid over time
+- Floor center and size are configurable in mm
+
+### Web Viewer
+- WebSocket server on port 8765, HTTP server on port 8766
+- Three.js browser viewer renders robot, cubes, faces, path trail, occupancy grid
+- MJPEG streams for camera, annotated camera, and floor views
+- Procedural face image streamed via WebSocket
+- Browser sends keyboard controls, click-to-navigate, cube approach, dock requests
+- Camera settings (gain, exposure, resolution, head light) configurable from browser
 
 ### Dependencies
 - Runtime: opencv-python, numpy, Pillow, scipy, PyOpenGL, pygame, aiohttp, websockets
@@ -164,6 +220,10 @@ The application layer — everything `main.py` drives — lives in **`pycozmo/`*
 - **One class per file.** If a feature doesn't fit an existing class's stated job, create a *new file* — never grow an existing class.
 - **Files are grouped in folders by function.** `vision/`, `navigation/`, `web/`, `cubes/`. New functionality goes in the matching folder.
 - A genuinely new function gets a new folder.
+- **Brain is internal.** Use `Cozmo` as the public API. Brain creates typed state containers and wires them to domain classes.
+- **Typed state containers** (`FrameState`, `CubeTrackingState`, `DockState`) are passed via DI to domain classes — not through Brain itself.
+- **Web viewer is a pure display.** All localization math lives in `WorldMap`; the browser receives scene-frame coordinates only.
+- **Pluggable detectors.** `DetectionPipeline` accepts any `CubeDetector`, `CubeFusionTracker`, `FaceDetector` implementation via constructor injection.
 
 ## Testing
 
