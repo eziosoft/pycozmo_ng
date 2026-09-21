@@ -172,19 +172,28 @@ class Brain:
         self.web.detection_pipeline = self.detection_pipeline
 
         # Register camera image handler
+        # The event loop is captured lazily on the first frame — the handler
+        # runs in the connection's receive thread, which has its own loop.
+        self._event_loop = None
+
         def on_camera_image(cli_arg, image):
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop is not None and loop.is_running():
-                asyncio.ensure_future(
+            # Lazy event loop capture: first frame arrives on the connection
+            # thread, which has a running asyncio loop.
+            if self._event_loop is None:
+                try:
+                    self._event_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass
+
+            if self._event_loop is not None and self._event_loop.is_running():
+                self._event_loop.call_soon_threadsafe(
+                    asyncio.ensure_future,
                     self._on_camera_image(
                         cli_arg,
                         image,
                         process_every_n_frames,
                         undistort,
-                    )
+                    ),
                 )
             else:
                 # Fallback: run synchronously (e.g. during tests)
