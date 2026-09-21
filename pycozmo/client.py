@@ -6,6 +6,7 @@ Cozmo protocol client and high-level API.
 
 import io
 import json
+import math
 import time
 from threading import Event, Lock, Timer
 
@@ -523,19 +524,19 @@ class Client(event.Dispatcher):
         pose: util.Pose,
         relative_to_robot: bool = False,
         timeout_s: float | None = 30.0,
+        position_tol_mm: float = 15.0,
+        angle_tol_rad: float = 0.15,
     ) -> None:
         """Move to a specific pose (position and orientation).
 
-        Blocks until the on-board planner reports the path completed or
-        aborted, or until ``timeout_s`` seconds elapse (default 30 s; pass
-        ``None`` to wait indefinitely). On timeout only a warning is logged —
-        the robot keeps executing its path — so callers should re-check the
-        robot pose before acting (COZMO-53).
+        Sends the path and blocks until either:
+        1. A ``PathFollowingEvent`` reports completion/abort, **or**
+        2. The robot pose is within ``position_tol_mm`` mm and
+           ``angle_tol_rad`` rad of the target (pose polling).
 
-        The path-completion handler is registered *before* the path is sent so
-        a fast ``PATH_COMPLETED`` event cannot be missed; missing it previously
-        left the caller blocked forever (e.g. the cube approach stalling after
-        step 1 while the robot sat at the standoff).
+        Falls back to polling because Cozmo firmware often omits
+        ``PathFollowingEvent`` for simple paths (COZMO-53). On timeout
+        only a warning is logged — the robot may still be moving.
         """
 
         if relative_to_robot:
@@ -555,8 +556,6 @@ class Client(event.Dispatcher):
                 completed = True
                 e.set()
 
-        # Register before sending so the completion event (which crosses a few
-        # thread hops from the robot) cannot race ahead of this handler.
         handler = self.add_handler(protocol_encoder.PathFollowingEvent, event_wait)
         try:
             pkt = protocol_encoder.AppendPathSegLine(
@@ -582,15 +581,37 @@ class Client(event.Dispatcher):
             pkt = protocol_encoder.ExecutePath(event_id=1)
             self.conn.send(pkt)
 
-            e.wait(timeout=timeout_s)
+            # Wait for either the event OR pose proximity — whichever comes first.
+            deadline = time.perf_counter() + (timeout_s or 30.0)
+            dist = float("inf")
+            angle_err = float("inf")
+            while not completed and time.perf_counter() < deadline:
+                # Fast path: event arrived
+                if e.wait(timeout=0.25):
+                    break
+                # Pose-polling fallback: check if we're close enough
+                dx = self.pose.position.x - pose.position.x
+                dy = self.pose.position.y - pose.position.y
+                dist = math.hypot(dx, dy)
+                angle_err = abs(
+                    math.remainder(
+                        self.pose.rotation.angle_z.radians
+                        - pose.rotation.angle_z.radians,
+                        2 * math.pi,
+                    )
+                )
+                if dist <= position_tol_mm and angle_err <= angle_tol_rad:
+                    completed = True
+                    break
         finally:
             self.del_handler(protocol_encoder.PathFollowingEvent, handler)
 
         if not completed:
             logger.warning(
-                "go_to_pose: timed out after %.0fs waiting for path completion "
-                "(robot may still be moving)",
+                "go_to_pose: timed out after %.0fs — dist=%.1f mm, angle_err=%.1f deg",
                 timeout_s if timeout_s is not None else 0,
+                dist,
+                math.degrees(angle_err),
             )
 
     def set_backpack_lights(
