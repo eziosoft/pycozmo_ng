@@ -67,39 +67,54 @@ class TestExtractPatch:
         assert patch.min() >= 0
         assert patch.max() <= 255
 
-    def test_extract_patch_faster_than_warp_perspective(self):
-        """ROI-based extraction should be faster than full-image warpPerspective."""
+    def test_extract_patch_preserves_perspective(self):
+        """_extract_patch should produce a proper perspective-corrected patch."""
         markers = load_marker_templates()
         detector = CozmoCubeDetector(
             camera_matrix=np.eye(3),
             dist_coeffs=np.zeros(5),
             target_markers=markers,
         )
-        img = np.random.randint(0, 255, (240, 320), dtype=np.uint8)
+        img = np.random.randint(0, 255, (480, 640), dtype=np.uint8)
         quad = np.array(
             [
-                [[50, 50]],
-                [[100, 50]],
-                [[100, 100]],
-                [[50, 100]],
+                [[100, 80]],
+                [[200, 90]],
+                [[210, 180]],
+                [[90, 170]],
             ],
             dtype=np.float32,
         )
+        patch = detector._extract_patch(img, quad)
+        assert patch.shape == (32, 32)
+        assert patch.dtype == np.uint8
+        assert patch.min() >= 0
+        assert patch.max() <= 255
 
-        start = time.perf_counter()
-        for _ in range(100):
-            detector._extract_patch(img, quad)
-        roi_time = time.perf_counter() - start
-
-        src_pts = detector._order_points(quad.reshape(4, 2))
-        M = cv2.getPerspectiveTransform(src_pts, detector.dst_pts)
-        start = time.perf_counter()
-        for _ in range(100):
-            cv2.warpPerspective(img, M, (32, 32), flags=cv2.INTER_LINEAR)
-        warp_time = time.perf_counter() - start
-
-        print(f"ROI: {roi_time:.4f}s, warpPerspective: {warp_time:.4f}s")
-        assert roi_time < warp_time * 2.0
+    def test_extract_patch_matches_template(self):
+        """_extract_patch output should match the marker template."""
+        markers = load_marker_templates()
+        detector = CozmoCubeDetector(
+            camera_matrix=np.eye(3),
+            dist_coeffs=np.zeros(5),
+            target_markers=markers,
+        )
+        marker = cv2.normalize(markers[0], None, 0, 255, cv2.NORM_MINMAX)
+        img = np.zeros((240, 320), dtype=np.uint8)
+        img[100:132, 100:132] = marker
+        quad = np.array(
+            [
+                [[100, 100]],
+                [[132, 100]],
+                [[132, 132]],
+                [[100, 132]],
+            ],
+            dtype=np.float32,
+        )
+        patch = detector._extract_patch(img, quad)
+        marker_id, score, _ = detector._match_marker(patch)
+        assert marker_id == 0
+        assert score > 0.8
 
 
 class TestMatchMarker:

@@ -515,10 +515,9 @@ class CozmoCubeDetector:
 
     def _extract_patch(self, img, quad):
         """Warps a quad into a 32x32 standard marker patch.
-        Uses the bounding box ROI to avoid warping the full image."""
+        Crops a bounding box ROI first, then warps only that small region."""
         src_pts = self._order_points(quad.reshape(4, 2))
         x, y, w, h = cv2.boundingRect(src_pts.reshape(4, 1, 2).astype(np.int32))
-        # Expand ROI slightly to ensure the patch captures the full marker
         pad = 5
         x0 = max(0, x - pad)
         y0 = max(0, y - pad)
@@ -527,8 +526,15 @@ class CozmoCubeDetector:
         roi = img[y0:y1, x0:x1]
         if roi.size == 0:
             return np.zeros((32, 32), dtype=np.uint8)
-        # Scale the ROI to 32x32 for template matching
-        patch = cv2.resize(roi, (32, 32), interpolation=cv2.INTER_LINEAR)
+        # Offset src_pts relative to ROI
+        offset_pts = src_pts - np.array([[x0, y0]], dtype=np.float32)
+        # Scale ROI to a larger size to preserve quality after warp
+        scale = 4
+        roi_h, roi_w = roi.shape[:2]
+        scaled_roi = cv2.resize(roi, (roi_w * scale, roi_h * scale), interpolation=cv2.INTER_LINEAR)
+        scaled_pts = offset_pts * scale
+        M = cv2.getPerspectiveTransform(scaled_pts.astype(np.float32), self.dst_pts)
+        patch = cv2.warpPerspective(scaled_roi, M, (32, 32), flags=cv2.INTER_LINEAR)
         return cv2.normalize(patch, None, 0, 255, cv2.NORM_MINMAX)
 
     def _match_marker(self, patch):
