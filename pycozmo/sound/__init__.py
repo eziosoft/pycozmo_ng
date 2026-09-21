@@ -1,5 +1,15 @@
-from . import audio  # noqa
-from . import exception  # noqa
-from . import soundbank  # noqa
-from . import soundbanksinfo  # noqa
-from . import wem  # noqa
+from . import audio, exception, soundbank, soundbanksinfo, tts, wem
+from .exception import TTSGenerationError, TTSNotInstalledError
+from .tts import TTS
+
+__all__ = [
+    "TTS",
+    "TTSGenerationError",
+    "TTSNotInstalledError",
+    "audio",
+    "exception",
+    "soundbank",
+    "soundbanksinfo",
+    "tts",
+    "wem",
+]

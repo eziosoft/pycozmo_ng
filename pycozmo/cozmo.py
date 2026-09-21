@@ -27,9 +27,9 @@ import pycozmo
 from pycozmo import run
 from pycozmo.brain import Brain
 from pycozmo.event import (
+    EvtRobotChargingChange,
     EvtRobotOnChargerChange,
     EvtRobotPickedUpChange,
-    EvtRobotChargingChange,
     EvtRobotStateUpdated,
 )
 from pycozmo.navigation.world_map import WorldMap
@@ -304,7 +304,7 @@ class Cozmo:
         host: str = "172.31.1.1",
         port: int = 5551,
         **kwargs,
-    ) -> "Cozmo":
+    ) -> Cozmo:
         """Connect to the Cozmo robot.
 
         Args:
@@ -337,7 +337,7 @@ class Cozmo:
             self._cli.stop()
             self._connected = False
 
-    def __enter__(self) -> "Self":
+    def __enter__(self) -> Self:
         """Context manager entry - connects and returns self."""
         self.connect()
         return self
@@ -389,6 +389,17 @@ class Cozmo:
     def stop_all_motors(self):
         """Stop all motors."""
         self._cli.stop_all_motors()
+
+    def say(self, text: str) -> None:
+        """Say text through the Cozmo robot using offline TTS.
+
+        Synthesizes text to a WAV file (cached for repeated calls)
+        and plays it through the robot's audio pipeline.
+
+        Args:
+            text: The text to speak.
+        """
+        self._cli.say(text)
 
     # ------------------------------------------------------------------
     # Vision setup

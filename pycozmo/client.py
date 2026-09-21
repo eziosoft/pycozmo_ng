@@ -15,7 +15,7 @@ from PIL import Image
 
 from pycozmo.animation import anim, anim_controller, anim_encoder
 from pycozmo.protocol import protocol_declaration, protocol_encoder
-from pycozmo.sound import audio
+from pycozmo.sound import audio, tts
 from pycozmo.transport import conn
 from pycozmo.util import filter, object, robot, robot_debug
 from pycozmo.vision import camera
@@ -105,6 +105,7 @@ class Client(event.Dispatcher):
         self._ppclips = {}
         self._next_anim_id = 1
         self.animation_groups = {}
+        self._tts = tts.TTS()
 
     def start(self) -> None:
         logger.debug("Starting client...")
@@ -869,6 +870,17 @@ class Client(event.Dispatcher):
     def play_audio(self, fspec: str) -> None:
         pkts = audio.load_wav(fspec)
         self.anim_controller.play_audio(pkts)
+
+    def say(self, text: str) -> None:
+        """Say text through the Cozmo robot using offline TTS.
+
+        Synthesizes text to a WAV file (cached for repeated calls)
+        and plays it through the robot's audio pipeline.
+
+        Args:
+            text: The text to speak.
+        """
+        self._tts.say(text, self)
 
     def activate_behavior(self, behavior):
         self.add_child_dispatcher(behavior)
