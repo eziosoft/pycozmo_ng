@@ -48,10 +48,11 @@ class FrameHandler:
 
     def _stamp_detections_seen(self):
         """Record the current frame index for every detected cube."""
+        frame_count = self.fs.frame_count
         with self.fs.detections_lock:
             detected_cube_ids = {det.cube_id for det in self.fs.latest_detections}
         for cube_id in detected_cube_ids:
-            self.ct.last_seen_frame[cube_id] = self.fs.frame_count
+            self.ct.last_seen_frame[cube_id] = frame_count
 
     def on_floor_projected_image(self, cli, floor_image, occupancy_grid):
         """Handler for floor-projected images (EvtFloorProjectedImage)."""

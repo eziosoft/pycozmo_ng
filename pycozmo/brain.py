@@ -65,6 +65,12 @@ class Brain:
         # Remote control (COZMO-25)
         self._remote_control = None
 
+        # Frame counters — initialized here to avoid race conditions
+        # in _on_camera_image (which runs on the event dispatch thread)
+        self._vision_frame_counter = 0
+        self._face_frame_counter = 0
+        self._face_detect_every_n_frames = 1
+
         # Domain sub-components — each receives the state it needs
         self.frame_handler = FrameHandler(
             self.frame_state, self.cube_tracking, self.detection_pipeline
@@ -198,8 +204,6 @@ class Brain:
         self.web_streamer.push_raw_frame(image)
 
         # Frame skipping for performance
-        if not hasattr(self, "_vision_frame_counter"):
-            self._vision_frame_counter = 0
         self._vision_frame_counter += 1
         if self._vision_frame_counter % process_every_n_frames != 0:
             return
@@ -234,11 +238,8 @@ class Brain:
             )
 
             # Detect faces (every Nth processed frame)
-            if not hasattr(self, "_face_frame_counter"):
-                self._face_frame_counter = 0
             self._face_frame_counter += 1
-            face_every = getattr(self, "_face_detect_every_n_frames", 1)
-            if self._face_frame_counter % face_every == 0:
+            if self._face_frame_counter % self._face_detect_every_n_frames == 0:
                 face_detections = self.detection_pipeline.detect_faces(
                     undistorted_bgr, head_angle_rad
                 )

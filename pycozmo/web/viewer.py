@@ -39,22 +39,25 @@ class WebBridge:
         if not self.detection_pipeline:
             return
 
-        head_angle = self.cli.head_angle.radians if self.cli is not None else 0.0
+        cli = self.cli
+        head_angle = cli.head_angle.radians if cli is not None else 0.0
 
-        # Read persistent lateral offset (updated automatically during
-        # startup calibration and each cube approach)
+        # Read persistent lateral offset
         lateral_offset = self.detection_pipeline.camera_lateral_offset_mm
 
-        suppressed = self.ct.suppress.get("ids", set())
-        fresh_frames = self.ct.suppress.get("fresh_frames", {})
-        new_fresh_frames = {}
+        # Synchronized access to suppress state
+        with self.ct.suppress_lock:
+            suppressed = set(self.ct.suppress.get("ids", set()))
+            fresh_frames = dict(self.ct.suppress.get("fresh_frames", {}))
+            fresh_frames_needed = self.ct.suppress.get("fresh_frames_needed", 5)
+            new_fresh_frames = {}
 
         for m in self.detection_pipeline.get_cube_measurements():
             cube_id = m["cube_id"]
             if cube_id in suppressed:
                 n = fresh_frames.get(cube_id, 0) + 1
                 new_fresh_frames[cube_id] = n
-                if n < self.ct.suppress["fresh_frames_needed"]:
+                if n < fresh_frames_needed:
                     continue
                 suppressed.discard(cube_id)
                 logger.info(
@@ -72,7 +75,9 @@ class WebBridge:
                 rotation_source=m.get("rotation_source"),
             )
 
-        self.ct.suppress["fresh_frames"] = new_fresh_frames
+        with self.ct.suppress_lock:
+            self.ct.suppress["ids"] = suppressed
+            self.ct.suppress["fresh_frames"] = new_fresh_frames
 
         # Feed face measurements into world map
         for fm in self.detection_pipeline.get_face_measurements():
