@@ -641,6 +641,15 @@
         }
         faceCtx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
         faceCtx.drawImage(img, 0, 0);
+        // Recolor white pixels to cyan
+        const imgData = faceCtx.getImageData(0, 0, faceCanvas.width, faceCanvas.height);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i] > 200 && d[i+1] > 200 && d[i+2] > 200) {
+            d[i] = 0; d[i+1] = 255; d[i+2] = 255; // cyan
+          }
+        }
+        faceCtx.putImageData(imgData, 0, 0);
       };
       img.src = 'data:image/png;base64,' + pngBase64;
     }
