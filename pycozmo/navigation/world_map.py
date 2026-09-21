@@ -452,29 +452,33 @@ class WorldMap:
         position/confidence/label), ``path_points``.
         """
         with self._lock:
-            return {
-                "robot": {
-                    "position": self._robot_position.tolist(),
-                    "yaw": self._robot_yaw,
-                    "origin_id": self._robot_origin_id,
-                },
-                "cubes": {
-                    cube_id: {
-                        "position": cube_state.position.tolist(),
-                        "rotation": cube_state.rotation_matrix.tolist(),
-                        "confidence": cube_state.confidence,
-                        "face_idx": cube_state.face_idx,
-                        "face_rotation": cube_state.face_rotation,
-                    }
-                    for cube_id, cube_state in self._cubes.items()
-                },
-                "faces": {
-                    face_id: {
-                        "position": fs.position.tolist(),
-                        "confidence": fs.confidence,
-                        "label": fs.label,
-                    }
-                    for face_id, fs in self._faces.items()
-                },
-                "path_points": [p.tolist() for p in self._path_points],
+            robot_pos = self._robot_position.tolist()
+            cubes = {
+                cube_id: {
+                    "position": cube_state.position.tolist(),
+                    "rotation": cube_state.rotation_matrix.tolist(),
+                    "confidence": cube_state.confidence,
+                    "face_idx": cube_state.face_idx,
+                    "face_rotation": cube_state.face_rotation,
+                }
+                for cube_id, cube_state in self._cubes.items()
             }
+            faces = {
+                face_id: {
+                    "position": fs.position.tolist(),
+                    "confidence": fs.confidence,
+                    "label": fs.label,
+                }
+                for face_id, fs in self._faces.items()
+            }
+            path_points = [p.tolist() for p in self._path_points]
+        return {
+            "robot": {
+                "position": robot_pos,
+                "yaw": self._robot_yaw,
+                "origin_id": self._robot_origin_id,
+            },
+            "cubes": cubes,
+            "faces": faces,
+            "path_points": path_points,
+        }

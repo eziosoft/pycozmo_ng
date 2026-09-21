@@ -19,7 +19,6 @@ Usage:
 import asyncio
 import time
 
-from pycozmo import coords
 from pycozmo.navigation.world_map import WorldMap
 from pycozmo.web.file_server import FileServer
 from pycozmo.web.mjpeg_streamer import MjpegEndpoint
@@ -55,14 +54,16 @@ class WebViewerServer:
         host: str = "0.0.0.0",
         port: int = 8765,
         world_map: WorldMap = None,
+        broadcast_interval_s: float = 0.05,
     ):
         self.host = host
         self.port = port
         self.world_map = world_map if world_map is not None else WorldMap()
-        self.cubes: dict[str, dict] = {}
-
+        self.broadcast_interval_s = broadcast_interval_s
         self._clients: set = set()
         self._start_time = time.time()
+        self._last_broadcast_time = 0.0
+        self._dirty = False  # state changed since last broadcast
 
         # Camera frame sources (image, frame_id) — thread-safe via GIL
         self._latest_image = None
@@ -134,22 +135,23 @@ class WebViewerServer:
     ):
         """Deprecated — position is expected in world frame now."""
         del marker_images, cube_size
-        pos_gl = coords.world_to_scene_point(position)
-        rot_gl = coords.world_to_scene_rotation(rotation_matrix)
-        self.cubes[cube_id] = {
-            "id": cube_id,
-            "position": [float(v) for v in pos_gl],
-            "rotation": [row.tolist() for row in rot_gl],
-            "size": 44,
-        }
+        self.world_map.update_cube_measurement(
+            int(cube_id.replace("cube_", "")) - 1 if "_" in cube_id else 0,
+            position,
+            rotation_matrix,
+            0.9,
+            0.0,
+        )
 
     def remove_cube(self, cube_id: str):
         """Remove a cube (compat shim)."""
-        self.cubes.pop(cube_id, None)
+        self.world_map.forget_cube(
+            int(cube_id.replace("cube_", "")) - 1 if "_" in cube_id else 0
+        )
 
     def clear_cubes(self):
         """Remove all cubes (compat shim)."""
-        self.cubes.clear()
+        self.world_map.reset_map()
 
     # -- WorldMap pass-through (the real API) --------------------------------
 
@@ -227,6 +229,7 @@ class WebViewerServer:
 
     def broadcast(self):
         """Notify the server that the world state changed."""
+        self._dirty = True
         if not self._clients or self._broadcast_queue is None:
             return
         loop = self._ws_server.loop
@@ -365,7 +368,10 @@ class WebViewerServer:
         return msg
 
     async def _broadcast_loop(self):
-        """Coalescing broadcaster: send the latest state, never a backlog."""
+        """Coalescing broadcaster: send the latest state at most once per
+        broadcast_interval_s. Skips sending if nothing changed and the
+        interval hasn't elapsed.
+        """
         while True:
             await self._broadcast_queue.get()
             await asyncio.sleep(0.001)
@@ -373,6 +379,13 @@ class WebViewerServer:
                 self._broadcast_queue.get_nowait()
             if not self._clients:
                 continue
+            now = time.time()
+            if now - self._last_broadcast_time < self.broadcast_interval_s:
+                continue
+            if not self._dirty:
+                continue
+            self._dirty = False
+            self._last_broadcast_time = now
             msg = self._build_state_json()
             await self._send_to_all(msg)
 

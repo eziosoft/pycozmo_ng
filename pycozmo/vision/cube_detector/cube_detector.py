@@ -342,7 +342,7 @@ class CozmoCubeDetector:
         contours.sort(key=cv2.contourArea, reverse=True)
 
         results = []
-        for cnt in contours[:40]:  # Check up to 40 largest contours
+        for cnt in contours[:20]:  # Check up to 20 largest contours
             # Approximate polygon
             peri = cv2.arcLength(cnt, True)
             approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
@@ -514,10 +514,21 @@ class CozmoCubeDetector:
         return True, rvec, tvec
 
     def _extract_patch(self, img, quad):
-        """Warps a quad into a 32x32 standard marker patch."""
+        """Warps a quad into a 32x32 standard marker patch.
+        Uses the bounding box ROI to avoid warping the full image."""
         src_pts = self._order_points(quad.reshape(4, 2))
-        M = cv2.getPerspectiveTransform(src_pts, self.dst_pts)
-        patch = cv2.warpPerspective(img, M, (32, 32), flags=cv2.INTER_LINEAR)
+        x, y, w, h = cv2.boundingRect(src_pts.reshape(4, 1, 2).astype(np.int32))
+        # Expand ROI slightly to ensure the patch captures the full marker
+        pad = 5
+        x0 = max(0, x - pad)
+        y0 = max(0, y - pad)
+        x1 = min(img.shape[1], x + w + pad)
+        y1 = min(img.shape[0], y + h + pad)
+        roi = img[y0:y1, x0:x1]
+        if roi.size == 0:
+            return np.zeros((32, 32), dtype=np.uint8)
+        # Scale the ROI to 32x32 for template matching
+        patch = cv2.resize(roi, (32, 32), interpolation=cv2.INTER_LINEAR)
         return cv2.normalize(patch, None, 0, 255, cv2.NORM_MINMAX)
 
     def _match_marker(self, patch):
@@ -530,7 +541,7 @@ class CozmoCubeDetector:
         for i, rotations in enumerate(self.rotated_markers):
             for rot_idx, rotated in enumerate(rotations):
                 res = cv2.matchTemplate(patch, rotated, cv2.TM_CCOEFF_NORMED)
-                score = res[0][0]
+                score = float(res[0][0])
                 if score > best_score:
                     best_score = score
                     best_id = i

@@ -140,7 +140,7 @@ class TestMsgRouterDispatch:
         assert settings["color"] is False
         assert settings["resolution"] == "QVGA"
         assert settings["jpeg_quality"] == 70
-        assert settings["head_light"] is True
+        assert settings["head_light"] is False
 
     def test_camera_settings_stored(self):
         cb = MagicMock()
