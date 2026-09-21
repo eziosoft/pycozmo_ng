@@ -20,6 +20,7 @@ fi
 
 command -v nmcli >/dev/null 2>&1 || { err "nmcli not found. Install NetworkManager."; exit 1; }
 command -v ping   >/dev/null 2>&1 || { err "ping not found."; exit 1; }
+command -v espeak-ng >/dev/null 2>&1 || { err "espeak-ng not found. Install with: sudo apt-get install espeak-ng"; exit 1; }
 
 ensure_cozmo_wifi() {
     if nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | grep -qi "^yes:${COZMO_SSID}$"; then

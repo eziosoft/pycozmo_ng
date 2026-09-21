@@ -134,6 +134,8 @@ def main():
 
             cozmo.enable_remote_control()
 
+            cozmo.say("Hello, I am Cozmo")
+
             cozmo.set_origin()
 
             print("Open http://<this-machine-ip>:8765 in a browser\n")
