@@ -360,6 +360,7 @@ class Brain:
         self.web_viewer.set_approach_listener(self.navigator._on_approach_cube)
         self.web_viewer.set_dock_listener(self.navigator._on_dock)
         self.web_viewer.set_camera_settings_listener(self._on_camera_settings)
+        self.web_viewer.set_say_listener(self._on_say)
         if self.cli is not None:
             self.dock_state.dock_pose = self.cli.pose
         print("Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
@@ -428,6 +429,15 @@ class Brain:
             f"color={'color' if color else 'gray'}, resolution={res_name}, "
             f"head_light={'on' if settings.get('head_light') else 'off'}"
         )
+
+    def _on_say(self, text: str) -> None:
+        """Handle TTS say request from the browser."""
+        cli = self.cli
+        if cli is not None and text:
+            try:
+                cli.say(text)
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠️  say failed: {e}")
 
     def stop_remote_control(self) -> None:
         if self._remote_control is not None:

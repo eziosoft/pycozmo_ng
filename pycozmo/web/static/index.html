@@ -126,6 +126,14 @@
         </div>
       </div>
 
+      <div id="tts-panel">
+        <h3>TTS</h3>
+        <div class="tts-row">
+          <input type="text" id="tts-text" placeholder="Type a message..." maxlength="200" />
+          <button id="tts-say-btn">Say</button>
+        </div>
+      </div>
+
       <div id="camera-settings-panel">
         <h3>Camera Settings</h3>
         <div class="cam-row">
@@ -950,6 +958,25 @@
     camResolution.addEventListener('change', sendCameraSettings);
     camJpegQuality.addEventListener('input', () => { camJpegQualityVal.textContent = camJpegQuality.value; });
     camJpegQuality.addEventListener('change', sendCameraSettings);
+
+function sendSay(text) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'say', text: text }));
+      } catch (e) {
+        console.warn('say send failed', e);
+      }
+    }
+
+    const ttsText = document.getElementById('tts-text');
+    const ttsSayBtn = document.getElementById('tts-say-btn');
+    ttsSayBtn.addEventListener('click', () => {
+      const text = ttsText.value.trim();
+      if (text) { sendSay(text); ttsText.value = ''; }
+    });
+    ttsText.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { ttsSayBtn.click(); }
+    });
 
     // -----------------------------------------------------------------------
     // WebSocket

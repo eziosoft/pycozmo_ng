@@ -340,6 +340,10 @@ class WebViewerServer:
         """Subscribe to browser camera-settings changes."""
         self._msg_router.set_camera_settings_listener(callback)
 
+    def set_say_listener(self, callback) -> None:
+        """Subscribe to browser TTS say events."""
+        self._msg_router.set_say_listener(callback)
+
     def update_camera_settings(self, **kwargs) -> None:
         """Update the stored camera settings (called from the listener)."""
         self._msg_router.set_camera_settings(kwargs)

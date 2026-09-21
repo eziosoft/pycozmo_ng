@@ -28,6 +28,7 @@ class MsgRouter:
         self._approach_listener = None
         self._dock_listener = None
         self._camera_settings_listener = None
+        self._say_listener = None
         self._camera_settings: dict = {
             "head_light": False,
         }
@@ -48,6 +49,9 @@ class MsgRouter:
 
     def set_camera_settings_listener(self, callback) -> None:
         self._camera_settings_listener = callback
+
+    def set_say_listener(self, callback) -> None:
+        self._say_listener = callback
 
     def set_camera_settings(self, settings: dict) -> None:
         self._camera_settings.update(settings)
@@ -75,6 +79,7 @@ class MsgRouter:
             "approach_cube": self._on_approach_cube,
             "dock": self._on_dock,
             "camera_settings": self._on_camera_settings,
+            "say": self._on_say,
         }.get(mtype)
         if handler is not None:
             handler(msg)
@@ -155,3 +160,12 @@ class MsgRouter:
                 listener(settings)
             except Exception as e:  # noqa: BLE001
                 print(f"⚠️  camera_settings listener failed: {e}")
+
+    def _on_say(self, msg: dict) -> None:
+        listener = self._say_listener
+        if listener is not None:
+            try:
+                text = msg.get("text", "")
+                listener(text)
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠️  say listener failed: {e}")

@@ -283,6 +283,71 @@ html, body {
   color: var(--strength-weak);
 }
 
+/* ---- TTS panel ---- */
+#tts-panel {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-subtle);
+  border-top: 1px solid var(--border);
+}
+
+#tts-panel h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 4px;
+}
+
+.tts-row {
+  display: flex;
+  gap: 6px;
+}
+
+#tts-text {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: var(--text-body-sm);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s var(--ease-out);
+}
+
+#tts-text:focus {
+  border-color: var(--accent);
+}
+
+#tts-text::placeholder {
+  color: var(--text-faint);
+}
+
+#tts-say-btn {
+  padding: 6px 14px;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  font-family: var(--font-display);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s var(--ease-out), border-color 0.15s var(--ease-out);
+  white-space: nowrap;
+}
+
+#tts-say-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
 /* ---- Camera settings panel ---- */
 #camera-settings-panel {
   padding: 10px;
