@@ -264,9 +264,10 @@ class Client(event.Dispatcher):
         self._partial_image_encoding = None
         self._partial_image_resolution = None
         self._last_chunk_id = -1
-        self._single_shot_mode = False
-        self._single_shot_min_interval = None
-        self._last_single_shot_at = 0.0
+        # NOTE: _single_shot_mode / _single_shot_min_interval /
+        # _last_single_shot_at are configured by enable_camera() and must
+        # NOT be cleared here — this runs at the start of every image and
+        # would otherwise break SingleShot re-arming. (COZMO-56)
 
     def _on_image_chunk(self, cli, pkt: protocol_encoder.ImageChunk):
         del cli
@@ -306,8 +307,7 @@ class Client(event.Dispatcher):
                 self._last_chunk_id,
                 self._partial_image_id,
             )
-            self._reset_partial_state()
-            self._partial_invalid = True
+            self._discard_partial_image()
             return
 
         offset = self._partial_size
@@ -320,6 +320,19 @@ class Client(event.Dispatcher):
         if pkt.chunk_id == pkt.image_chunk_count - 1:
             self._process_completed_image()
             self._reset_partial_state()
+
+    def _discard_partial_image(self) -> None:
+        """Discard an incomplete camera frame.
+
+        In SingleShot mode the robot only sends the next frame after we
+        re-arm it, and re-arming only happens on a *completed* image — so a
+        single lost chunk would otherwise stop the camera forever. Re-arm on
+        discard so the stream self-heals from AP loss. (COZMO-56)
+        """
+        self._reset_partial_state()
+        self._partial_invalid = True
+        if self._single_shot_mode:
+            self._send_single_shot_request()
 
     def _process_completed_image(self):
         data = self._partial_data[0 : self._partial_size]

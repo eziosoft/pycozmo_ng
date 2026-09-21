@@ -105,6 +105,18 @@ class ReceiveWindow(BaseWindow):
             self.last_seq = (self.expected_seq + self.size - 1) % self.max_seq
         return data
 
+    def recover(self, seq: int) -> None:
+        """Jump the window forward to *seq* (the next expected packet).
+
+        The Cozmo AP is lossy (97-99% delivery in practice), and the robot
+        never retransmits lost packets: a single missing sequence number
+        permanently blocks ``deliver_sequence`` until the 16-bit sequence
+        space wraps (~36 min at 30 fps). ``recover`` discards the stuck gap
+        so delivery resumes from the live stream position. (COZMO-56)
+        """
+        self.expected_seq = seq % self.max_seq
+        self.last_seq = (self.expected_seq + self.size - 1) % self.max_seq
+
     def reset(self) -> None:
         """Reset the window."""
         super().reset()

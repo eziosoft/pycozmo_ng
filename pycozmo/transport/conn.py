@@ -80,7 +80,17 @@ class SendThread(Thread):
                 resend_pkts = self._resend_messages()
                 new_pkts, last_ack = self._collect_messages()
                 self._send_packets(resend_pkts + new_pkts, last_ack)
-            except Exception:  # noqa: BLE001
+                if not new_pkts and not resend_pkts:
+                    # Nothing to send. When the send window is full of
+                    # un-acknowledged packets, _collect_messages returns
+                    # immediately (no queue.get sleep), so without this the
+                    # loop would spin at 100% CPU, re-flooding the lossy
+                    # Cozmo AP with retransmits. (COZMO-56)
+                    with self.lock:
+                        is_full = self.window.is_full()
+                    if is_full:
+                        time.sleep(self.COLLECT_INTERVAL)
+            except Exception:  # noqa: BLE001, S110
                 pass
 
     def _collect_messages(self) -> tuple[list, int]:
@@ -214,6 +224,11 @@ class SendThread(Thread):
 class ReceiveThread(Thread):
     """Cozmo protocol connection receive thread."""
 
+    #: If frames keep arriving but nothing is delivered for this long, the
+    #: receive window is jammed on a lost packet — jump the window instead
+    #: of waiting for the 16-bit sequence space to wrap. (COZMO-56)
+    RECOVER_TIMEOUT = 1.0
+
     def __init__(
         self,
         sock: socket.socket,
@@ -241,6 +256,8 @@ class ReceiveThread(Thread):
         self.received_packets = 0
         # Number of packets, delivered to the application layer.
         self.delivered_packets = 0
+        # Last time a packet was delivered (for jam detection).
+        self._last_delivered_at = time.perf_counter()
 
     def stop(self) -> None:
         self.stop_flag = True
@@ -323,6 +340,39 @@ class ReceiveThread(Thread):
                 self.disconnect()
                 return
             self.handle_pkt(pkt)
+        # Deliver in-order packets. If the window is jammed on a lost
+        # sequence number (which the robot never retransmits), jump past
+        # the gap so the live stream resumes instead of stalling until
+        # the sequence space wraps. (COZMO-56)
+        self.deliver_sequence()
+        if time.perf_counter() - self._last_delivered_at > self.RECOVER_TIMEOUT:
+            self._recover_jammed_window(frame)
+
+    def _recover_jammed_window(self, frame: Frame) -> None:
+        """Jump the receive window past a long-stuck gap of lost packets."""
+        expected = self.window.expected_seq
+        # Earliest packet present at/after the stuck position.
+        recovered_seq = None
+        for i in range(self.window.size):
+            seq = (expected + i) % MAX_SEQ
+            if self.window.window[seq % self.window.size] is not None:
+                recovered_seq = seq
+                break
+        if recovered_seq is None:
+            # Nothing buffered — resume from after this frame's last packet.
+            recovered_seq = (frame.seq + 1) % MAX_SEQ
+        elif recovered_seq == expected:
+            # Not actually jammed (idle link, not a stuck gap).
+            self._last_delivered_at = time.perf_counter()
+            return
+        gap = (recovered_seq - expected) % MAX_SEQ
+        logger_protocol.warning(
+            "Receive window jumped past %d lost packet(s) (expected seq %d).",
+            gap,
+            expected,
+        )
+        self.window.recover(recovered_seq)
+        self._last_delivered_at = time.perf_counter()
         self.deliver_sequence()
 
     def handle_pkt(self, pkt: Packet) -> None:
@@ -342,6 +392,7 @@ class ReceiveThread(Thread):
 
     def deliver(self, pkt: Packet):
         self.delivered_packets += 1
+        self._last_delivered_at = time.perf_counter()
         self.delivery_handler(pkt)
 
     def reset(self):

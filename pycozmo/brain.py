@@ -306,14 +306,23 @@ class Brain:
     # Camera lifecycle (COZMO-22)
     # ------------------------------------------------------------------
 
-    def enable_camera_persistent(self, cli, resolution):
-        """Enable the Cozmo camera at startup and keep it on regardless of viewers."""
+    def enable_camera_persistent(self, cli, resolution, camera_fps: float = 12.0):
+        """Enable the Cozmo camera at startup and keep it on regardless of viewers.
+
+        Uses SingleShot mode with an fps cap: Stream mode (~30 fps) saturates
+        the lossy Cozmo AP and drops the link within a minute (COZMO-20),
+        while SingleShot caps the inbound rate and self-heals from frame loss
+        (each lost frame is simply re-requested). (COZMO-56)
+        """
         fs = self.frame_state
         fs.camera_resolution = resolution
+        self._camera_fps = camera_fps
         cli.enable_camera(
             enable=True,
             color=False,
             resolution=resolution,
+            single_shot=True,
+            fps=camera_fps,
         )
         cli.set_camera_params(
             gain=0.0,
@@ -322,7 +331,7 @@ class Brain:
         )
         fs.camera_active = True
         fs.camera_enabled_at = time.time()
-        print("Cozmo camera enabled at startup")
+        print(f"Cozmo camera enabled at startup ({camera_fps} fps, single-shot)")
 
     def post_calibration(self, cli, resolution) -> None:
         """Return the camera to live auto-exposure after a manual calibration.
@@ -336,6 +345,8 @@ class Brain:
             enable=True,
             color=False,
             resolution=resolution,
+            single_shot=True,
+            fps=getattr(self, "_camera_fps", 12.0),
         )
         cli.set_camera_params(
             gain=0.0,
@@ -415,6 +426,8 @@ class Brain:
             enable=True,
             color=color,
             resolution=resolution,
+            single_shot=True,
+            fps=getattr(self, "_camera_fps", 12.0),
         )
 
         # Store resolution in frame state

@@ -171,6 +171,34 @@ class TestReceiveWindow(unittest.TestCase):
                     break
         self.assertEqual(expected_sequence, received_sequence)
 
+    def test_lost_packet_jams_delivery(self):
+        """A missing sequence number blocks delivery until recover()."""
+        # Seq 0 is lost (never arrives); seqs 2, 3 arrive and buffer.
+        for seq, data in ((2, "c"), (3, "d")):
+            self.w.put(seq, data)
+        # Jammed: expected seq 0 is empty, nothing can be delivered.
+        self.assertIsNone(self.w.get())
+        # Window fills and further packets are dropped.
+        self.assertTrue(self.w.is_out_of_order(4))
+        # recover() jumps past the gap and delivery resumes from seq 2.
+        self.w.recover(2)
+        received = []
+        while True:
+            data = self.w.get()
+            if data:
+                received.append(data)
+            else:
+                break
+        self.assertEqual(received, ["c", "d"])
+
+    def test_recover_wrapped(self):
+        """recover() must handle sequence wraparound."""
+        self.w.expected_seq = 7
+        self.w.last_seq = (self.w.expected_seq + self.w.size - 1) % self.w.max_seq
+        self.w.recover(0)
+        self.assertEqual(self.w.expected_seq, 0)
+        self.assertEqual(self.w.last_seq, 3)
+
 
 class TestSendWindow(unittest.TestCase):
     def setUp(self):
