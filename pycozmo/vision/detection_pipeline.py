@@ -10,7 +10,6 @@ from dataclasses import dataclass
 
 import cv2
 import numpy as np
-from PIL import Image
 
 from pycozmo import logger
 from pycozmo.vision.camera_calibration import CameraCalibration
@@ -132,14 +131,16 @@ class DetectionPipeline:
             )
         return measurements
 
-    def detect_faces(
-        self, image: Image.Image, head_angle_rad: float = 0.0
-    ) -> list:
+    def detect_faces(self, img_bgr: np.ndarray, head_angle_rad: float = 0.0) -> list:
         """Detect the closest face and return with 3D camera-frame position.
 
         Always returns at most one detection.  No multi-face tracking —
         we cannot re-identify faces across frames, so we just report the
         single best (largest / closest) face each frame.
+
+        Args:
+            img_bgr: Image as BGR numpy array (already converted by caller).
+            head_angle_rad: Current head tilt angle in radians.
 
         Returns:
             List with zero or one FaceDetection (position_mm in camera frame).
@@ -149,7 +150,6 @@ class DetectionPipeline:
         if not self.enable_face_detection:
             return []
 
-        img_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         detections = self.face_detector.detect(img_bgr)
 
         # Store measurements for downstream (WorldMap, events)
@@ -179,22 +179,22 @@ class DetectionPipeline:
         """
 
     def detect_cubes(
-        self, image: Image.Image, head_angle_rad: float = 0.0
+        self, img_bgr: np.ndarray, head_angle_rad: float = 0.0
     ) -> list[CubeDetection]:
         """
         Detect cubes in the given camera image.
 
         Args:
-            image: PIL Image from the robot's camera
+            img_bgr: Image as BGR numpy array (already converted by caller).
+            image: Original PIL Image (unused, kept for API compatibility).
             head_angle_rad: Current head tilt angle in radians (positive = looking up)
 
         Returns:
             List of detected cubes with 3D tracking
         """
         timestamp = time.time()
-        img_array = np.array(image)
 
-        detections = self._detect_cubes(img_array, head_angle_rad)
+        detections = self._detect_cubes(img_bgr, head_angle_rad)
 
         # Add timestamps
         for det in detections:
@@ -203,7 +203,7 @@ class DetectionPipeline:
         return detections
 
     def _detect_cubes(
-        self, img_array: np.ndarray, head_angle_rad: float = 0.0
+        self, img_bgr: np.ndarray, head_angle_rad: float = 0.0
     ) -> list[CubeDetection]:
         """
         Detect cubes using the injected detector with 3D tracking.
@@ -212,18 +212,13 @@ class DetectionPipeline:
         max-down tilt) on the first successful detection.
 
         Args:
-            img_array: Image as numpy array (RGB from PIL)
+            img_bgr: Image as BGR numpy array (already converted by caller).
             head_angle_rad: Current head tilt angle in radians (positive = looking up)
 
         Returns:
             List of detected cubes with 3D information
         """
         try:
-            import cv2
-
-            # Convert RGB to BGR for OpenCV
-            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-
             # Robot center detection: measured exactly once during startup
             # calibration (head at max-down). Once a measurement succeeds the
             # value is remembered and detection never runs again.

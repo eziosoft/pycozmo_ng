@@ -56,46 +56,49 @@ class TestFloorPipeline:
         assert occ_map_img is None
 
     def test_process_enabled_produces_output(self):
-        from PIL import Image
+        import cv2
 
         cal = _make_camera_calibration()
         fp = FloorPipeline(cal, enable_floor_projection=True, enable_occupancy_map=True)
-        img = Image.fromarray(np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8))
+        rgb = np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8)
+        img_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         robot_pose = MagicMock()
         robot_pose.position.x = 0.0
         robot_pose.position.y = 0.0
         robot_pose.rotation.angle_z.radians = 0.0
 
-        floor_img, occ_grid, occ_map_img = fp.process(img, 0.0, robot_pose)
+        floor_img, occ_grid, occ_map_img = fp.process(img_bgr, 0.0, robot_pose)
         assert floor_img is not None
         assert occ_grid is not None
         assert occ_map_img is not None
         assert floor_img.ndim == 3  # BGR
 
     def test_process_enabled_without_occupancy(self):
-        from PIL import Image
+        import cv2
 
         cal = _make_camera_calibration()
         fp = FloorPipeline(cal, enable_floor_projection=True, enable_occupancy_map=False)
-        img = Image.fromarray(np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8))
+        rgb = np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8)
+        img_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         robot_pose = MagicMock()
         robot_pose.position.x = 0.0
         robot_pose.position.y = 0.0
         robot_pose.rotation.angle_z.radians = 0.0
 
-        floor_img, occ_grid, occ_map_img = fp.process(img, 0.0, robot_pose)
+        floor_img, occ_grid, occ_map_img = fp.process(img_bgr, 0.0, robot_pose)
         assert floor_img is not None
         assert occ_grid is not None
         assert occ_map_img is None
 
     def test_process_none_pose_skips_occupancy(self):
-        from PIL import Image
+        import cv2
 
         cal = _make_camera_calibration()
         fp = FloorPipeline(cal, enable_floor_projection=True, enable_occupancy_map=True)
-        img = Image.fromarray(np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8))
+        rgb = np.random.randint(0, 255, (240, 320, 3), dtype=np.uint8)
+        img_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
-        floor_img, occ_grid, occ_map_img = fp.process(img, 0.0, None)
+        floor_img, occ_grid, occ_map_img = fp.process(img_bgr, 0.0, None)
         assert floor_img is not None
         assert occ_grid is not None
         assert occ_map_img is None  # No robot pose → no occupancy update

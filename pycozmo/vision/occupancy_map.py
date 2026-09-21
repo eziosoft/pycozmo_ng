@@ -76,6 +76,11 @@ class OccupancyMap:
         self._origin_y: float = 0.0
         self._origin_set: bool = False
 
+        # Pre-allocated buffers (avoid per-frame allocation)
+        self._vote_delta: np.ndarray = np.zeros(
+            (self._grid_cells, self._grid_cells), dtype=np.int32
+        )
+
         # Parameters
         self._inflation_radius = inflation_radius
         self._free_threshold = free_threshold
@@ -183,18 +188,32 @@ class OccupancyMap:
         # nudges the cell's signed counter toward ±cap; the cap is what bounds
         # flip latency (how soon a cell reacts to a new obstacle / freed path),
         # independent of how long the previous state was held.
-        vote_delta = np.zeros_like(self._votes)
-        np.add.at(
-            vote_delta,
-            (row[in_bounds], col[in_bounds]),
-            is_occupied[in_bounds].astype(np.int32),
+        # Use np.bincount (vectorized) instead of np.add.at (slow scatter).
+        row_in = row[in_bounds]
+        col_in = col[in_bounds]
+        flat_idx = row_in * self._grid_cells + col_in
+
+        occ_mask = is_occupied[in_bounds]
+        free_mask = is_free[in_bounds]
+
+        self._vote_delta[:] = 0
+        if np.any(occ_mask):
+            occ_counts = np.bincount(
+                flat_idx[occ_mask], minlength=self._grid_cells * self._grid_cells
+            )
+            self._vote_delta.ravel()[: len(occ_counts)] += occ_counts.astype(np.int32)
+        if np.any(free_mask):
+            free_counts = np.bincount(
+                flat_idx[free_mask], minlength=self._grid_cells * self._grid_cells
+            )
+            self._vote_delta.ravel()[: len(free_counts)] -= free_counts.astype(np.int32)
+
+        np.clip(
+            self._votes + self._vote_delta,
+            -self._vote_cap,
+            self._vote_cap,
+            out=self._votes,
         )
-        np.add.at(
-            vote_delta,
-            (row[in_bounds], col[in_bounds]),
-            -is_free[in_bounds].astype(np.int32),
-        )
-        self._votes = np.clip(self._votes + vote_delta, -self._vote_cap, self._vote_cap)
 
         # --- Reclassify --------------------------------------------------
         self._grid[self._votes == 0] = UNKNOWN
@@ -216,7 +235,8 @@ class OccupancyMap:
         img = np.full((self._grid_cells, self._grid_cells, 3), 40, dtype=np.uint8)
         img[self._grid == FREE] = [0, 200, 0]
         img[self._grid == OCCUPIED] = [0, 0, 200]
-        return np.flipud(np.fliplr(np.transpose(img, (1, 0, 2))))
+        # Single combined flip+transpose (avoids 3 intermediate arrays)
+        return np.ascontiguousarray(img[::-1, ::-1].transpose(1, 0, 2))
 
     @property
     def grid(self) -> np.ndarray:

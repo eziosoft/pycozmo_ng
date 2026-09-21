@@ -6,10 +6,13 @@ a reference to Brain itself. This is an INTERNAL class - use Cozmo
 as the public API.
 """
 
+import asyncio
 import time
 from typing import ClassVar
 
+import cv2
 import numpy as np
+from PIL import Image
 
 import pycozmo
 from pycozmo import event
@@ -170,12 +173,27 @@ class Brain:
 
         # Register camera image handler
         def on_camera_image(cli_arg, image):
-            self._on_camera_image(
-                cli_arg,
-                image,
-                process_every_n_frames,
-                undistort,
-            )
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None and loop.is_running():
+                asyncio.ensure_future(
+                    self._on_camera_image(
+                        cli_arg,
+                        image,
+                        process_every_n_frames,
+                        undistort,
+                    )
+                )
+            else:
+                # Fallback: run synchronously (e.g. during tests)
+                self._process_frame_sync(
+                    cli_arg,
+                    image,
+                    process_every_n_frames,
+                    undistort,
+                )
 
         cli.add_handler(event.EvtNewRawCameraImage, on_camera_image)
 
@@ -184,14 +202,14 @@ class Brain:
             f"{process_every_n_frames} frame{'s' if process_every_n_frames > 1 else ''})"
         )
 
-    def _on_camera_image(
+    async def _on_camera_image(
         self,
         cli,
         image,
         process_every_n_frames: int,
         undistort: bool,
     ):
-        """Internal handler for camera images — runs the full vision pipeline."""
+        """Async handler for camera images — offloads CPU work to thread pool."""
         self.frame_handler.on_raw_camera_image(cli, image)
         self.web_streamer.push_raw_frame(image)
 
@@ -202,32 +220,52 @@ class Brain:
         if self._vision_frame_counter % process_every_n_frames != 0:
             return
 
-        try:
-            import cv2
-            from PIL import Image
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            self._process_frame_sync,
+            cli,
+            image,
+            process_every_n_frames,
+            undistort,
+        )
 
+    def _process_frame_sync(
+        self,
+        cli,
+        image,
+        process_every_n_frames: int,
+        undistort: bool,
+    ):
+        """CPU-heavy vision pipeline — runs in thread pool executor."""
+
+        try:
             # Get current head angle from robot state
             head_angle_rad = (
                 cli.head_angle.radians if hasattr(cli, "head_angle") else 0.0
             )
 
+            # Single PIL→numpy→BGR conversion (reused by all downstream)
+            img_array = np.array(image)
+            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+
             # Undistort the image using camera calibration (if enabled)
             if undistort:
-                img_array = np.array(image)  # RGB
-                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
                 undistorted_bgr = cv2.undistort(
                     img_bgr,
                     self.detection_pipeline.camera_calibration.camera_matrix,
                     self.detection_pipeline.camera_calibration.distortion_coefficients,
                 )
-                undistorted_rgb = cv2.cvtColor(undistorted_bgr, cv2.COLOR_BGR2RGB)
-                undistorted_image = Image.fromarray(undistorted_rgb)
             else:
-                undistorted_image = image  # Use original image without undistortion
+                undistorted_bgr = img_bgr
 
-            # Detect cubes (every processed frame)
+            # Convert to PIL for annotation (only one conversion needed)
+            undistorted_rgb = cv2.cvtColor(undistorted_bgr, cv2.COLOR_BGR2RGB)
+            undistorted_image = Image.fromarray(undistorted_rgb)
+
+            # Detect cubes — pass BGR numpy directly (avoids re-conversion)
             cube_detections = self.detection_pipeline.detect_cubes(
-                undistorted_image, head_angle_rad
+                undistorted_bgr, head_angle_rad
             )
 
             # Detect faces (every Nth processed frame)
@@ -237,12 +275,12 @@ class Brain:
             face_every = getattr(self, "_face_detect_every_n_frames", 1)
             if self._face_frame_counter % face_every == 0:
                 face_detections = self.detection_pipeline.detect_faces(
-                    undistorted_image, head_angle_rad
+                    undistorted_bgr, head_angle_rad
                 )
             else:
                 face_detections = []
 
-            # Annotate image
+            # Annotate image (single copy inside)
             annotated_image = self.annotation_engine.detect_and_annotate(
                 undistorted_image,
                 cube_detections,
@@ -274,11 +312,11 @@ class Brain:
             # Feed cube measurements to web viewer for 3D display
             self.web.update_web_viewer()
 
-            # Floor projection (optional)
+            # Floor projection (optional) — pass BGR numpy directly
             if self.floor_pipeline is not None:
                 robot_pose = cli.pose if hasattr(cli, "pose") else None
                 floor_img, occ_grid, occ_map_image = self.floor_pipeline.process(
-                    undistorted_image, head_angle_rad, robot_pose
+                    undistorted_bgr, head_angle_rad, robot_pose
                 )
                 if floor_img is not None:
                     cli.dispatch(event.EvtFloorProjectedImage, cli, floor_img, occ_grid)

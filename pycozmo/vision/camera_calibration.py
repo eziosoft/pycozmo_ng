@@ -54,24 +54,29 @@ class CameraCalibration:
     fov_y: float | None = None
 
     def __post_init__(self):
-        """Compute FOV if not provided."""
+        """Compute FOV and cache numpy arrays."""
         if self.fov_x is None:
             self.fov_x = 2.0 * np.arctan(self.image_width / (2.0 * self.fx))
         if self.fov_y is None:
             self.fov_y = 2.0 * np.arctan(self.image_height / (2.0 * self.fy))
+        # Cache as instance attributes to avoid per-access allocation
+        self._camera_matrix = np.array(
+            [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        self._distortion_coefficients = np.array(
+            [self.k1, self.k2, self.p1, self.p2, self.k3], dtype=np.float64
+        )
 
     @property
     def camera_matrix(self) -> np.ndarray:
         """Get the camera intrinsic matrix K."""
-        return np.array(
-            [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]],
-            dtype=np.float64,
-        )
+        return self._camera_matrix
 
     @property
     def distortion_coefficients(self) -> np.ndarray:
         """Get distortion coefficients [k1, k2, p1, p2, k3]."""
-        return np.array([self.k1, self.k2, self.p1, self.p2, self.k3], dtype=np.float64)
+        return self._distortion_coefficients
 
 
 class CameraCalibrationRetriever:

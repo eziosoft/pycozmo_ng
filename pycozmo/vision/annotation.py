@@ -40,31 +40,34 @@ class AnnotationEngine:
         self.show_confidence = show_confidence
         self.show_distance = show_distance
 
+        # Cache fonts (avoid file I/O per detection per frame)
+        self._fonts: dict[int, ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
+
     def _get_font(self, size: int = 12):
-        """Load a font with fallbacks."""
+        """Load a font with fallbacks (cached)."""
+        if size in self._fonts:
+            return self._fonts[size]
         try:
-            return ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size)
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size)
         except OSError:
             try:
-                return ImageFont.truetype("arial.ttf", size)
+                font = ImageFont.truetype("arial.ttf", size)
             except OSError:
-                return ImageFont.load_default()
+                font = ImageFont.load_default()
+        self._fonts[size] = font
+        return font
 
     def draw_detections(
         self, image: Image.Image, detections: list[CubeDetection]
-    ) -> Image.Image:
+    ) -> None:
         """
-        Draw detection bounding boxes and labels on an image.
+        Draw detection bounding boxes and labels on an image (in place).
 
         Args:
-            image: PIL Image to annotate
+            image: PIL Image to annotate (mutated in place).
             detections: List of cube detections to draw
-
-        Returns:
-            Annotated PIL Image (a copy of the original)
         """
-        annotated_image = image.copy()
-        draw = ImageDraw.Draw(annotated_image)
+        draw = ImageDraw.Draw(image)
 
         font = self._get_font(12)
 
@@ -111,25 +114,19 @@ class AnnotationEngine:
 
                 draw.text((x1, y1 - 15), label, fill=color, font=font)
 
-        return annotated_image
-
     def draw_face_detections(
         self, image: Image.Image, detections: list[FaceDetection]
-    ) -> Image.Image:
-        """Draw face bounding boxes on the image.
+    ) -> None:
+        """Draw face bounding boxes on the image (in place).
 
         Args:
-            image: PIL Image to annotate.
+            image: PIL Image to annotate (mutated in place).
             detections: List of face detections to draw.
-
-        Returns:
-            Annotated PIL Image (a copy of the original).
         """
         if not detections:
-            return image
+            return
 
-        annotated = image.copy()
-        draw = ImageDraw.Draw(annotated)
+        draw = ImageDraw.Draw(image)
 
         font = self._get_font(11)
 
@@ -145,28 +142,22 @@ class AnnotationEngine:
             label = f"Face {face_id} | {z_mm:.0f}mm"
             draw.text((x1, y1 - 13), label, fill=color, font=font)
 
-        return annotated
-
     def draw_robot_center(
         self, image: Image.Image, result: RobotCenterResult | None = None
-    ) -> Image.Image:
-        """Draw robot center detection overlay on the image.
+    ) -> None:
+        """Draw robot center detection overlay on the image (in place).
 
         Shows the two detected circles, the midpoint (robot center), and
         the lateral offset value.
 
         Args:
-            image: PIL Image to annotate.
-            result: RobotCenterResult to draw. If None, returns image unchanged.
-
-        Returns:
-            Annotated PIL Image (a copy of the original).
+            image: PIL Image to annotate (mutated in place).
+            result: RobotCenterResult to draw. If None, returns without changes.
         """
         if result is None or not result.detected:
-            return image
+            return
 
-        annotated = image.copy()
-        draw = ImageDraw.Draw(annotated)
+        draw = ImageDraw.Draw(image)
 
         font = self._get_font(11)
 
@@ -200,8 +191,6 @@ class AnnotationEngine:
         label = f"center: {result.lateral_offset_mm:+.1f}mm"
         draw.text((5, 5), label, fill=(0, 255, 255), font=font)
 
-        return annotated
-
     def detect_and_annotate(
         self,
         image: Image.Image,
@@ -219,10 +208,11 @@ class AnnotationEngine:
             robot_center_result: Optional robot center result to draw
 
         Returns:
-            Fully annotated PIL Image
+            Fully annotated PIL Image (single copy of the original)
         """
-        annotated = self.draw_detections(image, cube_detections)
-        annotated = self.draw_face_detections(annotated, face_detections)
+        annotated = image.copy()
+        self.draw_detections(annotated, cube_detections)
+        self.draw_face_detections(annotated, face_detections)
         if robot_center_result is not None:
-            annotated = self.draw_robot_center(annotated, robot_center_result)
+            self.draw_robot_center(annotated, robot_center_result)
         return annotated

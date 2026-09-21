@@ -300,27 +300,27 @@ class CozmoCubeDetector:
 
     def _denoise_image(self, gray_image):
         """
-        Apply noise reduction to grayscale image using Non-Local Means Denoising.
+        Apply noise reduction to grayscale image.
 
-        This algorithm is particularly effective for images from poor quality cameras
-        by removing pixel noise while preserving edges and important features.
+        Uses bilateralFilter by default (fast, edge-preserving). Falls back to
+        fastNlMeansDenoising only for very high denoise_strength (>10).
 
         :param gray_image: Input grayscale image
         :return: Denoised grayscale image
         """
-        # Use fastNlMeansDenoising for grayscale images
-        # Parameters:
-        # - h: filter strength. Higher h value removes more noise but also removes details
-        #      Recommended: 3-10 for typical noise, 10-15 for very noisy images
-        # - templateWindowSize: size of template patch (should be odd), typically 7
-        # - searchWindowSize: size of search area (should be odd), typically 21
-        denoised = cv2.fastNlMeansDenoising(
-            gray_image,
-            h=self.denoise_strength,
-            templateWindowSize=7,
-            searchWindowSize=21,
-        )
-        return denoised
+        if self.denoise_strength > 10:
+            # NLMeans for extreme denoising (slow, ~40-200ms)
+            return cv2.fastNlMeansDenoising(
+                gray_image,
+                h=self.denoise_strength,
+                templateWindowSize=7,
+                searchWindowSize=21,
+            )
+        else:
+            # BilateralFilter: fast (~2-5ms), edge-preserving
+            # Map denoise_strength (1-10) to bilateral d parameter (5-15)
+            d = max(3, self.denoise_strength)
+            return cv2.bilateralFilter(gray_image, d, 75, 75)
 
     def _run_detection_pass(self, img):
         """Internal detection logic for a single enhanced grayscale image."""

@@ -4,7 +4,6 @@ Wraps :class:`FloorProjector` and :class:`OccupancyMap` into a single
 processing stage called by :class:`AnnotatedVisionProcessor`.
 """
 
-import cv2
 import numpy as np
 
 from pycozmo import logger
@@ -88,14 +87,14 @@ class FloorPipeline:
 
     def process(
         self,
-        undistorted_image,
+        img_bgr: np.ndarray,
         head_angle_rad: float,
         robot_pose,
     ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None]:
         """Project the camera image onto the floor and accumulate occupancy.
 
         Args:
-            undistorted_image: Undistorted camera image (PIL or numpy).
+            img_bgr: Camera image as BGR numpy array (already converted by caller).
             head_angle_rad: Current head tilt angle (rad).
             robot_pose: ``cli.pose`` — robot world-frame pose (may be ``None``).
 
@@ -105,9 +104,6 @@ class FloorPipeline:
         """
         if self.floor_projector is None:
             return None, None, None
-
-        img_array = np.array(undistorted_image)
-        img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
 
         floor_img = self.floor_projector.project(img_bgr, head_angle_rad)
         occ_grid = self.floor_projector.compute_occupancy_grid(floor_img)
