@@ -271,7 +271,7 @@ class Brain:
             if anim_ctrl is not None:
                 if face_detections:
                     anim_ctrl.set_face_expression(Happiness())
-                elif self._face_frame_counter % face_every == 0:
+                elif self._face_frame_counter % self._face_detect_every_n_frames == 0:
                     # Only clear when we actually ran detection and found nothing
                     anim_ctrl.clear_face_expression()
 
