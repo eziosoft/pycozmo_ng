@@ -144,7 +144,8 @@ pycozmo/           # Main library
 │   ├── viewer_server.py # WebViewerServer — thin composition root
 │   ├── ws_server.py   # WSServer — WebSocket + HTTP lifecycle
 │   └── static/        # Three.js browser viewer (index.html, style.css)
-├── sound/         # SoundBank + audio encoding
+├── sound/         # SoundBank + audio encoding + TTS
+│   ├── tts.py     # TTS engine using pyttsx3 (espeak-ng backend)
 └── tests/         # Unit tests (pytest)
 ```
 
@@ -159,6 +160,7 @@ This branch includes:
 - **3D web viewer**: Three.js browser viewer with WebSocket state broadcast, MJPEG camera streams, occupancy grid overlay, procedural face streaming
 - **Navigation**: Navigator with cube approach, docking, point-to-point steering
 - **Cube BLE management**: CubeCycler, CubeManager, CubeMoveDetector with IMU-based movement tracking
+- **Offline TTS**: `Cozmo.say()` / `Client.say()` using pyttsx3 + espeak-ng, with WAV caching
 
 ## Important Notes
 
@@ -198,7 +200,8 @@ This branch includes:
 - Camera settings (gain, exposure, resolution, head light) configurable from browser
 
 ### Dependencies
-- Runtime: opencv-python, numpy, Pillow, scipy, PyOpenGL, pygame, aiohttp, websockets
+- Runtime: opencv-python, numpy, Pillow, scipy, PyOpenGL, pygame, aiohttp, websockets, pyttsx3
+- System (Pi): `espeak-ng` (TTS backend, `sudo apt-get install espeak-ng`)
 - Dev: pytest, ruff, mypy
 - JS: eslint (for web/static)
 - No CI/CD workflows configured
