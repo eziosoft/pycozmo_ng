@@ -96,9 +96,22 @@ class AnimationController:
         self.animations_enabled = False
         self.procedural_face_enabled = False
         self.latest_face_image = None  # latest PIL face for web viewer
+        self._face_expression = None  # override expression (e.g. Surprise)
 
     def _clear_last_image_pkt(self):
         self.last_image_pkt = protocol_encoder.DisplayImage(image=b"\x3f\x3f")
+
+    def set_face_expression(self, expression):
+        """Override the procedural face with a specific expression (e.g. Surprise).
+
+        The override persists until cleared with ``clear_face_expression()``.
+        While active, the random saccade generator is bypassed.
+        """
+        self._face_expression = expression
+
+    def clear_face_expression(self):
+        """Resume normal procedural face animation (random saccades)."""
+        self._face_expression = None
 
     def start(self):
         self.thread = Thread(daemon=True, name=__class__.__name__, target=self._run)
@@ -148,7 +161,10 @@ class AnimationController:
         pass
 
     def _get_face_image(self):
-        im = next(self.face_generator)
+        if self._face_expression is not None:
+            im = self._face_expression.render()
+        else:
+            im = next(self.face_generator)
         if not im:
             return None
         self.latest_face_image = im  # store for web viewer

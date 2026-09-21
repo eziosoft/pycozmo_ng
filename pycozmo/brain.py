@@ -15,6 +15,7 @@ import pycozmo
 from pycozmo import event
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.cubes.manager import CubeManager
+from pycozmo.display.expressions import Surprise
 from pycozmo.logger import logger_cubes
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
@@ -260,6 +261,15 @@ class Brain:
             # Dispatch cube/face events
             self.event_dispatcher.dispatch_cube_events(cli, cube_detections)
             self.event_dispatcher.dispatch_face_events(cli, face_detections)
+
+            # Set face expression based on detection
+            anim_ctrl = getattr(cli, "anim_controller", None)
+            if anim_ctrl is not None:
+                if face_detections:
+                    anim_ctrl.set_face_expression(Surprise())
+                elif self._face_frame_counter % face_every == 0:
+                    # Only clear when we actually ran detection and found nothing
+                    anim_ctrl.clear_face_expression()
 
             # Feed cube measurements to web viewer for 3D display
             self.web.update_web_viewer()
