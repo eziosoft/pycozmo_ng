@@ -163,6 +163,12 @@ class AnimationController:
     def _get_face_image(self):
         if self._face_expression is not None:
             im = self._face_expression.render()
+            if im:
+                import numpy as np
+                from PIL import Image
+
+                arr = np.array(im)
+                im = Image.fromarray(arr[::2])  # 128x64 → 128x32
         else:
             im = next(self.face_generator)
         if not im:
