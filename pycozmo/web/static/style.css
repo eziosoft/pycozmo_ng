@@ -96,39 +96,11 @@ html, body {
   overflow-y: auto;
 }
 
-/* ---- Camera panel ---- */
-#camera-panel {
-  display: flex;
-  flex-direction: column;
-  flex: 0 0 auto;
-}
-
-#camera-label {
-  padding: 8px 12px;
-  font-family: var(--font-display);
-  font-size: var(--text-caption);
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  background: var(--chrome);
-  border-bottom: 1px solid var(--border);
-}
-
-#camera-feed {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  object-fit: contain;
-  background: #000;
-  display: block;
-}
-
 /* ---- Annotated panel ---- */
 #annotated-panel {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  border-top: 1px solid var(--border);
 }
 
 #annotated-label {

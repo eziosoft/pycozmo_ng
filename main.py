@@ -62,18 +62,6 @@ def main():
         help="Floor grid resolution in mm/pixel (default: 5).",
     )
     parser.add_argument(
-        "--camera-fps",
-        type=float,
-        default=12.0,
-        metavar="N",
-        help=(
-            "Camera frame-rate cap (SingleShot mode, default: 12). Cozmo's "
-            "native Stream mode (~30 fps) saturates the lossy Cozmo AP and "
-            "drops the link within a minute; capping the rate keeps the "
-            "vision feed smooth without starving the control channel."
-        ),
-    )
-    parser.add_argument(
         "--face-detect-every",
         type=int,
         default=3,
@@ -135,7 +123,7 @@ def main():
                     "\n   Cubes will disconnect after idle timeout."
                 )
 
-            cozmo.enable_camera(camera_fps=args.camera_fps)
+            cozmo.enable_camera()
             cozmo.cli.set_camera_params(exposure_ms=30)
 
             # Robot center calibration

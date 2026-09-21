@@ -1,8 +1,8 @@
 """
 Web streamer — MJPEG frame streaming + WebSocket broadcasting for the web viewer.
 
-This module handles all web-facing frame publishing (camera, annotated, floor)
-and WebSocket state broadcasting. It's a thin adapter over WebViewerServer.
+This module handles all web-facing frame publishing (annotated, floor) and
+WebSocket state broadcasting. It's a thin adapter over WebViewerServer.
 """
 
 import time
@@ -26,12 +26,6 @@ class WebStreamer:
         self.frame_state = frame_state
 
     # --- Frame push methods (called from frame handlers) --------------------
-
-    def push_raw_frame(self, image) -> None:
-        """Publish raw camera frame for MJPEG streaming."""
-        if image is not None:
-            self.web_viewer.push_frame(image)
-        self._update_fps()
 
     def push_annotated_frame(self, annotated_image, detections) -> None:
         """Publish annotated camera frame and update detections."""
@@ -66,8 +60,8 @@ class WebStreamer:
 
     # --- Internal helpers ----------------------------------------------------
 
-    def _update_fps(self) -> None:
-        """Update FPS counter in frame state."""
+    def update_fps(self) -> None:
+        """Update FPS counter in frame state (called once per raw frame)."""
         elapsed = time.time() - self.frame_state.start_time
         if elapsed > 1.0:
             self.frame_state.fps = self.frame_state.frame_count / elapsed

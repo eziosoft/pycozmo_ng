@@ -45,7 +45,7 @@ class WebViewerServer:
     - :class:`MsgRouter` — browser message dispatch
     - :class:`WSServer` — WebSocket + HTTP lifecycle
     - :class:`FileServer` — static file serving
-    - :class:`MjpegEndpoint` — camera/annotated/floor MJPEG streams
+    - :class:`MjpegEndpoint` — annotated/floor MJPEG streams
     - :func:`build_state_json` — world→scene state serialization
     """
 
@@ -66,8 +66,6 @@ class WebViewerServer:
         self._dirty = False  # state changed since last broadcast
 
         # Camera frame sources (image, frame_id) — thread-safe via GIL
-        self._latest_image = None
-        self._image_id: int = 0
         self._latest_annotated_image = None
         self._annotated_image_id: int = 0
         self._latest_floor_image = None
@@ -102,16 +100,12 @@ class WebViewerServer:
         self._file_server = FileServer()
 
         # MJPEG endpoints — closures that return (image, frame_id)
-        def _get_camera_frame():
-            return self._latest_image, self._image_id
-
         def _get_annotated_frame():
             return self._latest_annotated_image, self._annotated_image_id
 
         def _get_floor_frame():
             return self._latest_floor_image, self._floor_image_id
 
-        self._mjpeg_camera = MjpegEndpoint(_get_camera_frame)
         self._mjpeg_annotated = MjpegEndpoint(_get_annotated_frame)
         self._mjpeg_floor = MjpegEndpoint(_get_floor_frame)
 
@@ -243,11 +237,6 @@ class WebViewerServer:
     def render(self) -> bool:
         """No-op for compatibility — web viewer renders in browser."""
         return True
-
-    def push_frame(self, image):
-        """Publish the latest camera frame for MJPEG streaming."""
-        self._latest_image = image
-        self._image_id += 1
 
     def push_annotated_frame(self, image):
         """Publish the latest annotated camera frame for MJPEG streaming."""
@@ -442,7 +431,6 @@ class WebViewerServer:
     def _register_http_routes(self, app) -> None:
         """Mount FileServer + MjpegEndpoint routes on the aiohttp app."""
         app.router.add_get("/", self._file_server.serve_index)
-        app.router.add_get("/video", self._mjpeg_camera.handle)
         app.router.add_get("/annotated-video", self._mjpeg_annotated.handle)
         app.router.add_get("/floor-video", self._mjpeg_floor.handle)
         app.router.add_get("/{filename}", self._file_server.serve_static)

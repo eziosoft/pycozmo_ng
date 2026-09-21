@@ -201,7 +201,7 @@ class Brain:
     ):
         """Handler for camera images — runs the full vision pipeline."""
         self.frame_handler.on_raw_camera_image(cli, image)
-        self.web_streamer.push_raw_frame(image)
+        self.web_streamer.update_fps()
 
         # Frame skipping for performance
         self._vision_frame_counter += 1
@@ -306,23 +306,20 @@ class Brain:
     # Camera lifecycle (COZMO-22)
     # ------------------------------------------------------------------
 
-    def enable_camera_persistent(self, cli, resolution, camera_fps: float = 12.0):
+    def enable_camera_persistent(self, cli, resolution):
         """Enable the Cozmo camera at startup and keep it on regardless of viewers.
 
-        Uses SingleShot mode with an fps cap: Stream mode (~30 fps) saturates
-        the lossy Cozmo AP and drops the link within a minute (COZMO-20),
-        while SingleShot caps the inbound rate and self-heals from frame loss
-        (each lost frame is simply re-requested). (COZMO-56)
+        Uses Stream mode (Cozmo's native ~30 fps). The camera stays on for
+        the whole session; this is the always-on counterpart to the lazy
+        camera lifecycle (COZMO-22), which toggles a second stream on/off
+        based on browser-tab activity.
         """
         fs = self.frame_state
         fs.camera_resolution = resolution
-        self._camera_fps = camera_fps
         cli.enable_camera(
             enable=True,
             color=False,
             resolution=resolution,
-            single_shot=True,
-            fps=camera_fps,
         )
         cli.set_camera_params(
             gain=0.0,
@@ -331,7 +328,7 @@ class Brain:
         )
         fs.camera_active = True
         fs.camera_enabled_at = time.time()
-        print(f"Cozmo camera enabled at startup ({camera_fps} fps, single-shot)")
+        print("Cozmo camera enabled at startup")
 
     def post_calibration(self, cli, resolution) -> None:
         """Return the camera to live auto-exposure after a manual calibration.
@@ -345,8 +342,6 @@ class Brain:
             enable=True,
             color=False,
             resolution=resolution,
-            single_shot=True,
-            fps=getattr(self, "_camera_fps", 12.0),
         )
         cli.set_camera_params(
             gain=0.0,
@@ -426,8 +421,6 @@ class Brain:
             enable=True,
             color=color,
             resolution=resolution,
-            single_shot=True,
-            fps=getattr(self, "_camera_fps", 12.0),
         )
 
         # Store resolution in frame state

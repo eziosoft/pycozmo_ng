@@ -19,10 +19,6 @@
   <div id="layout">
     <!-- Left column: camera feeds -->
     <div id="left-col">
-      <div id="camera-panel">
-        <div id="camera-label">Cozmo Camera</div>
-        <img id="camera-feed" src="/video" alt="Camera feed" />
-      </div>
       <div id="annotated-panel">
         <div id="annotated-label">Detections</div>
         <img id="annotated-feed" src="/annotated-video" alt="Annotated feed" />
@@ -208,7 +204,6 @@
     const FEED_MAX_RETRIES = 20;  // give up after ~50s so --no-camera feeds
                                   // don't hammer the server forever
     const feeds = [
-      { el: document.getElementById('camera-feed'), path: '/video' },
       { el: document.getElementById('annotated-feed'), path: '/annotated-video' },
       { el: document.getElementById('floor-feed'), path: '/floor-video' },
     ];

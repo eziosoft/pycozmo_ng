@@ -359,21 +359,16 @@ class Cozmo:
     # Camera control (convenience methods)
     # ------------------------------------------------------------------
 
-    def enable_camera(self, resolution=None, camera_fps: float = 12.0, **kwargs):
+    def enable_camera(self, resolution=None, **kwargs):
         """Enable the camera with optional resolution.
 
         Args:
             resolution: ImageResolution enum (default: QVGA)
-            camera_fps: Inbound frame rate cap (SingleShot mode). Lower
-                values reduce Cozmo-AP bandwidth; the link drops when the
-                stream saturates it (COZMO-20).
             **kwargs: Additional camera parameters (gain, exposure, etc.)
         """
         if resolution is None:
             resolution = pycozmo.protocol_encoder.ImageResolution.QVGA
-        self._brain.enable_camera_persistent(
-            self._cli, resolution, camera_fps=camera_fps
-        )
+        self._brain.enable_camera_persistent(self._cli, resolution)
         if kwargs:
             self._cli.set_camera_params(**kwargs)
 
