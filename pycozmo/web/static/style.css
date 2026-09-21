@@ -179,6 +179,34 @@ html, body {
   display: block;
 }
 
+/* ---- Face panel ---- */
+#face-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+}
+
+#face-label {
+  padding: 8px 12px;
+  font-family: var(--font-display);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+
+#face-canvas {
+  width: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: #000;
+  display: block;
+}
+
 /* ---- Right column: telemetry ---- */
 #right-col {
   flex: 0 0 280px;

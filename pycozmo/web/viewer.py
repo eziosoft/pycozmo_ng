@@ -31,7 +31,7 @@ class WebBridge:
         self.cli = None
 
     def update_web_viewer(self):
-        """Feed the latest cube and face measurements into the world map.
+        """Feed the latest cube, face, and procedural face measurements into the world map.
 
         Cubes that have been invalidated (moved, forget_cube) are
         suppressed until they are re-detected stably. (COZMO-34)
@@ -84,6 +84,13 @@ class WebBridge:
                 camera_lateral_offset_mm=lateral_offset,
                 label=f"Face {fm['face_id']}",
             )
+
+        # Push procedural face image to web viewer
+        anim_ctrl = getattr(self.cli, "anim_controller", None)
+        if anim_ctrl is not None:
+            face_im = getattr(anim_ctrl, "latest_face_image", None)
+            if face_im is not None:
+                self.web_viewer.push_face_image(face_im)
 
         self.web_viewer.broadcast()
 

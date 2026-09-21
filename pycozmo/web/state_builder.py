@@ -55,6 +55,7 @@ def build_state_json(
     start_time: float,
     force_occupancy: bool = False,
     camera_settings: dict | None = None,
+    face_png: str | None = None,
 ) -> str:
     """Serialize world-map state to JSON for the browser.
 
@@ -143,6 +144,10 @@ def build_state_json(
 
     if camera_settings is not None:
         state["camera_settings"] = dict(camera_settings)
+
+    # Include procedural face image if available.
+    if face_png is not None:
+        state["face_png"] = face_png
 
     # Include occupancy grid PNG if available — and only when it actually
     # changed (or the receiver needs a full snapshot, e.g. on connect).

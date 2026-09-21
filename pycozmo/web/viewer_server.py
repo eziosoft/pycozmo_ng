@@ -83,6 +83,9 @@ class WebViewerServer:
         self._occupancy_seq_sent: int = -1
         self._last_occupancy_encode_time: float = 0.0
 
+        # Procedural face (base64-encoded PNG for WebSocket)
+        self._latest_face_png: str | None = None
+
         # Broadcast coalescing
         self._broadcast_queue = None
 
@@ -284,6 +287,17 @@ class WebViewerServer:
         """Set the floor grid center (mm, body frame) for the browser overlay."""
         self._floor_center_mm = (center_x_mm, center_y_mm)
 
+    def push_face_image(self, pil_image) -> None:
+        """Publish the procedural face as a base64-encoded PNG for WebSocket."""
+        import base64
+        import io
+
+        if pil_image is None:
+            return
+        buf = io.BytesIO()
+        pil_image.save(buf, format="PNG")
+        self._latest_face_png = base64.b64encode(buf.getvalue()).decode("ascii")
+
     def close(self):
         """Stop the background server."""
         if self._ws_server.loop and self._ws_server.loop.is_running():
@@ -342,6 +356,7 @@ class WebViewerServer:
             self._start_time,
             force_occupancy,
             camera_settings=self._msg_router.camera_settings,
+            face_png=self._latest_face_png,
         )
         if self._latest_occupancy_png is not None and (
             force_occupancy or self._occupancy_seq != self._occupancy_seq_sent

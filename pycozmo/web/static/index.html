@@ -31,6 +31,10 @@
         <div id="floor-label">Floor (Bird's Eye)</div>
         <img id="floor-feed" src="/floor-video" alt="Floor view" />
       </div>
+      <div id="face-panel">
+        <div id="face-label">Cozmo Face</div>
+        <canvas id="face-canvas" width="128" height="64"></canvas>
+      </div>
     </div>
 
     <!-- Center column: 3D viewer -->
@@ -622,6 +626,26 @@
     }
 
     // -----------------------------------------------------------------------
+    // Procedural face display
+    // -----------------------------------------------------------------------
+    const faceCanvas = document.getElementById('face-canvas');
+    const faceCtx = faceCanvas.getContext('2d');
+
+    function applyFacePng(pngBase64) {
+      if (!pngBase64) return;
+      const img = new Image();
+      img.onload = () => {
+        if (faceCanvas.width !== img.naturalWidth || faceCanvas.height !== img.naturalHeight) {
+          faceCanvas.width = img.naturalWidth;
+          faceCanvas.height = img.naturalHeight;
+        }
+        faceCtx.clearRect(0, 0, faceCanvas.width, faceCanvas.height);
+        faceCtx.drawImage(img, 0, 0);
+      };
+      img.src = 'data:image/png;base64,' + pngBase64;
+    }
+
+    // -----------------------------------------------------------------------
     // Path trail (COZMO-27)
     // -----------------------------------------------------------------------
     const PATH_MAX_POINTS = 5000;
@@ -1086,6 +1110,9 @@
       // Occupancy map overlay
       if (state.occupancy_png) applyOccupancyPng(state.occupancy_png);
       if (state.occupancy_origin) applyOccupancyOrigin(state.occupancy_origin);
+
+      // Procedural face
+      if (state.face_png) applyFacePng(state.face_png);
 
       // Camera settings
       if (state.camera_settings) applyCameraSettings(state.camera_settings);

@@ -95,6 +95,7 @@ class AnimationController:
         self.face_generator = iter(procedural_face.ProceduralFaceGenerator())
         self.animations_enabled = False
         self.procedural_face_enabled = False
+        self.latest_face_image = None  # latest PIL face for web viewer
 
     def _clear_last_image_pkt(self):
         self.last_image_pkt = protocol_encoder.DisplayImage(image=b"\x3f\x3f")
@@ -150,6 +151,7 @@ class AnimationController:
         im = next(self.face_generator)
         if not im:
             return None
+        self.latest_face_image = im  # store for web viewer
         encoder = image_encoder.ImageEncoder(im)
         buf = bytes(encoder.encode())
         image_pkt = protocol_encoder.DisplayImage(image=buf)
