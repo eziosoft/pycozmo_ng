@@ -6,7 +6,6 @@ a reference to Brain itself. This is an INTERNAL class - use Cozmo
 as the public API.
 """
 
-import asyncio
 import time
 from typing import ClassVar
 
@@ -172,37 +171,13 @@ class Brain:
         self.web.detection_pipeline = self.detection_pipeline
 
         # Register camera image handler
-        # The event loop is captured lazily on the first frame — the handler
-        # runs in the connection's receive thread, which has its own loop.
-        self._event_loop = None
-
         def on_camera_image(cli_arg, image):
-            # Lazy event loop capture: first frame arrives on the connection
-            # thread, which has a running asyncio loop.
-            if self._event_loop is None:
-                try:
-                    self._event_loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    pass
-
-            if self._event_loop is not None and self._event_loop.is_running():
-                self._event_loop.call_soon_threadsafe(
-                    asyncio.ensure_future,
-                    self._on_camera_image(
-                        cli_arg,
-                        image,
-                        process_every_n_frames,
-                        undistort,
-                    ),
-                )
-            else:
-                # Fallback: run synchronously (e.g. during tests)
-                self._process_frame_sync(
-                    cli_arg,
-                    image,
-                    process_every_n_frames,
-                    undistort,
-                )
+            self._on_camera_image(
+                cli_arg,
+                image,
+                process_every_n_frames,
+                undistort,
+            )
 
         cli.add_handler(event.EvtNewRawCameraImage, on_camera_image)
 
@@ -211,14 +186,14 @@ class Brain:
             f"{process_every_n_frames} frame{'s' if process_every_n_frames > 1 else ''})"
         )
 
-    async def _on_camera_image(
+    def _on_camera_image(
         self,
         cli,
         image,
         process_every_n_frames: int,
         undistort: bool,
     ):
-        """Async handler for camera images — offloads CPU work to thread pool."""
+        """Handler for camera images — runs the full vision pipeline."""
         self.frame_handler.on_raw_camera_image(cli, image)
         self.web_streamer.push_raw_frame(image)
 
@@ -228,25 +203,6 @@ class Brain:
         self._vision_frame_counter += 1
         if self._vision_frame_counter % process_every_n_frames != 0:
             return
-
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            self._process_frame_sync,
-            cli,
-            image,
-            process_every_n_frames,
-            undistort,
-        )
-
-    def _process_frame_sync(
-        self,
-        cli,
-        image,
-        process_every_n_frames: int,
-        undistort: bool,
-    ):
-        """CPU-heavy vision pipeline — runs in thread pool executor."""
 
         try:
             # Get current head angle from robot state
