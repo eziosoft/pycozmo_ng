@@ -15,7 +15,7 @@ import pycozmo
 from pycozmo import event
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.cubes.manager import CubeManager
-from pycozmo.display.expressions import Surprise
+from pycozmo.display.expressions import Happiness
 from pycozmo.logger import logger_cubes
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
@@ -266,7 +266,7 @@ class Brain:
             anim_ctrl = getattr(cli, "anim_controller", None)
             if anim_ctrl is not None:
                 if face_detections:
-                    anim_ctrl.set_face_expression(Surprise())
+                    anim_ctrl.set_face_expression(Happiness())
                 elif self._face_frame_counter % face_every == 0:
                     # Only clear when we actually ran detection and found nothing
                     anim_ctrl.clear_face_expression()
