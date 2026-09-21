@@ -8,7 +8,6 @@ thread-safe (image, frame_id) pair and JPEG-encodes on the event loop.
 from __future__ import annotations
 
 import asyncio
-import time
 from collections.abc import Callable
 from typing import Any
 
@@ -28,12 +27,9 @@ class MjpegEndpoint:
         get_frame: Callable[..., tuple[Any, int]],
         *,
         encode_quality: int = 70,
-        max_fps: float = 15.0,
     ) -> None:
         self._get_frame = get_frame
         self._encode_quality = encode_quality
-        self._max_fps = max_fps
-        self._last_send_time: float = 0.0
 
     async def handle(self, request):
         """aiohttp handler — streams JPEG frames as multipart/x-mixed-replace."""
@@ -59,15 +55,7 @@ class MjpegEndpoint:
                     await asyncio.sleep(0.002)
                     continue
 
-                # Frame rate cap: skip if we're still above max_fps
-                now = time.monotonic()
-                min_interval = 1.0 / self._max_fps
-                if now - self._last_send_time < min_interval:
-                    await asyncio.sleep(0.002)
-                    continue
-
                 last_frame_id = frame_id
-                self._last_send_time = now
                 jpeg = await asyncio.to_thread(encode_jpeg, image, self._encode_quality)
                 header = (
                     f"--{boundary}\r\n"
