@@ -42,14 +42,15 @@ class TTS:
     to avoid re-synthesizing the same text.
 
     Usage:
-        tts = TTS()
+        tts = TTS(rate=150)
         tts.say("Hello", client)  # plays through client.play_audio()
     """
 
-    def __init__(self) -> None:
+    def __init__(self, rate: int = 150) -> None:
         self._cache: dict[str, str] = {}
         self._lock = threading.Lock()
         self._engine: pyttsx3.Engine | None = None
+        self._rate = rate
 
     @property
     def engine(self) -> pyttsx3.Engine:
@@ -62,6 +63,7 @@ class TTS:
                     "pyttsx3 is not installed. Install it with: pip install pyttsx3"
                 )
             self._engine = pyttsx3.init()
+            self._engine.setProperty("rate", self._rate)
         return self._engine
 
     def _text_to_path(self, text: str) -> str:

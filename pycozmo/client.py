@@ -46,6 +46,7 @@ class Client(event.Dispatcher):
         auto_initialize: bool = True,
         enable_animations: bool = True,
         enable_procedural_face: bool = True,
+        tts_rate: int = 150,
     ) -> None:
         super().__init__()
         # Whether to automatically initialize the robot when connection is established.
@@ -105,7 +106,7 @@ class Client(event.Dispatcher):
         self._ppclips = {}
         self._next_anim_id = 1
         self.animation_groups = {}
-        self._tts = tts.TTS()
+        self._tts = tts.TTS(rate=tts_rate)
 
     def start(self) -> None:
         logger.debug("Starting client...")
