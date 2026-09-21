@@ -124,6 +124,7 @@ def main():
                 )
 
             cozmo.enable_camera()
+            cozmo.cli.set_camera_params(exposure_ms=30)
 
             # Robot center calibration
             cozmo.calibrate_robot_center(timeout_s=30.0)

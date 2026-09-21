@@ -400,7 +400,7 @@ class Brain:
         )
 
         # Apply head light (IR illuminator)
-        cli.set_head_light(settings.get("head_light", True))
+        cli.set_head_light(settings.get("head_light", False))
 
         # Apply color mode and resolution (requires re-enabling camera)
         color = settings.get("color", False)

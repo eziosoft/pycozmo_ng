@@ -28,7 +28,9 @@ class MsgRouter:
         self._approach_listener = None
         self._dock_listener = None
         self._camera_settings_listener = None
-        self._camera_settings: dict = {}
+        self._camera_settings: dict = {
+            "head_light": False,
+        }
 
     # -- listener registration -----------------------------------------------
 
@@ -147,7 +149,7 @@ class MsgRouter:
                     "color": msg.get("color", False),
                     "resolution": msg.get("resolution", "QVGA"),
                     "jpeg_quality": int(msg.get("jpeg_quality", 70)),
-                    "head_light": msg.get("head_light", True),
+                    "head_light": msg.get("head_light", False),
                 }
                 self._camera_settings.update(settings)
                 listener(settings)
