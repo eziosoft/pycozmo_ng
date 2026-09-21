@@ -61,6 +61,17 @@ def main():
         default=5.0,
         help="Floor grid resolution in mm/pixel (default: 5).",
     )
+    parser.add_argument(
+        "--face-detect-every",
+        type=int,
+        default=3,
+        metavar="N",
+        help=(
+            "Run face detection every Nth processed frame (default: 3). "
+            "Higher values reduce CPU load at the cost of slower face "
+            "tracking. Set to 1 to detect every frame."
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -97,6 +108,7 @@ def main():
                 floor_center_mm=(200.0, 0.0),
                 floor_size_mm=(args.floor_size, args.floor_size),
                 mm_per_pixel=args.floor_resolution,
+                face_detect_every_n_frames=args.face_detect_every,
             )
 
             cozmo.set_vision_annotation_options(

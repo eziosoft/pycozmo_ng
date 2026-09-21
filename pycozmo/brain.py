@@ -111,13 +111,22 @@ class Brain:
         occupancy_edge_margin_px: int = 3,
         floor_edge_margin_px: int = 4,
         enable_face_detection: bool = True,
+        face_detect_every_n_frames: int = 1,
     ):
         """Set up the vision pipeline components.
 
         This wires together DetectionPipeline, AnnotationEngine,
         DetectionEventDispatcher, and FloorPipeline. Event handlers
         are registered on the client.
+
+        Args:
+            face_detect_every_n_frames: Run face detection every Nth
+                processed frame (1 = every frame). Higher values reduce
+                CPU load — faces are static enough that every 3rd frame
+                is usually sufficient.
         """
+
+        self._face_detect_every_n_frames = face_detect_every_n_frames
 
         # Detection pipeline (core detection logic) - uses factory for DI
         self.detection_pipeline = create_default_detection_pipeline(
@@ -215,13 +224,22 @@ class Brain:
             else:
                 undistorted_image = image  # Use original image without undistortion
 
-            # Detect cubes and faces
+            # Detect cubes (every processed frame)
             cube_detections = self.detection_pipeline.detect_cubes(
                 undistorted_image, head_angle_rad
             )
-            face_detections = self.detection_pipeline.detect_faces(
-                undistorted_image, head_angle_rad
-            )
+
+            # Detect faces (every Nth processed frame)
+            if not hasattr(self, "_face_frame_counter"):
+                self._face_frame_counter = 0
+            self._face_frame_counter += 1
+            face_every = getattr(self, "_face_detect_every_n_frames", 1)
+            if self._face_frame_counter % face_every == 0:
+                face_detections = self.detection_pipeline.detect_faces(
+                    undistorted_image, head_angle_rad
+                )
+            else:
+                face_detections = []
 
             # Annotate image
             annotated_image = self.annotation_engine.detect_and_annotate(

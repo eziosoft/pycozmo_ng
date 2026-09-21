@@ -405,6 +405,7 @@ class Cozmo:
         floor_size_mm: tuple[float, float] = (600.0, 600.0),
         mm_per_pixel: float = 5.0,
         enable_face_detection: bool = True,
+        face_detect_every_n_frames: int = 1,
     ):
         """Set up the vision pipeline and register all internal event handlers.
 
@@ -419,6 +420,8 @@ class Cozmo:
             floor_size_mm: Floor projection size (w, h) in mm.
             mm_per_pixel: Floor projection resolution.
             enable_face_detection: Enable Haar cascade face detection.
+            face_detect_every_n_frames: Run face detection every Nth processed
+                frame (1 = every frame). Higher values reduce CPU load.
         """
         if camera_calibration is None:
             from pycozmo.vision.camera_calibration import CameraCalibrationRetriever
@@ -438,6 +441,7 @@ class Cozmo:
             floor_size_mm=floor_size_mm,
             mm_per_pixel=mm_per_pixel,
             enable_face_detection=enable_face_detection,
+            face_detect_every_n_frames=face_detect_every_n_frames,
         )
         self._register_vision_handlers(enable_floor_projection)
 
