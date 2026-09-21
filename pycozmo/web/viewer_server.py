@@ -333,6 +333,10 @@ class WebViewerServer:
         """Subscribe to browser TTS say events."""
         self._msg_router.set_say_listener(callback)
 
+    def set_test_mode_listener(self, callback) -> None:
+        """Subscribe to browser test mode toggle events."""
+        self._msg_router.set_test_mode_listener(callback)
+
     def update_camera_settings(self, **kwargs) -> None:
         """Update the stored camera settings (called from the listener)."""
         self._msg_router.set_camera_settings(kwargs)

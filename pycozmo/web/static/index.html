@@ -130,6 +130,18 @@
         </div>
       </div>
 
+      <div id="test-mode-panel">
+        <h3>Test Mode</h3>
+        <p style="font-size: 11px; color: #888; margin-bottom: 6px;">
+          If cubes exist in the 3D world, robot approaches them in a loop with 3 sec pauses.
+        </p>
+        <label class="cam-toggle">
+          <input type="checkbox" id="test-mode-toggle" />
+          <span class="cam-toggle-slider"></span>
+        </label>
+        <span id="test-mode-status" style="font-size: 11px; color: #888; margin-left: 8px;">OFF</span>
+      </div>
+
       <div id="camera-settings-panel">
         <h3>Camera Settings</h3>
         <div class="cam-row">
@@ -962,6 +974,24 @@ function sendSay(text) {
         console.warn('say send failed', e);
       }
     }
+
+function sendTestMode(enabled) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'test_mode', enabled: enabled }));
+      } catch (e) {
+        console.warn('test_mode send failed', e);
+      }
+    }
+
+    const testModeToggle = document.getElementById('test-mode-toggle');
+    const testModeStatus = document.getElementById('test-mode-status');
+    testModeToggle.addEventListener('change', () => {
+      const enabled = testModeToggle.checked;
+      testModeStatus.textContent = enabled ? 'ON' : 'OFF';
+      testModeStatus.style.color = enabled ? '#4ade80' : '#888';
+      sendTestMode(enabled);
+    });
 
     const ttsText = document.getElementById('tts-text');
     const ttsSayBtn = document.getElementById('tts-say-btn');

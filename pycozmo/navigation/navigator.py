@@ -25,6 +25,9 @@ class Navigator:
         # Set by Brain after construction (cross-domain references)
         self.cli = None
         self.web_viewer = None
+        self._test_mode = False
+        self._test_mode_thread: threading.Thread | None = None
+        self._test_mode_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Charger / origin handlers (COZMO-28)
@@ -408,3 +411,43 @@ class Navigator:
 
         t = threading.Thread(target=_dock_thread, daemon=True)
         t.start()
+
+    # ------------------------------------------------------------------
+    # Test mode — loop approach on cubes with 3 sec pauses
+    # ------------------------------------------------------------------
+
+    def set_test_mode(self, enabled: bool) -> None:
+        """Start or stop the test mode loop."""
+        with self._test_mode_lock:
+            if self._test_mode == enabled:
+                return
+            self._test_mode = enabled
+
+        if enabled:
+            self._test_mode_thread = threading.Thread(
+                target=self._test_mode_loop, daemon=True
+            )
+            self._test_mode_thread.start()
+            print("Test mode ON")
+        else:
+            print("Test mode OFF")
+
+    def _test_mode_loop(self) -> None:
+        """Continuously approach cubes with 3 second waits."""
+        while True:
+            with self._test_mode_lock:
+                if not self._test_mode:
+                    return
+            if not self.cli or self.web_viewer is None:
+                time.sleep(1)
+                continue
+            cubes = self.web_viewer.world_map.get_cubes()
+            if not cubes:
+                time.sleep(1)
+                continue
+            cube_idx = next(iter(cubes))
+            cube = cubes[cube_idx]
+            cx, cy, _ = cube.position
+            print(f"Test mode: approaching cube {cube_idx + 1}")
+            self._on_approach_cube(cube_idx, float(cx), float(cy))
+            time.sleep(3.0)

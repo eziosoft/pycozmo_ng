@@ -367,6 +367,7 @@ class Brain:
         self.web_viewer.set_dock_listener(self.navigator._on_dock)
         self.web_viewer.set_camera_settings_listener(self._on_camera_settings)
         self.web_viewer.set_say_listener(self._on_say)
+        self.web_viewer.set_test_mode_listener(self.navigator.set_test_mode)
         if self.cli is not None:
             self.dock_state.dock_pose = self.cli.pose
         print("Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
