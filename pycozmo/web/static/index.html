@@ -609,9 +609,10 @@
     // Occupancy map overlay — base64 PNG texture in world frame
     // -----------------------------------------------------------------------
     const OCC_GRID_SIZE = 2000;  // mm, must match OccupancyMap.grid_size_mm
+    const OCC_CANVAS_SIZE = 400;  // texture resolution in pixels
     const occCanvas = document.createElement('canvas');
-    occCanvas.width = 400;
-    occCanvas.height = 400;
+    occCanvas.width = OCC_CANVAS_SIZE;
+    occCanvas.height = OCC_CANVAS_SIZE;
     const occCtx = occCanvas.getContext('2d');
 
     const occTex = new THREE.CanvasTexture(occCanvas);
@@ -637,11 +638,12 @@
       if (!pngBase64) return;
       const img = new Image();
       img.onload = () => {
-        if (occCanvas.width !== img.naturalWidth || occCanvas.height !== img.naturalHeight) {
-          occCanvas.width = img.naturalWidth;
-          occCanvas.height = img.naturalHeight;
-        }
-        occCtx.drawImage(img, 0, 0);
+        // Scale up the occupancy image to fill the canvas
+        // regardless of grid resolution (e.g. 40x40 @ 5cm cells
+        // or 400x400 @ 5mm cells).
+        occCtx.clearRect(0, 0, OCC_CANVAS_SIZE, OCC_CANVAS_SIZE);
+        occCtx.imageSmoothingEnabled = false;
+        occCtx.drawImage(img, 0, 0, OCC_CANVAS_SIZE, OCC_CANVAS_SIZE);
         occTex.needsUpdate = true;
       };
       img.src = 'data:image/png;base64,' + pngBase64;
