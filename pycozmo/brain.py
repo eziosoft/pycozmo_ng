@@ -119,7 +119,7 @@ class Brain:
         mm_per_pixel: float = 5.0,
         enable_occupancy_map: bool = True,
         occupancy_grid_size_mm: float = 2000.0,
-        occupancy_cell_size_mm: float = 5.0,
+        occupancy_cell_size_mm: float = 50.0,
         occupancy_inflation_radius: int = 2,
         occupancy_vote_cap: int = 10,
         occupancy_valid_min_brightness: int = 8,

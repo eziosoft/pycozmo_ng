@@ -47,7 +47,7 @@ class OccupancyMap:
     def __init__(
         self,
         grid_size_mm: float = 2000.0,
-        cell_size_mm: float = 5.0,
+        cell_size_mm: float = 50.0,
         inflation_radius: int = 2,
         free_threshold: int = 60,
         edge_low: int = 50,
