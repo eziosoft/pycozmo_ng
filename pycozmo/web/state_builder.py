@@ -128,11 +128,8 @@ def build_state_json(
         for (fx, fy, fz) in (coords.world_to_scene_point(p) for p in path_world)
     ]
 
-    # A* planned path: world frame -> scene frame.
-    astar_path_world = world.get("astar_path", [])
-    astar_path_scene = [
-        coords.world_to_scene_point([wp[0], wp[1]]) for wp in astar_path_world
-    ]
+    # A* planned path: already in scene frame from get_world_state().
+    astar_path_scene = world.get("astar_path", [])
 
     state = {
         "cubes": cube_list,
