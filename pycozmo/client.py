@@ -88,7 +88,7 @@ def build_polyline_packets(
                 y=py,
                 angle_rad=float(final_heading_rad),
                 angle_tolerance_rad=0.05,
-                speed_mmps=40.0,
+                speed_mmps=25.0,
                 accel_mmps2=accel_mmps2,
                 decel_mmps2=decel_mmps2,
             )
@@ -636,7 +636,7 @@ class Client(event.Dispatcher):
                 y=pose.position.y,
                 angle_rad=pose.rotation.angle_z.radians,
                 angle_tolerance_rad=0.01,
-                speed_mmps=40.0,
+                speed_mmps=25.0,
                 accel_mmps2=20.0,
                 decel_mmps2=20.0,
             )

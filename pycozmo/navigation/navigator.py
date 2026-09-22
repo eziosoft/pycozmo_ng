@@ -404,7 +404,7 @@ class Navigator:
         target_heading: float,
         tol_rad: float = 0.06,
         timeout_s: float = 3.0,
-        turn_speed_mmps: float = 45.0,
+        turn_speed_mmps: float = 30.0,
     ) -> None:
         """Turn in place to ``target_heading`` (world frame, radians)."""
         cli = self.cli

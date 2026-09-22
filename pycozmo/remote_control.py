@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_WHEEL_SPEED = robot.MAX_WHEEL_SPEED.mmps * 0.5
+_DEFAULT_ROTATE_SPEED = 40.0  # mm/s wheel magnitude for in-place rotation
 _DEFAULT_HEAD_SPEED = 1.0  # rad/s for move_head
 _DEFAULT_LIFT_SPEED = 1.0  # rad/s for move_lift
 _DEFAULT_TICK_HZ = 20.0
@@ -54,8 +55,12 @@ class RemoteControl:
         ``drive_wheels``, ``move_head``, ``move_lift`` and ``stop_all_motors``
         methods.
     wheel_speed:
-        Wheel speed in mm/s for forward / reverse. Left / right rotation
-        uses this same magnitude.
+        Wheel speed in mm/s for forward / reverse.
+    rotate_speed:
+        Wheel speed magnitude in mm/s for in-place left / right
+        rotation. Kept well below ``wheel_speed`` so a/d spins don't
+        snap to full speed (the differential between the wheels is
+        2x this value).
     head_speed:
         ``move_head`` speed in rad/s.
     lift_speed:
@@ -77,6 +82,7 @@ class RemoteControl:
         self,
         cli,
         wheel_speed: float = _DEFAULT_WHEEL_SPEED,
+        rotate_speed: float = _DEFAULT_ROTATE_SPEED,
         head_speed: float = _DEFAULT_HEAD_SPEED,
         lift_speed: float = _DEFAULT_LIFT_SPEED,
         tick_hz: float = _DEFAULT_TICK_HZ,
@@ -84,6 +90,7 @@ class RemoteControl:
     ):
         self._cli = cli
         self._wheel_speed = float(wheel_speed)
+        self._rotate_speed = float(rotate_speed)
         self._head_speed = float(head_speed)
         self._lift_speed = float(lift_speed)
         self._tick_hz = float(tick_hz)
@@ -152,16 +159,16 @@ class RemoteControl:
                 if active_keys != self._last_applied:
                     self._apply_head_lift(active_keys)
                     self._last_applied = active_keys
-            except Exception as e:
-                logger.exception("RemoteControl tick failed: %s", e)
+            except Exception:
+                logger.exception("RemoteControl tick failed")
             self._stop_event.wait(period)
 
     def _apply_drive(self, keys: set[str]) -> None:
         forward = ("w" in keys) - ("s" in keys)
         rotate = ("d" in keys) - ("a" in keys)
         if forward or rotate:
-            lw = forward * self._wheel_speed + rotate * self._wheel_speed
-            rw = forward * self._wheel_speed - rotate * self._wheel_speed
+            lw = forward * self._wheel_speed + rotate * self._rotate_speed
+            rw = forward * self._wheel_speed - rotate * self._rotate_speed
             try:
                 self._cli.drive_wheels(lwheel_speed=lw, rwheel_speed=rw)
             except Exception as e:  # noqa: BLE001
