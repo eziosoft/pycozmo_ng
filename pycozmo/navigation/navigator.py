@@ -98,6 +98,9 @@ class Navigator:
             if self.cli:
                 self.cli.stop_all_motors()
             self._path_following = False
+            wm = getattr(self.web_viewer, "world_map", None)
+            if wm is not None:
+                wm.clear_astar_path()
             print("Navigation cancelled")
             return
 
@@ -149,6 +152,7 @@ class Navigator:
         Replans dynamically as the occupancy map updates — if the
         next waypoint becomes occupied or the path is exhausted,
         a new A* search is issued from the current robot pose.
+        The current path is published to WorldMap for 3D visualization.
         """
         if self.astar_planner is None:
             print("A*: no planner — falling back to direct nav")
@@ -159,17 +163,27 @@ class Navigator:
         start_x = robot_pose.position.x
         start_y = robot_pose.position.y
 
+        # Helper to push path waypoints to WorldMap for browser display.
+        def _publish_path(waypoints: list) -> None:
+            wm = getattr(self.web_viewer, "world_map", None)
+            if wm is not None:
+                wm.set_astar_path([[float(w.x), float(w.y)] for w in waypoints])
+
         with self._path_follow_lock:
             self._path_following = True
             self._current_waypoint_idx = 0
             self._path_waypoints = (
                 self.astar_planner.find_path(start_x, start_y, goal_x, goal_y) or []
             )
+            _publish_path(self._path_waypoints)
             print(f"A*: computed {len(self._path_waypoints)} waypoints")
 
         if not self._path_waypoints:
             print("A*: no path found — falling back to direct nav")
             self._path_following = False
+            wm = getattr(self.web_viewer, "world_map", None)
+            if wm is not None:
+                wm.clear_astar_path()
             self._drive_to_point(goal_x, goal_y)
             return
 
@@ -194,6 +208,7 @@ class Navigator:
                     break
                 with self._path_follow_lock:
                     self._path_waypoints = new_path
+                _publish_path(new_path)
                 waypoints_consumed = 0
                 t0 = time.monotonic()
                 print(f"A*: replanned — {len(new_path)} waypoints")
@@ -208,6 +223,7 @@ class Navigator:
                 if new_path and len(new_path) > 0:
                     with self._path_follow_lock:
                         self._path_waypoints = new_path
+                    _publish_path(new_path)
                     waypoints_consumed = 0
                     t0 = time.monotonic()
                     print(f"A*: replanned — {len(new_path)} waypoints")
@@ -239,6 +255,9 @@ class Navigator:
             print("A*: reached goal")
 
         self._path_following = False
+        wm = getattr(self.web_viewer, "world_map", None)
+        if wm is not None:
+            wm.clear_astar_path()
 
     def set_astar_planner(self, planner: AStarPlanner | None) -> None:
         """Inject or remove the A* planner."""

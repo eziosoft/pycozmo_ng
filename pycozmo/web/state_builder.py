@@ -128,6 +128,12 @@ def build_state_json(
         for (fx, fy, fz) in (coords.world_to_scene_point(p) for p in path_world)
     ]
 
+    # A* planned path: world frame -> scene frame.
+    astar_path_world = world.get("astar_path", [])
+    astar_path_scene = [
+        coords.world_to_scene_point([wp[0], wp[1]]) for wp in astar_path_world
+    ]
+
     state = {
         "cubes": cube_list,
         "faces": face_list,
@@ -136,6 +142,7 @@ def build_state_json(
             "heading": float(robot_heading),
         },
         "path_points": path_scene,
+        "astar_path": astar_path_scene,
         "telemetry": dict(telemetry),
         "floor_size": list(floor_size_mm),
         "floor_center": list(floor_center_mm),

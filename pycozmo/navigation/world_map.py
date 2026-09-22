@@ -183,6 +183,27 @@ class WorldMap:
         # Path: rolling buffer of world-frame positions (mm).
         self._path_points: deque[np.ndarray] = deque(maxlen=self.max_path_points)
 
+        # A* planned path (world-frame waypoints for the browser).
+        self._astar_path: list[list[float]] = []
+
+    def set_astar_path(self, waypoints: list[list[float]]) -> None:
+        """Set the A* path waypoints for visualization.
+
+        Each waypoint is [x, y] in world frame (mm, Anki convention).
+        """
+        with self._lock:
+            self._astar_path = waypoints
+
+    def clear_astar_path(self) -> None:
+        """Clear the A* path."""
+        with self._lock:
+            self._astar_path = []
+
+    def get_astar_path(self) -> list[list[float]]:
+        """Return a copy of the A* path waypoints."""
+        with self._lock:
+            return [list(w) for w in self._astar_path]
+
     # -- robot pose ---------------------------------------------------------
 
     def update_robot_pose(
@@ -235,6 +256,7 @@ class WorldMap:
             self._cubes.clear()
             self._faces.clear()
             self._path_points.clear()
+            self._astar_path.clear()
             self._robot_position = np.zeros(3, dtype=np.float64)
             self._robot_yaw = 0.0
             self._robot_origin_id = None

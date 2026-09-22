@@ -700,6 +700,41 @@
     let pathPointCount = 0;
 
     // -----------------------------------------------------------------------
+    // A* planned path (rendered as a magenta line)
+    // -----------------------------------------------------------------------
+    const ASTAR_MAX_POINTS = 500;
+    const astarPositions = new Float32Array(ASTAR_MAX_POINTS * 3);
+    const astarGeometry = new THREE.BufferGeometry();
+    astarGeometry.setAttribute('position', new THREE.BufferAttribute(astarPositions, 3));
+    astarGeometry.setDrawRange(0, 0);
+
+    const astarMaterial = new THREE.LineBasicMaterial({
+      color: 0xe040e0,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const astarLine = new THREE.Line(astarGeometry, astarMaterial);
+    astarLine.renderOrder = 5;  // above path trail
+    scene.add(astarLine);
+    let astarPointCount = 0;
+
+    function applyAstarPath(waypoints) {
+      if (!waypoints || waypoints.length < 2) {
+        astarGeometry.setDrawRange(0, 0);
+        astarPointCount = 0;
+        return;
+      }
+      astarPointCount = Math.min(waypoints.length, ASTAR_MAX_POINTS);
+      for (let i = 0; i < astarPointCount; i++) {
+        astarPositions[i * 3]     = waypoints[i][0];
+        astarPositions[i * 3 + 1] = waypoints[i][1];
+        astarPositions[i * 3 + 2] = waypoints[i][2];
+      }
+      astarGeometry.attributes.position.needsUpdate = true;
+      astarGeometry.setDrawRange(0, astarPointCount);
+    }
+
+    // -----------------------------------------------------------------------
     // Cube management
     // -----------------------------------------------------------------------
     const cubeGroups = {};
@@ -1120,6 +1155,11 @@ function sendTestMode(enabled) {
         pathGeometry.attributes.position.needsUpdate = true;
         pathGeometry.setDrawRange(0, pathPointCount);
         document.getElementById('tel-path').textContent = `${pathPointCount} pts`;
+      }
+
+      // A* planned path
+      if (state.astar_path) {
+        applyAstarPath(state.astar_path);
       }
 
       // Robot pose
