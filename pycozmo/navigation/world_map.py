@@ -494,6 +494,7 @@ class WorldMap:
                 for face_id, fs in self._faces.items()
             }
             path_points = [p.tolist() for p in self._path_points]
+            astar_path = [list(w) for w in self._astar_path]
         return {
             "robot": {
                 "position": robot_pos,
@@ -503,4 +504,5 @@ class WorldMap:
             "cubes": cubes,
             "faces": faces,
             "path_points": path_points,
+            "astar_path": astar_path,
         }
