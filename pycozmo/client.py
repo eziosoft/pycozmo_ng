@@ -8,6 +8,7 @@ import io
 import json
 import math
 import time
+from collections.abc import Callable, Sequence
 from threading import Event, Lock
 
 import numpy as np
@@ -34,6 +35,67 @@ from . import (
 __all__ = [
     "Client",
 ]
+
+
+def build_polyline_packets(
+    points: Sequence[tuple[float, float]],
+    start: tuple[float, float],
+    event_id: int,
+    speed_mmps: float = 90.0,
+    accel_mmps2: float = 40.0,
+    decel_mmps2: float = 40.0,
+    final_heading_rad: float | None = None,
+) -> list:
+    """Build the packet sequence for a multi-segment firmware path.
+
+    Returns ``[ClearPath, AppendPathSegLine..., (AppendPathSegPointTurn),
+    ExecutePath]``. Consecutive points closer than 10 mm to the previous
+    kept point (starting from *start*) are dropped so the firmware never
+    sees zero-length segments. Empty list when there is nothing to
+    execute.
+    """
+    waypoints: list[tuple[float, float]] = []
+    fx, fy = float(start[0]), float(start[1])
+    for x, y in points:
+        x, y = float(x), float(y)
+        if math.hypot(x - fx, y - fy) >= 10.0:
+            waypoints.append((x, y))
+            fx, fy = x, y
+
+    if not waypoints and final_heading_rad is None:
+        return []
+
+    packets: list = [protocol_encoder.ClearPath()]
+    px, py = float(start[0]), float(start[1])
+    for tx, ty in waypoints:
+        packets.append(
+            protocol_encoder.AppendPathSegLine(
+                from_x=px,
+                from_y=py,
+                to_x=tx,
+                to_y=ty,
+                speed_mmps=speed_mmps,
+                accel_mmps2=accel_mmps2,
+                decel_mmps2=decel_mmps2,
+            )
+        )
+        px, py = tx, ty
+
+    if final_heading_rad is not None:
+        packets.append(
+            protocol_encoder.AppendPathSegPointTurn(
+                x=px,
+                y=py,
+                angle_rad=float(final_heading_rad),
+                angle_tolerance_rad=0.05,
+                speed_mmps=40.0,
+                accel_mmps2=accel_mmps2,
+                decel_mmps2=decel_mmps2,
+            )
+        )
+
+    packets.append(protocol_encoder.ExecutePath(event_id=event_id))
+    return packets
 
 
 class Client(event.Dispatcher):
@@ -72,6 +134,9 @@ class Client(event.Dispatcher):
             0.0, 0.0, 0.0, angle_z=util.Angle(radians=0.0), origin_id=1
         )
         self.pose_pitch = util.Angle(radians=0.0)
+        # Incrementing event_id for execute_polyline paths (avoids clashing
+        # with go_to_pose's fixed event_id=1).
+        self._path_event_id = 100
         self.head_angle = util.Angle(radians=robot.MIN_HEAD_ANGLE.radians)
         self.left_wheel_speed = util.Speed(mmps=0.0)
         self.right_wheel_speed = util.Speed(mmps=0.0)
@@ -611,6 +676,122 @@ class Client(event.Dispatcher):
                 dist,
                 math.degrees(angle_err),
             )
+
+    def execute_polyline(
+        self,
+        points: Sequence[tuple[float, float]],
+        *,
+        speed_mmps: float = 90.0,
+        accel_mmps2: float = 40.0,
+        decel_mmps2: float = 40.0,
+        final_heading_rad: float | None = None,
+        timeout_s: float | None = None,
+        position_tol_mm: float = 20.0,
+        should_interrupt: Callable[[], bool] | None = None,
+    ) -> bool:
+        """Follow a multi-segment path with the robot's built-in path follower.
+
+        Sends ``ClearPath`` + one ``AppendPathSegLine`` per segment
+        (optionally a final ``AppendPathSegPointTurn``) + ``ExecutePath``
+        and blocks until the firmware reports completion, the pose
+        reaches the final point, timeout, or *should_interrupt* returns
+        True.
+
+        Unlike the Python-side closed loop (``Navigator._drive_to_point``),
+        the trajectory — accel/decel ramps and wheel control — runs on the
+        robot at high rate, independent of WiFi latency. This is the
+        recommended way to drive along a planned (e.g. A*) polyline.
+
+        Args:
+            points: Waypoints in world frame (mm, X forward / Y left), in
+                order. The first segment starts at the robot's current
+                pose. Degenerate segments (< 10 mm) are dropped.
+            speed_mmps: Cruise speed for the line segments.
+            accel_mmps2: Acceleration limit (mm/s²).
+            decel_mmps2: Deceleration limit (mm/s²).
+            final_heading_rad: If set, finish with an in-place turn to
+                this world heading at the last point.
+            timeout_s: Overall timeout. Defaults to a length-based
+                estimate (3× straight-line time at *speed_mmps*, min 10 s).
+            position_tol_mm: Pose-proximity tolerance for the polling
+                fallback (firmware sometimes omits ``PathFollowingEvent``
+                for simple paths — COZMO-53).
+            should_interrupt: Polled ~10× per second while waiting; when
+                it returns True the motors are stopped and the method
+                returns False. Used for cancellation and mid-path
+                replanning.
+
+        Returns:
+            True when the path completed (firmware event or pose
+            proximity), False when interrupted or timed out short of the
+            goal.
+        """
+        self._path_event_id = self._path_event_id % 65535 + 1
+        event_id = self._path_event_id
+        packets = build_polyline_packets(
+            points,
+            (self.pose.position.x, self.pose.position.y),
+            event_id,
+            speed_mmps=speed_mmps,
+            accel_mmps2=accel_mmps2,
+            decel_mmps2=decel_mmps2,
+            final_heading_rad=final_heading_rad,
+        )
+        if not packets:
+            # Nothing to drive — already at (or within 10 mm of) the goal.
+            return True
+
+        end_x = self.pose.position.x
+        end_y = self.pose.position.y
+        path_len = 0.0
+        for pkt in packets:
+            if isinstance(pkt, protocol_encoder.AppendPathSegLine):
+                path_len += math.hypot(pkt.to_x - pkt.from_x, pkt.to_y - pkt.from_y)
+                end_x, end_y = pkt.to_x, pkt.to_y
+            elif isinstance(pkt, protocol_encoder.AppendPathSegPointTurn):
+                end_x, end_y = pkt.x, pkt.y
+
+        if timeout_s is None:
+            timeout_s = max(10.0, path_len / max(speed_mmps, 1.0) * 3.0 + 5.0)
+
+        state: dict = {"event": None}
+
+        def on_event(_, pkt2: protocol_encoder.PathFollowingEvent) -> None:
+            if pkt2.event_id == event_id:
+                state["event"] = pkt2.event_type
+
+        handler = self.add_handler(protocol_encoder.PathFollowingEvent, on_event)
+        t0 = time.perf_counter()
+        try:
+            for pkt in packets:
+                self.conn.send(pkt)
+
+            deadline = t0 + timeout_s
+            while time.perf_counter() < deadline:
+                ev = state["event"]
+                if ev == protocol_encoder.PathEventType.PATH_COMPLETED:
+                    return True
+                if ev == protocol_encoder.PathEventType.PATH_INTERRUPTED:
+                    return False
+                if should_interrupt is not None and should_interrupt():
+                    self.stop_all_motors()
+                    return False
+                # Pose-polling fallback (COZMO-53). Gated by a 1 s grace
+                # period so a path that starts within the tolerance (e.g.
+                # a turn-only command) isn't reported done before the
+                # firmware has had a chance to run.
+                if time.perf_counter() - t0 >= 1.0:
+                    dx = self.pose.position.x - end_x
+                    dy = self.pose.position.y - end_y
+                    if math.hypot(dx, dy) <= position_tol_mm:
+                        return True
+                time.sleep(0.1)
+
+            dx = self.pose.position.x - end_x
+            dy = self.pose.position.y - end_y
+            return math.hypot(dx, dy) <= position_tol_mm
+        finally:
+            self.del_handler(protocol_encoder.PathFollowingEvent, handler)
 
     def set_backpack_lights(
         self, left_light, front_light, center_light, rear_light, right_light

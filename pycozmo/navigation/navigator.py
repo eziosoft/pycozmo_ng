@@ -13,6 +13,14 @@ from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.steering import steer_velocities, wrap_pi
 from pycozmo.util import Angle, Pose
 
+# A* path following: considered arrived within this distance of the goal (mm).
+ASTAR_GOAL_TOL_MM = 30.0
+# Maximum consecutive replans before giving up on an A* goal.
+ASTAR_MAX_REPLAN_ATTEMPTS = 10
+# Waypoints closer to the robot than this are skipped by the occupancy
+# monitor — localization noise near the body must not trigger replans.
+ASTAR_MONITOR_SKIP_MM = 75.0
+
 
 class Navigator:
     """Robot navigation: point-to-point drive, cube approach, docking.
@@ -92,7 +100,9 @@ class Navigator:
 
         world_forward = X (Anki frame), world_left = Y (Anki frame).
         When A* is enabled and a planner is set, computes an obstacle-
-        avoiding path through the occupancy grid.
+        avoiding path through the occupancy grid and follows it with the
+        robot's built-in path follower. Otherwise drives straight to the
+        target via ``go_to_pose`` (also firmware-side).
         """
         if world_forward is None:
             if self.cli:
@@ -107,8 +117,6 @@ class Navigator:
         if not self.cli:
             print("Navigation: no robot connected")
             return
-
-        SHORT_DIST_MM = 100.0
 
         robot_pose = self.cli.pose
         robot_x = robot_pose.position.x
@@ -126,8 +134,8 @@ class Navigator:
             try:
                 if self.astar_enabled and self.astar_planner is not None:
                     self._follow_astar_path(world_forward, world_left)
-                elif dist <= SHORT_DIST_MM:
-                    self._drive_to_point(world_forward, world_left)
+                elif dist < 10.0:
+                    print("Already at target")
                 else:
                     heading = math.atan2(dy, dx)
                     target_pose = Pose(
@@ -147,27 +155,40 @@ class Navigator:
         t.start()
 
     def _follow_astar_path(self, goal_x: float, goal_y: float) -> None:
-        """Compute and follow an A* path to *(goal_x, goal_y)*.
+        """Compute an A* path and follow it with the firmware path follower.
 
-        Replans dynamically as the occupancy map updates — if the
-        next waypoint becomes occupied or the path is exhausted,
-        a new A* search is issued from the current robot pose.
-        The current path is published to WorldMap for 3D visualization.
+        The remaining path is sent as a single built-in Cozmo path
+        (``Client.execute_polyline``), so the robot runs its own
+        high-rate trajectory generator instead of the Python closed loop
+        (WiFi latency made ``_drive_to_point`` unreliable). The occupancy
+        map is monitored while the path executes — if a remaining
+        waypoint becomes occupied the path is interrupted and a new A*
+        search is issued from the current pose. The active path is
+        published to WorldMap for 3D visualization and cleared when
+        navigation ends.
         """
-        if self.astar_planner is None:
-            print("A*: no planner — falling back to direct nav")
-            self._drive_to_point(goal_x, goal_y)
+        cli = self.cli
+        if cli is None:
             return
 
-        robot_pose = self.cli.pose
+        if self.astar_planner is None:
+            print("A*: no planner — falling back to built-in navigation")
+            self._go_to_pose_goal(goal_x, goal_y)
+            return
+
+        robot_pose = cli.pose
         start_x = robot_pose.position.x
         start_y = robot_pose.position.y
 
-        # Helper to push path waypoints to WorldMap for browser display.
         def _publish_path(waypoints: list) -> None:
             wm = getattr(self.web_viewer, "world_map", None)
             if wm is not None:
                 wm.set_astar_path([[float(w.x), float(w.y)] for w in waypoints])
+
+        def _clear_path() -> None:
+            wm = getattr(self.web_viewer, "world_map", None)
+            if wm is not None:
+                wm.clear_astar_path()
 
         with self._path_follow_lock:
             self._path_following = True
@@ -179,85 +200,120 @@ class Navigator:
             print(f"A*: computed {len(self._path_waypoints)} waypoints")
 
         if not self._path_waypoints:
-            print("A*: no path found — falling back to direct nav")
-            self._path_following = False
-            wm = getattr(self.web_viewer, "world_map", None)
-            if wm is not None:
-                wm.clear_astar_path()
-            self._drive_to_point(goal_x, goal_y)
+            print("A*: no path found — falling back to built-in navigation")
+            with self._path_follow_lock:
+                self._path_following = False
+            _clear_path()
+            self._go_to_pose_goal(goal_x, goal_y)
             return
 
-        REPLAN_WAYPOINTS = 3  # replan after consuming this many waypoints
-        REPLAN_INTERVAL_S = 1.0  # or every N seconds
+        try:
+            attempts = 0
+            while self._path_following:
+                pose = cli.pose
+                if (
+                    math.hypot(goal_x - pose.position.x, goal_y - pose.position.y)
+                    <= ASTAR_GOAL_TOL_MM
+                ):
+                    print("A*: reached goal")
+                    break
 
-        t0 = time.monotonic()
-        waypoints_consumed = 0
+                attempts += 1
+                if attempts > ASTAR_MAX_REPLAN_ATTEMPTS:
+                    print("A*: giving up after max replan attempts")
+                    break
 
-        while self._path_following and self.cli:
-            if not self._path_waypoints:
-                # Path exhausted — replan from current position
-                if time.monotonic() - t0 < REPLAN_INTERVAL_S:
-                    time.sleep(0.1)
-                    continue
-                robot_pose = self.cli.pose
-                cx = robot_pose.position.x
-                cy = robot_pose.position.y
-                new_path = self.astar_planner.find_path(cx, cy, goal_x, goal_y)
+                pts = [(w.x, w.y) for w in self._path_waypoints]
+                arrived = cli.execute_polyline(
+                    pts,
+                    final_heading_rad=self._final_heading(
+                        pts, start_x, start_y, goal_x, goal_y
+                    ),
+                    should_interrupt=self._path_should_interrupt,
+                )
+
+                if not self._path_following:
+                    print("A*: path following cancelled")
+                    break
+
+                pose = cli.pose
+                if arrived and (
+                    math.hypot(goal_x - pose.position.x, goal_y - pose.position.y)
+                    <= ASTAR_GOAL_TOL_MM
+                ):
+                    print("A*: reached goal")
+                    break
+
+                # Interrupted (new obstacle) or fell short — replan from here.
+                new_path = self.astar_planner.find_path(
+                    pose.position.x, pose.position.y, goal_x, goal_y
+                )
                 if not new_path:
                     print("A*: replan failed — no path to goal")
                     break
                 with self._path_follow_lock:
                     self._path_waypoints = new_path
                 _publish_path(new_path)
-                waypoints_consumed = 0
-                t0 = time.monotonic()
                 print(f"A*: replanned — {len(new_path)} waypoints")
+        finally:
+            self._path_following = False
+            _clear_path()
+
+    @staticmethod
+    def _final_heading(
+        pts: list[tuple[float, float]],
+        start_x: float,
+        start_y: float,
+        goal_x: float,
+        goal_y: float,
+    ) -> float:
+        """World heading facing the final approach into the goal."""
+        if len(pts) >= 2:
+            hx = goal_x - pts[-2][0]
+            hy = goal_y - pts[-2][1]
+            if math.hypot(hx, hy) >= 1.0:
+                return math.atan2(hy, hx)
+        return math.atan2(goal_y - start_y, goal_x - start_x)
+
+    def _path_should_interrupt(self) -> bool:
+        """Poll callback for ``Client.execute_polyline``.
+
+        Returns True when path execution must stop: navigation was
+        cancelled, or a remaining waypoint has become occupied in the
+        updated occupancy map (a replan follows). Waypoints close to the
+        robot are skipped — localization noise near the body must not
+        trigger spurious replans.
+        """
+        if not self._path_following:
+            return True
+        planner = self.astar_planner
+        cli = self.cli
+        if planner is None or cli is None:
+            return False
+        pose = cli.pose
+        for w in self._path_waypoints:
+            if (
+                math.hypot(w.x - pose.position.x, w.y - pose.position.y)
+                < ASTAR_MONITOR_SKIP_MM
+            ):
                 continue
+            if not planner.is_traversable(w.x, w.y):
+                print(f"A*: waypoint ({w.x:.0f}, {w.y:.0f}) now blocked — replanning")
+                return True
+        return False
 
-            # Check if we need to replan before the next waypoint
-            if waypoints_consumed >= REPLAN_WAYPOINTS:
-                robot_pose = self.cli.pose
-                cx = robot_pose.position.x
-                cy = robot_pose.position.y
-                new_path = self.astar_planner.find_path(cx, cy, goal_x, goal_y)
-                if new_path and len(new_path) > 0:
-                    with self._path_follow_lock:
-                        self._path_waypoints = new_path
-                    _publish_path(new_path)
-                    waypoints_consumed = 0
-                    t0 = time.monotonic()
-                    print(f"A*: replanned — {len(new_path)} waypoints")
-                else:
-                    # Current path still OK, keep going
-                    waypoints_consumed = 0
-
-            with self._path_follow_lock:
-                if not self._path_waypoints:
-                    continue
-                wp = self._path_waypoints.pop(0)
-
-            if not self._path_following:
-                print("A*: path following cancelled")
-                return
-
-            arrived = self._drive_to_point(wp.x, wp.y, stop_mm=15.0)
-            waypoints_consumed += 1
-            t0 = time.monotonic()
-
-            if not arrived:
-                print(f"A*: timed out at waypoint ({wp.x:.0f}, {wp.y:.0f})")
-                break
-
-            self.cli.stop_all_motors()
-            time.sleep(0.15)
-
-        if self._path_following:
-            print("A*: reached goal")
-
-        self._path_following = False
-        wm = getattr(self.web_viewer, "world_map", None)
-        if wm is not None:
-            wm.clear_astar_path()
+    def _go_to_pose_goal(self, goal_x: float, goal_y: float) -> None:
+        """Drive straight to the goal with the robot's built-in path follower."""
+        cli = self.cli
+        if cli is None:
+            return
+        pose = cli.pose
+        heading = math.atan2(goal_y - pose.position.y, goal_x - pose.position.x)
+        cli.go_to_pose(
+            Pose(goal_x, goal_y, 0, angle_z=Angle(radians=heading)),
+            relative_to_robot=False,
+        )
+        print("Arrived at target")
 
     def set_astar_planner(self, planner: AStarPlanner | None) -> None:
         """Inject or remove the A* planner."""
