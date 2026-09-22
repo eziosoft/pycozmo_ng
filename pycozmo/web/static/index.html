@@ -711,7 +711,8 @@
     const astarMaterial = new THREE.LineBasicMaterial({
       color: 0xe040e0,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.9,
+      depthWrite: false,
     });
     const astarLine = new THREE.Line(astarGeometry, astarMaterial);
     astarLine.renderOrder = 5;  // above path trail
