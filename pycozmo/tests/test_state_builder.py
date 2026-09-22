@@ -10,7 +10,11 @@ from unittest.mock import MagicMock
 import numpy as np
 from PIL import Image
 
-from pycozmo.web.state_builder import build_state_json, encode_jpeg
+from pycozmo.web.state_builder import (
+    PATH_SCENE_LIFT_MM,
+    build_state_json,
+    encode_jpeg,
+)
 
 
 def _make_world_map():
@@ -51,8 +55,15 @@ class TestBuildStateJson:
     def test_basic_structure(self):
         wm = _make_world_map()
         result = build_state_json(
-            wm, {}, (600.0, 600.0), (200.0, 0.0),
-            None, None, 0, -1, time.time(),
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
         )
         state = json.loads(result)
         assert "robot" in state
@@ -66,8 +77,15 @@ class TestBuildStateJson:
     def test_robot_position_converted(self):
         wm = _make_world_map()
         result = build_state_json(
-            wm, {}, (600.0, 600.0), (200.0, 0.0),
-            None, None, 0, -1, time.time(),
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
         )
         state = json.loads(result)
         assert len(state["robot"]["position"]) == 3
@@ -76,8 +94,15 @@ class TestBuildStateJson:
     def test_cubes_converted(self):
         wm = _make_world_map()
         result = build_state_json(
-            wm, {}, (600.0, 600.0), (200.0, 0.0),
-            None, None, 0, -1, time.time(),
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
         )
         state = json.loads(result)
         assert len(state["cubes"]) == 1
@@ -87,8 +112,15 @@ class TestBuildStateJson:
         wm = _make_world_map()
         telemetry = {"battery_voltage": 3.7, "charging": False}
         result = build_state_json(
-            wm, telemetry, (600.0, 600.0), (200.0, 0.0),
-            None, None, 0, -1, time.time(),
+            wm,
+            telemetry,
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
         )
         state = json.loads(result)
         assert state["telemetry"]["battery_voltage"] == 3.7
@@ -97,8 +129,15 @@ class TestBuildStateJson:
     def test_occupancy_included_when_forced(self):
         wm = _make_world_map()
         result = build_state_json(
-            wm, {}, (600.0, 600.0), (200.0, 0.0),
-            "base64data", [10.0, 20.0], 1, -1, time.time(),
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            "base64data",
+            [10.0, 20.0],
+            1,
+            -1,
+            time.time(),
             force_occupancy=True,
         )
         state = json.loads(result)
@@ -108,8 +147,15 @@ class TestBuildStateJson:
     def test_occupancy_included_when_seq_changed(self):
         wm = _make_world_map()
         result = build_state_json(
-            wm, {}, (600.0, 600.0), (200.0, 0.0),
-            "base64data", [10.0, 20.0], 5, 4, time.time(),
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            "base64data",
+            [10.0, 20.0],
+            5,
+            4,
+            time.time(),
         )
         state = json.loads(result)
         assert state["occupancy_png"] == "base64data"
@@ -117,8 +163,15 @@ class TestBuildStateJson:
     def test_occupancy_excluded_when_seq_same(self):
         wm = _make_world_map()
         result = build_state_json(
-            wm, {}, (600.0, 600.0), (200.0, 0.0),
-            "base64data", [10.0, 20.0], 5, 5, time.time(),
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            "base64data",
+            [10.0, 20.0],
+            5,
+            5,
+            time.time(),
         )
         state = json.loads(result)
         assert "occupancy_png" not in state
@@ -126,8 +179,15 @@ class TestBuildStateJson:
     def test_occupancy_excluded_when_none(self):
         wm = _make_world_map()
         result = build_state_json(
-            wm, {}, (600.0, 600.0), (200.0, 0.0),
-            None, None, 0, -1, time.time(),
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
         )
         state = json.loads(result)
         assert "occupancy_png" not in state
@@ -135,8 +195,15 @@ class TestBuildStateJson:
     def test_floor_size_and_center(self):
         wm = _make_world_map()
         result = build_state_json(
-            wm, {}, (800.0, 600.0), (100.0, 50.0),
-            None, None, 0, -1, time.time(),
+            wm,
+            {},
+            (800.0, 600.0),
+            (100.0, 50.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
         )
         state = json.loads(result)
         assert state["floor_size"] == [800.0, 600.0]
@@ -150,8 +217,69 @@ class TestBuildStateJson:
             "path_points": [[i, i, 0] for i in range(1000)],
         }
         result = build_state_json(
-            wm, {}, (600.0, 600.0), (200.0, 0.0),
-            None, None, 0, -1, time.time(),
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
         )
         state = json.loads(result)
         assert len(state["path_points"]) <= 801  # MAX_PATH_POINTS_SENT + 1
+
+    def test_astar_path_converted_to_scene(self):
+        """astar_path is 2-D world [x, y] -> 3-D scene [y, lift, x].
+
+        Regression: passing the raw 2-element points through made
+        ``waypoints[i][2]`` undefined in the browser, producing NaN in the
+        Float32Array and an invisible A* line.
+        """
+        wm = MagicMock()
+        wm.get_world_state.return_value = {
+            "robot": {"position": [0, 0, 0], "yaw": 0},
+            "cubes": {},
+            "path_points": [],
+            "astar_path": [[100.0, 50.0], [200.0, -30.0]],
+        }
+        result = build_state_json(
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
+        )
+        state = json.loads(result)
+        path = state["astar_path"]
+        assert len(path) == 2
+        assert all(len(p) == 3 for p in path)
+        # world (100, 50) -> scene [50, lift, 100]
+        assert path[0] == [50.0, PATH_SCENE_LIFT_MM, 100.0]
+        assert path[1] == [-30.0, PATH_SCENE_LIFT_MM, 200.0]
+
+    def test_astar_path_empty_when_absent(self):
+        wm = MagicMock()
+        wm.get_world_state.return_value = {
+            "robot": {"position": [0, 0, 0], "yaw": 0},
+            "cubes": {},
+            "path_points": [],
+        }
+        result = build_state_json(
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
+        )
+        state = json.loads(result)
+        assert state["astar_path"] == []

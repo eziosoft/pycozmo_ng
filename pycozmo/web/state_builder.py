@@ -128,8 +128,13 @@ def build_state_json(
         for (fx, fy, fz) in (coords.world_to_scene_point(p) for p in path_world)
     ]
 
-    # A* planned path: already in scene frame from get_world_state().
-    astar_path_scene = world.get("astar_path", [])
+    # A* planned path: stored as 2-D world-frame [x, y] — convert to scene
+    # frame (scene = [world_y, lift, world_x]) and lift above the ground so
+    # the line doesn't z-fight the grid floor, same as the path trail.
+    astar_path_scene = [
+        [float(y), PATH_SCENE_LIFT_MM, float(x)]
+        for (x, y) in world.get("astar_path", [])
+    ]
 
     state = {
         "cubes": cube_list,

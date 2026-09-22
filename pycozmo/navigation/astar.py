@@ -56,11 +56,18 @@ class AStarPlanner:
     def __init__(self, occupancy_map: OccupancyMap, allow_unknown: bool = True):
         self._occ = occupancy_map
         self._allow_unknown = allow_unknown
-        self._grid: np.ndarray = occupancy_map.grid
-        self._origin_x: float = occupancy_map.origin[0]
-        self._origin_y: float = occupancy_map.origin[1]
         self._cell_size: float = occupancy_map.cell_size_mm
-        self._grid_cells: int = occupancy_map._grid_cells
+        # The grid is CENTERED on the map origin (matches
+        # OccupancyMap.update): world = origin + (col + 0.5) * cell - half.
+        self._half: float = occupancy_map.grid_size_mm / 2.0
+
+    @property
+    def _grid(self) -> np.ndarray:
+        return self._occ.grid
+
+    @property
+    def _grid_cells(self) -> int:
+        return self._occ.grid.shape[0]
 
     # -- public API -------------------------------------------------------
 
@@ -136,18 +143,26 @@ class AStarPlanner:
     # -- grid helpers -----------------------------------------------------
 
     def _world_to_grid(self, wx: float, wy: float) -> tuple[int, int]:
-        """Convert world-frame (mm) to grid indices (col, row)."""
-        col = round((wx - self._origin_x) / self._cell_size)
-        row = round((wy - self._origin_y) / self._cell_size)
+        """Convert world-frame (mm) to grid indices (col, row).
+
+        Uses the same centered indexing as :meth:`OccupancyMap.update`
+        (grid origin is the cell at ``half`` offsets, not cell 0).
+        Origin is read live — it is set on the map's first update.
+        """
+        ox, oy = self._occ.origin
+        col = int((wx - ox + self._half) / self._cell_size)
+        row = int((wy - oy + self._half) / self._cell_size)
         return col, row
 
     def _grid_to_world_col(self, col: int) -> float:
-        """Convert grid column to world X (mm)."""
-        return self._origin_x + col * self._cell_size
+        """Convert grid column to world X (mm) — cell center."""
+        ox, _ = self._occ.origin
+        return ox + (col + 0.5) * self._cell_size - self._half
 
     def _grid_to_world_row(self, row: int) -> float:
-        """Convert grid row to world Y (mm)."""
-        return self._origin_y + row * self._cell_size
+        """Convert grid row to world Y (mm) — cell center."""
+        _, oy = self._occ.origin
+        return oy + (row + 0.5) * self._cell_size - self._half
 
     def _in_bounds(self, col: int, row: int) -> bool:
         return 0 <= col < self._grid_cells and 0 <= row < self._grid_cells
