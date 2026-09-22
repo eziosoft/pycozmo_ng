@@ -7,6 +7,7 @@ import time
 import numpy as np
 
 import pycozmo
+from pycozmo.navigation.astar import AStarPlanner, PathPoint
 from pycozmo.navigation.cube_approach import CubeApproach
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.steering import steer_velocities, wrap_pi
@@ -28,6 +29,13 @@ class Navigator:
         self._test_mode = False
         self._test_mode_thread: threading.Thread | None = None
         self._test_mode_lock = threading.Lock()
+        # A* pathfinding
+        self.astar_enabled = False
+        self.astar_planner: AStarPlanner | None = None
+        self._path_waypoints: list[PathPoint] = []
+        self._current_waypoint_idx = 0
+        self._path_following = False
+        self._path_follow_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Charger / origin handlers (COZMO-28)
@@ -83,10 +91,13 @@ class Navigator:
         """Handle click-to-navigate from browser.
 
         world_forward = X (Anki frame), world_left = Y (Anki frame).
+        When A* is enabled and a planner is set, computes an obstacle-
+        avoiding path through the occupancy grid.
         """
         if world_forward is None:
             if self.cli:
                 self.cli.stop_all_motors()
+            self._path_following = False
             print("Navigation cancelled")
             return
 
@@ -110,7 +121,9 @@ class Navigator:
 
         def _nav_thread():
             try:
-                if dist <= SHORT_DIST_MM:
+                if self.astar_enabled and self.astar_planner is not None:
+                    self._follow_astar_path(world_forward, world_left)
+                elif dist <= SHORT_DIST_MM:
                     self._drive_to_point(world_forward, world_left)
                 else:
                     heading = math.atan2(dy, dx)
@@ -124,9 +137,119 @@ class Navigator:
                     print("Arrived at target")
             except Exception as e:  # noqa: BLE001
                 print(f"Navigation error: {e}")
+            finally:
+                self._path_following = False
 
         t = threading.Thread(target=_nav_thread, daemon=True)
         t.start()
+
+    def _follow_astar_path(self, goal_x: float, goal_y: float) -> None:
+        """Compute and follow an A* path to *(goal_x, goal_y)*.
+
+        Replans dynamically as the occupancy map updates — if the
+        next waypoint becomes occupied or the path is exhausted,
+        a new A* search is issued from the current robot pose.
+        """
+        if self.astar_planner is None:
+            print("A*: no planner — falling back to direct nav")
+            self._drive_to_point(goal_x, goal_y)
+            return
+
+        robot_pose = self.cli.pose
+        start_x = robot_pose.position.x
+        start_y = robot_pose.position.y
+
+        with self._path_follow_lock:
+            self._path_following = True
+            self._current_waypoint_idx = 0
+            self._path_waypoints = (
+                self.astar_planner.find_path(start_x, start_y, goal_x, goal_y) or []
+            )
+            print(f"A*: computed {len(self._path_waypoints)} waypoints")
+
+        if not self._path_waypoints:
+            print("A*: no path found — falling back to direct nav")
+            self._path_following = False
+            self._drive_to_point(goal_x, goal_y)
+            return
+
+        REPLAN_WAYPOINTS = 3  # replan after consuming this many waypoints
+        REPLAN_INTERVAL_S = 1.0  # or every N seconds
+
+        t0 = time.monotonic()
+        waypoints_consumed = 0
+
+        while self._path_following and self.cli:
+            if not self._path_waypoints:
+                # Path exhausted — replan from current position
+                if time.monotonic() - t0 < REPLAN_INTERVAL_S:
+                    time.sleep(0.1)
+                    continue
+                robot_pose = self.cli.pose
+                cx = robot_pose.position.x
+                cy = robot_pose.position.y
+                new_path = self.astar_planner.find_path(cx, cy, goal_x, goal_y)
+                if not new_path:
+                    print("A*: replan failed — no path to goal")
+                    break
+                with self._path_follow_lock:
+                    self._path_waypoints = new_path
+                waypoints_consumed = 0
+                t0 = time.monotonic()
+                print(f"A*: replanned — {len(new_path)} waypoints")
+                continue
+
+            # Check if we need to replan before the next waypoint
+            if waypoints_consumed >= REPLAN_WAYPOINTS:
+                robot_pose = self.cli.pose
+                cx = robot_pose.position.x
+                cy = robot_pose.position.y
+                new_path = self.astar_planner.find_path(cx, cy, goal_x, goal_y)
+                if new_path and len(new_path) > 0:
+                    with self._path_follow_lock:
+                        self._path_waypoints = new_path
+                    waypoints_consumed = 0
+                    t0 = time.monotonic()
+                    print(f"A*: replanned — {len(new_path)} waypoints")
+                else:
+                    # Current path still OK, keep going
+                    waypoints_consumed = 0
+
+            with self._path_follow_lock:
+                if not self._path_waypoints:
+                    continue
+                wp = self._path_waypoints.pop(0)
+
+            if not self._path_following:
+                print("A*: path following cancelled")
+                return
+
+            arrived = self._drive_to_point(wp.x, wp.y, stop_mm=15.0)
+            waypoints_consumed += 1
+            t0 = time.monotonic()
+
+            if not arrived:
+                print(f"A*: timed out at waypoint ({wp.x:.0f}, {wp.y:.0f})")
+                break
+
+            self.cli.stop_all_motors()
+            time.sleep(0.15)
+
+        if self._path_following:
+            print("A*: reached goal")
+
+        self._path_following = False
+
+    def set_astar_planner(self, planner: AStarPlanner | None) -> None:
+        """Inject or remove the A* planner."""
+        self.astar_planner = planner
+
+    def set_astar_enabled(self, enabled: bool) -> None:
+        """Enable or disable A* pathfinding."""
+        self.astar_enabled = enabled
+        if not enabled:
+            self._path_following = False
+            print(f"A* {'disabled' if not enabled else 'enabled'}")
 
     # ------------------------------------------------------------------
     # Closed-loop drive (COZMO-35)

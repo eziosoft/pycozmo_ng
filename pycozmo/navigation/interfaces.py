@@ -98,12 +98,10 @@ class DriveToPointFn(Protocol):
         speed_mmps: float = 60.0,
         final_heading: float | None = None,
         align_tol_rad: float = 0.06,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
 
 class MoveForwardFn(Protocol):
     """Function signature for move-forward callback."""
 
-    def __call__(self, dist_mm: float, timeout_s: float = 6.0) -> bool:
-        ...
+    def __call__(self, dist_mm: float, timeout_s: float = 6.0) -> bool: ...

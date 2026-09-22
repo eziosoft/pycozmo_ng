@@ -352,6 +352,37 @@ html, body {
   font-weight: 600;
 }
 
+#astar-panel {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-subtle);
+  border-top: 1px solid var(--border);
+}
+
+#astar-panel h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 4px;
+}
+
+#astar-panel p {
+  font-size: var(--text-micro);
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+
+#astar-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+}
+
 /* ---- Camera settings panel ---- */
 #camera-settings-panel {
   padding: 10px;

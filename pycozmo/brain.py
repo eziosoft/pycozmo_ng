@@ -19,6 +19,7 @@ from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.cubes.manager import CubeManager
 from pycozmo.display.expressions import Happiness
 from pycozmo.logger import logger_cubes
+from pycozmo.navigation.astar import AStarPlanner
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
 from pycozmo.protocol import protocol_encoder
@@ -90,6 +91,11 @@ class Brain:
         self.navigator.web_viewer = self.web_viewer
         self.web.web_viewer = self.web_viewer
         self.web_streamer.web_viewer = self.web_viewer  # For remote control listeners
+
+        # A* pathfinding
+        self.astar_planner: AStarPlanner | None = None
+        self.navigator.set_astar_planner(self.astar_planner)
+        self.navigator.set_astar_enabled(False)
 
     @property
     def cli(self):
@@ -175,6 +181,15 @@ class Brain:
 
         # Wire web bridge to use detection pipeline
         self.web.detection_pipeline = self.detection_pipeline
+
+        # Expose occupancy map to web viewer for A* pathfinding
+        if self.floor_pipeline and self.floor_pipeline.occupancy_map is not None:
+            self.web_viewer.occupancy_map = self.floor_pipeline.occupancy_map
+            self.astar_planner = AStarPlanner(
+                self.floor_pipeline.occupancy_map, allow_unknown=True
+            )
+            self.navigator.set_astar_planner(self.astar_planner)
+            self.navigator.set_astar_enabled(False)
 
         # Register camera image handler
         def on_camera_image(cli_arg, image):
@@ -368,12 +383,14 @@ class Brain:
         self.web_viewer.set_camera_settings_listener(self._on_camera_settings)
         self.web_viewer.set_say_listener(self._on_say)
         self.web_viewer.set_test_mode_listener(self.navigator.set_test_mode)
+        self.web_viewer.set_astar_toggle_listener(self.navigator.set_astar_enabled)
         if self.cli is not None:
             self.dock_state.dock_pose = self.cli.pose
         print("Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
         print("Click-to-navigate: click ground to drive there")
         print("Click cube to approach and align")
         print("Z to dock: drive back to start position")
+        print("A* pathfinding: toggle in the web viewer")
 
     # ------------------------------------------------------------------
     # Camera settings from browser (COZMO-30)

@@ -142,6 +142,19 @@
         <span id="test-mode-status" style="font-size: 11px; color: #888; margin-left: 8px;">OFF</span>
       </div>
 
+      <div id="astar-panel">
+        <h3>A* Pathfinding</h3>
+        <p style="font-size: 11px; color: #888; margin-bottom: 6px;">
+          Enable obstacle-avoiding path planning using the occupancy map.
+          Toggle to switch between A* and direct navigation.
+        </p>
+        <label class="cam-toggle">
+          <input type="checkbox" id="astar-toggle" />
+          <span class="cam-toggle-slider"></span>
+        </label>
+        <span id="astar-status" style="font-size: 11px; color: #888; margin-left: 8px;">OFF</span>
+      </div>
+
       <div id="camera-settings-panel">
         <h3>Camera Settings</h3>
         <div class="cam-row">
@@ -984,6 +997,15 @@ function sendTestMode(enabled) {
       }
     }
 
+    function sendAstarToggle(enabled) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: 'astar_toggle', enabled: enabled }));
+      } catch (e) {
+        console.warn('astar_toggle send failed', e);
+      }
+    }
+
     const testModeToggle = document.getElementById('test-mode-toggle');
     const testModeStatus = document.getElementById('test-mode-status');
     testModeToggle.addEventListener('change', () => {
@@ -991,6 +1013,15 @@ function sendTestMode(enabled) {
       testModeStatus.textContent = enabled ? 'ON' : 'OFF';
       testModeStatus.style.color = enabled ? '#4ade80' : '#888';
       sendTestMode(enabled);
+    });
+
+    const astarToggle = document.getElementById('astar-toggle');
+    const astarStatus = document.getElementById('astar-status');
+    astarToggle.addEventListener('change', () => {
+      const enabled = astarToggle.checked;
+      astarStatus.textContent = enabled ? 'ON' : 'OFF';
+      astarStatus.style.color = enabled ? '#4ade80' : '#888';
+      sendAstarToggle(enabled);
     });
 
     const ttsText = document.getElementById('tts-text');

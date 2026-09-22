@@ -82,6 +82,9 @@ class WebViewerServer:
         self._occupancy_seq_sent: int = -1
         self._last_occupancy_encode_time: float = 0.0
 
+        # Occupancy map reference for A* pathfinding
+        self.occupancy_map = None
+
         # Procedural face (base64-encoded PNG for WebSocket)
         self._latest_face_png: str | None = None
 
@@ -336,6 +339,10 @@ class WebViewerServer:
     def set_test_mode_listener(self, callback) -> None:
         """Subscribe to browser test mode toggle events."""
         self._msg_router.set_test_mode_listener(callback)
+
+    def set_astar_toggle_listener(self, callback) -> None:
+        """Subscribe to browser A* toggle events."""
+        self._msg_router.set_astar_toggle_listener(callback)
 
     def update_camera_settings(self, **kwargs) -> None:
         """Update the stored camera settings (called from the listener)."""

@@ -133,6 +133,14 @@ class NavigatorAPI:
         """Stop all movement."""
         self._navigator.stop()
 
+    def set_astar_enabled(self, enabled: bool) -> None:
+        """Enable or disable A* obstacle-avoiding pathfinding."""
+        self._navigator.set_astar_enabled(enabled)
+
+    def is_astar_enabled(self) -> bool:
+        """Return whether A* pathfinding is currently enabled."""
+        return self._navigator.astar_enabled
+
 
 class WorldMapAPI:
     """Read-only access to the world map."""
