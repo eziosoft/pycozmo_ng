@@ -144,8 +144,11 @@ class Navigator:
                         0,
                         angle_z=Angle(radians=heading),
                     )
-                    self.cli.go_to_pose(target_pose, relative_to_robot=False)
-                    print("Arrived at target")
+                    ok = self.cli.go_to_pose(target_pose, relative_to_robot=False)
+                    if ok:
+                        print("Arrived at target")
+                    else:
+                        print("Navigation failed — path rejected or timed out")
             except Exception as e:  # noqa: BLE001
                 print(f"Navigation error: {e}")
             finally:
@@ -309,11 +312,14 @@ class Navigator:
             return
         pose = cli.pose
         heading = math.atan2(goal_y - pose.position.y, goal_x - pose.position.x)
-        cli.go_to_pose(
+        ok = cli.go_to_pose(
             Pose(goal_x, goal_y, 0, angle_z=Angle(radians=heading)),
             relative_to_robot=False,
         )
-        print("Arrived at target")
+        if ok:
+            print("Arrived at target")
+        else:
+            print("Navigation failed — path rejected or timed out")
 
     def set_astar_planner(self, planner: AStarPlanner | None) -> None:
         """Inject or remove the A* planner."""

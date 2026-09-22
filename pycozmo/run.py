@@ -45,17 +45,29 @@ def setup_basic_logging(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    # Mark this handler so repeated setup calls replace ours instead of
+    # stacking a second copy (which printed every record twice).
+    handler._pycozmo_basic = True  # type: ignore[attr-defined]
+    for lg in (
+        logger,
+        logger_protocol,
+        logger_robot,
+        logger_reaction,
+        logger_behavior,
+        logger_animation,
+    ):
+        lg.handlers = [
+            h for h in lg.handlers if not getattr(h, "_pycozmo_basic", False)
+        ]
+        lg.addHandler(handler)
+        # We install our own handler — don't also emit through the root
+        # logger's handlers (e.g. an app's logging.basicConfig).
+        lg.propagate = False
     logger.setLevel(log_level)
-    logger_protocol.addHandler(handler)
     logger_protocol.setLevel(protocol_log_level)
-    logger_robot.addHandler(handler)
     logger_robot.setLevel(robot_log_level)
-    logger_reaction.addHandler(handler)
     logger_reaction.setLevel(robot_log_level)
-    logger_behavior.addHandler(handler)
     logger_behavior.setLevel(robot_log_level)
-    logger_animation.addHandler(handler)
     logger_animation.setLevel(robot_log_level)
 
 

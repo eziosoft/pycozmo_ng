@@ -12,7 +12,7 @@ follower runs the trajectory at high rate on the robot.
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from pycozmo.client import build_polyline_packets
+from pycozmo.client import build_polyline_packets, chunk_polyline_points
 from pycozmo.navigation.astar import AStarPlanner, PathPoint
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
@@ -96,6 +96,53 @@ class TestBuildPolylinePackets:
         assert line.speed_mmps == 55.0
         assert line.accel_mmps2 == 30.0
         assert line.decel_mmps2 == 25.0
+
+
+class TestChunkPolylinePoints:
+    """Firmware buffer holds MAX_NUM_PATH_SEGMENTS (6) appends per path."""
+
+    def test_empty(self):
+        assert chunk_polyline_points([]) == []
+
+    def test_short_path_single_chunk(self):
+        pts = [(100.0, 0.0), (200.0, 0.0)]
+        assert chunk_polyline_points(pts) == [pts]
+
+    def test_six_points_fit_in_one_chunk(self):
+        pts = [(float(i * 50), 0.0) for i in range(1, 7)]
+        assert chunk_polyline_points(pts) == [pts]
+
+    def test_seven_points_split_and_order_preserved(self):
+        pts = [(float(i * 50), 0.0) for i in range(1, 8)]
+        chunks = chunk_polyline_points(pts)
+        assert [len(c) for c in chunks] == [1, 6]
+        assert [p for c in chunks for p in c] == pts
+
+    def test_final_turn_reserves_segment(self):
+        pts = [(float(i * 50), 0.0) for i in range(1, 12)]  # 11 points
+        chunks = chunk_polyline_points(pts, final_heading_rad=0.5)
+        assert len(chunks) == 2
+        for i, chunk in enumerate(chunks):
+            segs = len(chunk) + (1 if i == len(chunks) - 1 else 0)
+            assert segs <= 6
+        assert [p for c in chunks for p in c] == pts
+
+    def test_five_points_plus_turn_fit_in_one_chunk(self):
+        pts = [(float(i * 50), 0.0) for i in range(1, 6)]
+        chunks = chunk_polyline_points(pts, final_heading_rad=0.2)
+        assert len(chunks) == 1
+        assert len(chunks[0]) + 1 <= 6
+
+    def test_large_path_all_chunks_within_limit(self):
+        pts = [(float(i * 50), float(i % 3 * 40.0)) for i in range(1, 32)]
+        for heading in (None, 1.0):
+            chunks = chunk_polyline_points(pts, final_heading_rad=heading)
+            assert chunks
+            for i, chunk in enumerate(chunks):
+                is_last = i == len(chunks) - 1
+                segs = len(chunk) + (1 if heading is not None and is_last else 0)
+                assert 1 <= segs <= 6
+            assert [p for c in chunks for p in c] == pts
 
 
 def _free_map(size_mm: float = 1000.0, cell_mm: float = 50.0) -> OccupancyMap:
