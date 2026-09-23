@@ -14,9 +14,9 @@ from threading import Event, Lock
 import numpy as np
 from PIL import Image
 
-from pycozmo.animation import anim, anim_controller, anim_encoder
+from pycozmo.animation import anim_controller
 from pycozmo.protocol import protocol_declaration, protocol_encoder
-from pycozmo.sound import audio, tts
+from pycozmo.sound import tts
 from pycozmo.transport import conn
 from pycozmo.util import filter, object, robot, robot_debug
 from pycozmo.vision import camera
@@ -27,7 +27,6 @@ from . import (
     image_encoder,
     lights,
     logger,
-    logger_animation,
     logger_robot,
     util,
 )
@@ -217,12 +216,6 @@ class Client(event.Dispatcher):
         self.packet_type_filter.deny_ids({protocol_declaration.PacketType.PING.value})
         self.packet_id_filter = filter.Filter()
         self._reset_partial_state()
-        # Animations
-        self._clip_metadata = {}
-        self._clips = {}
-        self._ppclips = {}
-        self._next_anim_id = 1
-        self.animation_groups = {}
         self._tts = tts.TTS(rate=tts_rate)
 
     def start(self) -> None:
@@ -1055,109 +1048,10 @@ class Client(event.Dispatcher):
             time.sleep(duration)
             self.clear_screen()
 
-    def _load_clips(self, fspec: str) -> None:
-        start_time = time.perf_counter()
-
-        if fspec.endswith(".bin"):
-            clips = anim_encoder.AnimClips.from_fb_file(fspec)
-        elif fspec.endswith(".json"):
-            clips = anim_encoder.AnimClips.from_json_file(fspec)
-        else:
-            raise ValueError("Unsupported animation file format.")
-        for clip in clips.clips:
-            self._clips[clip.name] = clip
-
-        logger.debug(f"Loaded {fspec} in {time.perf_counter() - start_time:.02f} s.")
-
-    def play_anim_ppclip(self, ppclip: anim.PreprocessedClip) -> None:
-        # Ensure no other animation is playing.
-        self.cancel_anim()
-
-        # Start animation.
-        pkt = protocol_encoder.StartAnimation(anim_id=self._next_anim_id)
-        self.anim_controller.play_anim_frame(None, None, (pkt,))
-        self._next_anim_id += 1
-
-        # Send frames to the animation controller.
-        frames = sorted(ppclip.keyframes.keys())
-        num_frames = len(frames)
-        time_ms = 0
-        for i in range(num_frames):
-            audio_pkt = None
-            image_pkt = None
-            pkts = []
-            for action in ppclip.keyframes[frames[i]]:
-                if isinstance(action, protocol_encoder.OutputAudio):
-                    audio_pkt = action
-                elif isinstance(action, protocol_encoder.DisplayImage):
-                    image_pkt = action
-                elif isinstance(action, protocol_encoder.Packet):
-                    pkts.append(action)
-            self.anim_controller.play_anim_frame(audio_pkt, image_pkt, pkts)
-            time_ms += 33
-
-            # Pause.
-            if i < num_frames - 1:
-                target_ms = time_ms + frames[i + 1] - frames[i]
-                while target_ms > time_ms:
-                    self.anim_controller.play_anim_frame(None, None, None)
-                    time_ms += 33
-
-        # End animation.
-        pkt = protocol_encoder.EndAnimation()
-        self.anim_controller.play_anim_frame(None, None, (pkt,))
-
-    def play_anim(self, name: str) -> None:
-        if not self._clip_metadata:
-            raise ValueError("Animations not loaded.")
-        elif name not in self._clip_metadata:
-            raise ValueError("Unknown clip name.")
-
-        if name not in self._ppclips:
-            if name not in self._clips:
-                self._load_clips(self._clip_metadata[name].fspec)
-            clip = self._clips[name]
-            self._ppclips[name] = anim.PreprocessedClip.from_anim_clip(clip)
-
-        ppclip = self._ppclips[name]
-        self.play_anim_ppclip(ppclip)
-
-    def cancel_anim(self) -> None:
-        self.anim_controller.cancel_anim()
-
-    def play_anim_group(self, anim_group_name: str) -> None:
-        logger_animation.info(f"Playing animation group {anim_group_name}")
-        animation_group = self.animation_groups.get(anim_group_name)
-        if not animation_group:
-            logger_animation.error(f"Failed to find animation group {anim_group_name}.")
-            return
-        member = animation_group.choose_member()
-        logger_animation.info(f"Playing animation {member.name}")
-        self.play_anim(member.name)
-
-    def load_anims(self) -> None:
-        util.check_assets()
-        anim_dir = str(util.get_cozmo_anim_dir())
-        self._clip_metadata = anim_encoder.get_clip_metadata(anim_dir)
-        self._clips = {}
-        resource_dir = str(util.get_cozmo_asset_dir())
-        self.animation_groups = anim.load_animation_groups(resource_dir)
-
-    def get_anim_names(self) -> set:
-        return set(self._clip_metadata.keys())
-
-    @property
-    def anim_names(self) -> set:
-        return self.get_anim_names()
-
     def set_volume(self, level: int) -> None:
         """Set audio output volume to a level in the range 0-65535."""
         pkt = protocol_encoder.SetRobotVolume(level=level)
         self.conn.send(pkt)
-
-    def play_audio(self, fspec: str) -> None:
-        pkts = audio.load_wav(fspec)
-        self.anim_controller.play_audio(pkts)
 
     def say(self, text: str) -> None:
         """Say text through the Cozmo robot using offline TTS.

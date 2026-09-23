@@ -31,14 +31,10 @@ from . import (  # noqa: F401
     vision,
 )
 from .animation import (  # noqa: F401
-    activity,
-    anim,
     anim_controller,
-    anim_encoder,
-    behavior,
 )
 from .client import Client
-from .display import emotions, expressions, procedural_face  # noqa: F401
+from .display import expressions, procedural_face  # noqa: F401
 from .event import *
 from .protocol import (  # noqa: F401
     protocol_base,
