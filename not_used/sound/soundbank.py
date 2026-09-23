@@ -310,6 +310,9 @@ class SoundBankReader:
             try:
                 chunk = Chunk(f, bigendian=False, align=False)
                 chunkname = chunk.getname()
+                if not chunkname:
+                    # Reached end of file.
+                    break
                 if chunkname == b"DIDX":
                     self._read_data_index(chunk)
                 elif chunkname == b"DATA":

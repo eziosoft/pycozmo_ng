@@ -1,4 +1,8 @@
-"""Minimal chunk module shim for Python 3.13+ (stdlib chunk was removed)."""
+"""Chunk reader for AudioKinetic WWise SoundBank (.bnk) files.
+
+Provides a minimal Chunk class for parsing chunk-based binary formats
+used in Wwise SoundBank files.
+"""
 
 
 class Chunk:

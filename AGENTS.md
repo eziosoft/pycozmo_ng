@@ -143,9 +143,21 @@ pycozmo/           # Main library
 │   ├── viewer_server.py # WebViewerServer — thin composition root
 │   ├── ws_server.py   # WSServer — WebSocket + HTTP lifecycle
 │   └── static/        # Three.js browser viewer (index.html, style.css)
-├── sound/         # SoundBank + audio encoding + TTS
-│   ├── tts.py     # TTS engine using pyttsx3 (espeak-ng backend)
-└── tests/         # Unit tests (pytest)
+├── sound/         # Audio encoding + TTS
+│   ├── audio.py       # Audio encoding (μ-law)
+│   ├── exception.py   # AudioKinetic and TTS exceptions
+│   └── tts.py         # TTS engine using pyttsx3 (espeak-ng backend)
+├── not_used/      # Deprecated / moved code
+│   ├── sound/       # SoundBank parser (moved from pycozmo/sound/)
+│   │   ├── chunk.py       # Chunk reader for .bnk files
+│   │   ├── exception.py   # AudioKinetic exceptions
+│   │   ├── soundbank.py   # SoundBank (.bnk) parser
+│   │   ├── soundbanksinfo.py  # SoundbanksInfo.xml parser
+│   │   ├── wem.py         # WEM file placeholder
+│   │   └── tests/       # Historical SoundBank tests
+│   │       ├── test_soundbank.py
+│   │       └── test_soundbanksinfo.py
+├── tests/         # Unit tests (pytest)
 ```
 
 ## Branch: develop

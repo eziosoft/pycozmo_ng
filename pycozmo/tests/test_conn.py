@@ -58,17 +58,17 @@ class TestConnection(unittest.TestCase):
         self.assertTrue(self.s_e.wait(2.0))
         self.stop()
 
-    @unittest.skip("Intermittently failing.")
     def test_send_30(self):
         COUNT = 30
         counts = []
-        self.s.add_handler(
-            pycozmo.protocol_encoder.SetRobotVolume,
-            lambda cli, pkt: (
-                counts.append(pkt.level),
-                (pkt.level < COUNT - 2) or self.s_e.set(),
-            ),
-        )
+
+        def handle_volume(cli, pkt):
+            counts.append(pkt.level)
+            if pkt.level == COUNT - 1:
+                self.s_e.set()
+            return True
+
+        self.s.add_handler(pycozmo.protocol_encoder.SetRobotVolume, handle_volume)
         self.start()
         self.connect()
         for i in range(COUNT):
