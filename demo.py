@@ -28,9 +28,13 @@ TOTAL_STEPS = 12
 VIEWER_PORT = 8765
 
 
-def _step(n: int, msg: str) -> None:
-    """Log a numbered startup step, e.g. ``[3/12] Starting web viewer...``."""
-    logger.info("[%d/%d] %s", n, TOTAL_STEPS, msg)
+def _step(n: int, msg: str, *args: object) -> None:
+    """Log a numbered startup step, e.g. ``[3/12] Starting web viewer...``.
+
+    Extra arguments are lazily formatted into ``msg`` (printf-style), like
+    regular ``logger`` calls.
+    """
+    logger.info("[%d/%d] " + msg, n, TOTAL_STEPS, *args)
 
 
 def main():
