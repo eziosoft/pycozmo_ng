@@ -121,5 +121,5 @@ fi
 source "${VENV_DIR}/bin/activate"
 
 log "Python: $(python --version 2>&1) (venv=${VIRTUAL_ENV:-inactive})"
-log "Launching main.py (Ctrl-C to stop)..."
+log "Launching demo.py (Ctrl-C to stop)..."
 exec python main.py "$@"
