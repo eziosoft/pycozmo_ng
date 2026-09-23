@@ -16,7 +16,7 @@ import time
 
 import pycozmo
 from pycozmo import Cozmo
-from pycozmo.logger import logger_cubes
+from pycozmo.logger import logger_cubes, setup_basic_logging
 from pycozmo.transport.conn import ROBOT_ADDR
 from pycozmo.wifi import connect_to_cozmo_wifi, get_local_ip
 
@@ -102,6 +102,11 @@ def main():
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     logger_cubes.setLevel(getattr(logging, args.cubes_log_level))
+    # Install the pycozmo channel handlers now: Cozmo.connect() calls this
+    # again with the same defaults (idempotent), but without the early call
+    # everything logged before the connection — e.g. the step-1 Wi-Fi check —
+    # would be dropped (pycozmo.* channels have no handler yet).
+    setup_basic_logging()
     # Demo progress is this script's UI — always show it at INFO, regardless
     # of --log-level (which tunes the root logger for third-party output).
     logger.setLevel(logging.INFO)
