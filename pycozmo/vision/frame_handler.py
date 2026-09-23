@@ -8,8 +8,8 @@ No web streaming logic — that's delegated to WebStreamer.
 import time
 
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
-from pycozmo.vision.detection_pipeline import DetectionPipeline
-from pycozmo.vision.floor_pipeline import FloorPipeline
+from pycozmo.vision.cube_detector.detection_pipeline import DetectionPipeline
+from pycozmo.vision.occupancy_map.floor_pipeline import FloorPipeline
 from pycozmo.vision.frame_state import FrameState
 
 

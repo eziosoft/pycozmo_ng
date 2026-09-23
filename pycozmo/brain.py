@@ -24,12 +24,12 @@ from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
 from pycozmo.protocol import protocol_encoder
 from pycozmo.vision.annotation import AnnotationEngine
-from pycozmo.vision.detection_pipeline import (
+from pycozmo.vision.cube_detector.detection_pipeline import (
     DetectionPipeline,
     create_default_detection_pipeline,
 )
 from pycozmo.vision.events import DetectionEventDispatcher
-from pycozmo.vision.floor_pipeline import FloorPipeline
+from pycozmo.vision.occupancy_map.floor_pipeline import FloorPipeline
 from pycozmo.vision.frame_handler import FrameHandler
 from pycozmo.vision.frame_state import FrameState
 from pycozmo.web.streamer import WebStreamer

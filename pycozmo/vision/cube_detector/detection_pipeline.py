@@ -12,14 +12,14 @@ import cv2
 import numpy as np
 
 from pycozmo import logger
-from pycozmo.vision.camera_calibration import CameraCalibration
+from pycozmo.vision.calibration.camera_calibration import CameraCalibration
 from pycozmo.vision.interfaces import (
     CubeDetector,
     CubeFusionTracker,
     FaceDetector,
     RobotCenterDetector,
 )
-from pycozmo.vision.robot_center import RobotCenterResult
+from pycozmo.vision.calibration.robot_center import RobotCenterResult
 
 
 @dataclass
@@ -317,7 +317,7 @@ def load_marker_templates(marker_dir: str | None = None) -> list[np.ndarray]:
 
     if marker_dir is None:
         marker_dir = os.path.join(
-            os.path.dirname(__file__), "cube_detector", "cube_faces"
+            os.path.dirname(__file__), "", "cube_faces"
         )
 
     if not os.path.exists(marker_dir):
@@ -381,7 +381,7 @@ def create_default_detection_pipeline(
         CubeFusionTracker,
     )
     from pycozmo.vision.face_detector import FaceDetector
-    from pycozmo.vision.robot_center import RobotCenterDetector
+    from pycozmo.vision.calibration.robot_center import RobotCenterDetector
 
     # Load markers
     target_markers = load_marker_templates(marker_dir)

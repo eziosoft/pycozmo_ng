@@ -3,7 +3,7 @@
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.logger import logger
 from pycozmo.navigation.dock_state import DockState
-from pycozmo.vision.detection_pipeline import DetectionPipeline
+from pycozmo.vision.cube_detector.detection_pipeline import DetectionPipeline
 from pycozmo.vision.frame_state import FrameState
 
 

@@ -1,11 +1,11 @@
 """Vision subpackage — processor, display, calibration, and detection modules."""
 
 from pycozmo.vision.annotation import AnnotationEngine
-from pycozmo.vision.camera_calibration import (
+from pycozmo.vision.calibration.camera_calibration import (
     CameraCalibration,
     CameraCalibrationRetriever,
 )
-from pycozmo.vision.detection_pipeline import (
+from pycozmo.vision.cube_detector.detection_pipeline import (
     CubeDetection,
     DetectionPipeline,
     create_default_detection_pipeline,
@@ -19,7 +19,7 @@ from pycozmo.vision.interfaces import (
     CubeFusionTracker,
     FaceDetector,
 )
-from pycozmo.vision.robot_center import RobotCenterDetector, RobotCenterResult
+from pycozmo.vision.calibration.robot_center import RobotCenterDetector, RobotCenterResult
 
 __all__ = [
     "AnnotationEngine",

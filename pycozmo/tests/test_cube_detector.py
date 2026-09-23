@@ -4,7 +4,6 @@ Verifies that _extract_patch uses bounding-box ROI instead of full-image
 warpPerspective, and that _match_marker efficiently handles template matching.
 """
 
-import time
 from unittest.mock import MagicMock
 
 import cv2
@@ -15,7 +14,7 @@ from pycozmo.vision.cube_detector.cube_detector import (
     CozmoCubeDetector,
     CubeFusionTracker,
 )
-from pycozmo.vision.detection_pipeline import load_marker_templates
+from pycozmo.vision.cube_detector.detection_pipeline import load_marker_templates
 
 
 class TestExtractPatch:

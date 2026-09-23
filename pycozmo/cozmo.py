@@ -34,7 +34,7 @@ from pycozmo.event import (
 from pycozmo.logger import setup_basic_logging
 from pycozmo.navigation.world_map import WorldMap
 from pycozmo.protocol import protocol_encoder
-from pycozmo.vision.detection_pipeline import DetectionPipeline
+from pycozmo.vision.cube_detector.detection_pipeline import DetectionPipeline
 from pycozmo.web.viewer_server import WebViewerServer
 
 
@@ -443,7 +443,7 @@ class Cozmo:
                 frame (1 = every frame). Higher values reduce CPU load.
         """
         if camera_calibration is None:
-            from pycozmo.vision.camera_calibration import CameraCalibrationRetriever
+            from pycozmo.vision.calibration.camera_calibration import CameraCalibrationRetriever
 
             retriever = CameraCalibrationRetriever(self._cli)
             camera_calibration = retriever.get_calibration(timeout=calibration_timeout)

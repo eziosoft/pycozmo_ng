@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from pycozmo.vision.floor_pipeline import FloorPipeline
+from pycozmo.vision.occupancy_map.floor_pipeline import FloorPipeline
 
 
 def _make_camera_calibration():

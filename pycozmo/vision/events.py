@@ -5,7 +5,7 @@ testability and locality.
 """
 
 from pycozmo import event
-from pycozmo.vision.detection_pipeline import CubeDetection
+from pycozmo.vision.cube_detector.detection_pipeline import CubeDetection
 from pycozmo.vision.face_detector import FaceDetection
 
 

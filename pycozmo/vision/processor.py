@@ -10,7 +10,7 @@ This module is kept for backward compatibility. Use the new modules instead:
 
 import warnings
 
-from pycozmo.vision.detection_pipeline import CubeDetection, DetectionPipeline
+from pycozmo.vision.cube_detector.detection_pipeline import CubeDetection, DetectionPipeline
 
 warnings.warn(
     "pycozmo.vision.processor is deprecated. "
