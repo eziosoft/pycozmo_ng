@@ -12,6 +12,7 @@ import time
 import numpy as np
 
 import pycozmo
+from pycozmo.logger import logger
 from pycozmo.navigation.steering import wrap_pi
 from pycozmo.util import Angle, Pose
 
@@ -198,7 +199,9 @@ class CubeApproach:
                         accel=30.0,
                         max_speed=30.0,
                     )
-                    print(f"Head tilt {self.NEAR_TILT_DEG:.0f} deg (dist {d:.0f}mm)")
+                    logger.info(
+                        "Head tilt %.0f deg (dist %.0fmm)", self.NEAR_TILT_DEG, d
+                    )
                     return
             time.sleep(0.05)
 
@@ -276,7 +279,7 @@ class CubeApproach:
         progress, the request is ignored.
         """
         if not self._approach_lock.acquire(blocking=False):
-            print(f"Approach busy - ignoring request for cube {cube_idx + 1}")
+            logger.warning("Approach busy - ignoring request for cube %d", cube_idx + 1)
             return
 
         def _run_guarded():
@@ -293,7 +296,7 @@ class CubeApproach:
         try:
             state = self._get_cube_state(cube_idx)
             if state is None:
-                print(f"Cube {cube_idx + 1} not in world map")
+                logger.warning("Cube %d not in world map", cube_idx + 1)
                 return
 
             robot_pose = self.cli.pose
@@ -304,13 +307,17 @@ class CubeApproach:
                 state.position, state.rotation_matrix, (rx, ry), robot_yaw
             )
             if face is None:
-                print("Could not determine approach face")
+                logger.warning("Could not determine approach face")
                 return
             nx, ny, heading = face
 
-            print(
-                f"Approaching cube {cube_idx + 1} at ({cube_x:.0f}, {cube_y:.0f}) "
-                f"face normal=({nx:.2f}, {ny:.2f})"
+            logger.info(
+                "Approaching cube %d at (%.0f, %.0f) face normal=(%.2f, %.2f)",
+                cube_idx + 1,
+                cube_x,
+                cube_y,
+                nx,
+                ny,
             )
 
             # Forks down
@@ -319,19 +326,19 @@ class CubeApproach:
                 accel=self.LIFT_UP_ACCEL,
                 max_speed=self.LIFT_UP_SPEED,
             )
-            print(f"Lift lowered ({pycozmo.MIN_LIFT_HEIGHT.mm:.0f}mm)")
+            logger.info("Lift lowered (%.0fmm)", pycozmo.MIN_LIFT_HEIGHT.mm)
 
             self.cli.set_head_angle(
                 math.radians(self.HEAD_TILT_DEG), accel=30.0, max_speed=30.0
             )
-            print(f"Head tilt {self.HEAD_TILT_DEG:.0f} deg")
+            logger.info("Head tilt %.0f deg", self.HEAD_TILT_DEG)
 
             # Back away if too close
             dist_to_cube = math.hypot(cube_x - rx, cube_y - ry)
             if dist_to_cube < self.TOO_CLOSE_MM:
                 bx = cube_x + (rx - cube_x) / dist_to_cube * self.BACK_AWAY_DIST_MM
                 by = cube_y + (ry - cube_y) / dist_to_cube * self.BACK_AWAY_DIST_MM
-                print(f"Too close ({dist_to_cube:.0f}mm) - backing away")
+                logger.info("Too close (%.0fmm) - backing away", dist_to_cube)
                 self._drive_to_point(bx, by, timeout_s=8.0)
 
             time.sleep(0.3)
@@ -342,7 +349,7 @@ class CubeApproach:
 
             # Step 1: view standoff
             s1x, s1y = self._standoff(state, self.STEP1_DIST_MM, (nx, ny))
-            print(f"Step 1: go_to_pose to view standoff ({s1x:.0f}, {s1y:.0f})")
+            logger.info("Step 1: go_to_pose to view standoff (%.0f, %.0f)", s1x, s1y)
             self.cli.go_to_pose(
                 Pose(s1x, s1y, 0, angle_z=Angle(radians=heading)),
                 relative_to_robot=False,
@@ -350,19 +357,21 @@ class CubeApproach:
 
             if not self._dwell_for_smoothing(cube_idx):
                 self.cli.stop_all_motors()
-                print("Cube not re-detected at standoff - cancelling approach")
+                logger.warning("Cube not re-detected at standoff - cancelling approach")
                 return
 
             # Step 2: corrected standoff
             target2 = self._corrected_target(cube_idx, self.STEP2_DIST_MM)
             if target2 is None:
-                print("Cube lost after step 1 - keeping last standoff")
+                logger.warning("Cube lost after step 1 - keeping last standoff")
                 s2x, s2y, heading2 = s1x, s1y, heading
             else:
                 s2x, s2y, heading2 = target2
-            print(
-                f"Step 2: go_to_pose to {self.STEP2_DIST_MM:.0f}mm standoff "
-                f"({s2x:.0f}, {s2y:.0f})"
+            logger.info(
+                "Step 2: go_to_pose to %.0fmm standoff (%.0f, %.0f)",
+                self.STEP2_DIST_MM,
+                s2x,
+                s2y,
             )
             self.cli.go_to_pose(
                 Pose(s2x, s2y, 0, angle_z=Angle(radians=heading2)),
@@ -379,7 +388,7 @@ class CubeApproach:
                     break
                 time.sleep(0.05)
 
-            print(f"Aligned with cube {cube_idx + 1}")
+            logger.info("Aligned with cube %d", cube_idx + 1)
 
             # Alignment verification with retry
             attempts = 0
@@ -388,7 +397,7 @@ class CubeApproach:
                     self._verify_grab_alignment(cube_idx)
                 )
                 for msg in checks:
-                    print(f"  check: {msg}")
+                    logger.info("check: %s", msg)
 
                 recoverable = (
                     not aligned
@@ -403,22 +412,25 @@ class CubeApproach:
                     break
 
                 attempts += 1
-                print(
-                    f"Misaligned by {math.degrees(facing_err_rad):.1f} deg "
-                    f"- creeping {self.GRAB_RECHECK_MM:.0f}mm closer "
-                    f"({attempts}/{self.GRAB_MAX_RECHECKS})"
+                logger.info(
+                    "Misaligned by %.1f deg - creeping %.0fmm closer (%d/%d)",
+                    math.degrees(facing_err_rad),
+                    self.GRAB_RECHECK_MM,
+                    attempts,
+                    self.GRAB_MAX_RECHECKS,
                 )
                 self._move_forward(self.GRAB_RECHECK_MM)
                 time.sleep(0.3)
 
             if not aligned:
-                print("Alignment check FAILED - not grabbing")
+                logger.warning("Alignment check FAILED - not grabbing")
                 return
 
-            print(
-                f"Aligned - grabbing cube {cube_idx + 1}: "
-                f"+{self.GRAB_FORWARD_MM:.0f}mm, lift to "
-                f"{pycozmo.MAX_LIFT_HEIGHT.mm:.0f}mm"
+            logger.info(
+                "Aligned - grabbing cube %d: +%.0fmm, lift to %.0fmm",
+                cube_idx + 1,
+                self.GRAB_FORWARD_MM,
+                pycozmo.MAX_LIFT_HEIGHT.mm,
             )
             self._move_forward(self.GRAB_FORWARD_MM)
             self.cli.set_lift_height(
@@ -426,6 +438,6 @@ class CubeApproach:
                 accel=self.LIFT_UP_ACCEL,
                 max_speed=self.LIFT_UP_SPEED,
             )
-            print(f"Cube {cube_idx + 1} grabbed (lift up)")
+            logger.info("Cube %d grabbed (lift up)", cube_idx + 1)
         except Exception as e:  # noqa: BLE001
-            print(f"Approach error: {e}")
+            logger.exception("Approach error: %s", e)

@@ -9,6 +9,8 @@ from io import StringIO
 
 from PIL import Image
 
+from pycozmo.logger import logger
+
 __all__ = [
     "ImageDecoder",
     "ImageEncoder",
@@ -79,7 +81,7 @@ class ImageDecoder:
         if cmd == 0:  # Skip column
             cnt += 1
             if self.debug:
-                print(f"Skip column {cnt}")
+                logger.debug("Skip column %d", cnt)
             if self.last_draw:
                 self.x += 1
             self.x += cnt
@@ -89,7 +91,7 @@ class ImageDecoder:
         elif cmd == 1:  # Repeat column
             cnt += 1
             if self.debug:
-                print(f"Repeat column {cnt}")
+                logger.debug("Repeat column %d", cnt)
             if not self.repeat_column_shift:
                 self.x += 1
             for _ in range(cnt):
@@ -109,13 +111,13 @@ class ImageDecoder:
             cnt += 1
             if draw or draw2:
                 if self.debug:
-                    print(f"Draw {cnt}")
+                    logger.debug("Draw %d", cnt)
                 for _ in range(cnt):
                     self._draw(self.x, self.y)
                     self.y += 1
             else:
                 if self.debug:
-                    print(f"Skip {cnt}")
+                    logger.debug("Skip %d", cnt)
                 self.y += cnt
             if self.y > 31:
                 self.repeat_column_shift = True
@@ -133,13 +135,13 @@ class ImageDecoder:
             cnt += 16
             if draw or draw2:
                 if self.debug:
-                    print(f"Draw extended {cnt}")
+                    logger.debug("Draw extended %d", cnt)
                 for _ in range(cnt):
                     self._draw(self.x, self.y)
                     self.y += 1
             else:
                 if self.debug:
-                    print(f"Skip extended {cnt}")
+                    logger.debug("Skip extended %d", cnt)
                 self.y += cnt
             if self.y > 31:
                 self.repeat_column_shift = True

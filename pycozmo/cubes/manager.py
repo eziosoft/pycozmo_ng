@@ -72,25 +72,21 @@ class CubeManager:
 
     def setup_cube_mapping(self, cli):
         """Discover available cubes and create mapping."""
-        print("\n" + "=" * 70)
-        print("DISCOVERING CUBES")
-        print("=" * 70)
-
         timeout = 5.0
         start_time = time.time()
-        print(f"   Waiting up to {timeout}s for cubes to be discovered...")
+        logger_cubes.info("Discovering cubes (waiting up to %ss)...", timeout)
         while time.time() - start_time < timeout:
             available_objects = dict(cli.available_objects)
             if available_objects:
-                print(f"   Found {len(available_objects)} objects!")
+                logger_cubes.info("Found %d objects!", len(available_objects))
                 break
             time.sleep(0.1)
         else:
-            print("   Timeout waiting for objects")
+            logger_cubes.info("Timeout waiting for objects")
 
         available_objects = dict(cli.available_objects)
         if not available_objects:
-            print("No cubes found")
+            logger_cubes.warning("No cubes found")
             return
 
         cube_types = [
@@ -105,10 +101,10 @@ class CubeManager:
                 available_cubes.append((factory_id, obj.object_type))
 
         if not available_cubes:
-            print("No light cubes found")
+            logger_cubes.warning("No light cubes found")
             return
 
-        print("\nAvailable cubes:")
+        logger_cubes.info("Available cubes:")
         for factory_id, obj_type in available_cubes:
             if obj_type == pycozmo.protocol_encoder.ObjectType.Block_LIGHTCUBE1:
                 detected_cube_id = 1
@@ -120,17 +116,17 @@ class CubeManager:
                 continue
 
             self.ct.cube_factory_id_map[detected_cube_id] = factory_id
-            print(
-                f"   Detected cube_id {detected_cube_id} -> Factory ID 0x{factory_id:08x} ({obj_type.name})"
+            logger_cubes.info(
+                "Detected cube_id %d -> Factory ID 0x%08x (%s)",
+                detected_cube_id,
+                factory_id,
+                obj_type.name,
             )
 
-        print(f"\nDiscovered {len(self.ct.cube_factory_id_map)} cube(s)")
-        print(f"Cube mapping: {self.ct.cube_factory_id_map}")
+        logger_cubes.info("Discovered %d cube(s)", len(self.ct.cube_factory_id_map))
         logger_cubes.info("Cube factory_id map: %s", self.ct.cube_factory_id_map)
 
         self.start_cube_cycler(cli)
-
-        print("=" * 70 + "\n")
 
     def start_cube_cycler(self, cli):
         """Start the rapid cube cycler."""
@@ -138,8 +134,9 @@ class CubeManager:
             return
         self.ct.cycler = CubeCycler(cycle_ms=150)
         self.ct.cycler.start(cli, self.ct.cube_factory_id_map)
-        print(
-            f"Cube cycler started - cycling {len(self.ct.cube_factory_id_map)} cubes"
+        logger_cubes.info(
+            "Cube cycler started - cycling %d cubes",
+            len(self.ct.cube_factory_id_map),
         )
 
     def stop_cube_cycler(self):
@@ -147,8 +144,10 @@ class CubeManager:
         if self.ct.cycler:
             self.ct.cycler.stop()
             stats = self.ct.cycler.stats
-            print(
-                f"Cube cycler stopped - {stats['cycles']} cycles, {stats['errors']} errors"
+            logger_cubes.info(
+                "Cube cycler stopped - %d cycles, %d errors",
+                stats["cycles"],
+                stats["errors"],
             )
             self.ct.cycler = None
 

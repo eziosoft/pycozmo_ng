@@ -18,7 +18,7 @@ from pycozmo import event
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.cubes.manager import CubeManager
 from pycozmo.display.expressions import Happiness
-from pycozmo.logger import logger_cubes
+from pycozmo.logger import logger, logger_cubes
 from pycozmo.navigation.astar import AStarPlanner
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
@@ -343,7 +343,7 @@ class Brain:
         )
         fs.camera_active = True
         fs.camera_enabled_at = time.time()
-        print("Cozmo camera enabled at startup")
+        logger.info("Cozmo camera enabled at startup")
 
     def post_calibration(self, cli, resolution) -> None:
         """Return the camera to live auto-exposure after a manual calibration.
@@ -386,11 +386,11 @@ class Brain:
         self.web_viewer.set_astar_toggle_listener(self.navigator.set_astar_enabled)
         if self.cli is not None:
             self.dock_state.dock_pose = self.cli.pose
-        print("Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
-        print("Click-to-navigate: click ground to drive there")
-        print("Click cube to approach and align")
-        print("Z to dock: drive back to start position")
-        print("A* pathfinding: toggle in the web viewer")
+        logger.info("Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
+        logger.info("Click-to-navigate: click ground to drive there")
+        logger.info("Click cube to approach and align")
+        logger.info("Z to dock: drive back to start position")
+        logger.info("A* pathfinding: toggle in the web viewer")
 
     # ------------------------------------------------------------------
     # Camera settings from browser (COZMO-30)
@@ -447,11 +447,15 @@ class Brain:
         # Echo settings back so the broadcast includes the latest values
         self.web_viewer.update_camera_settings(**settings)
 
-        print(
-            f"Camera settings updated: auto_exposure={settings.get('auto_exposure_enabled')}, "
-            f"gain={settings.get('gain')}, exposure={settings.get('exposure_ms')}ms, "
-            f"color={'color' if color else 'gray'}, resolution={res_name}, "
-            f"head_light={'on' if settings.get('head_light') else 'off'}"
+        logger.info(
+            "Camera settings updated: auto_exposure=%s, gain=%s, exposure=%sms, "
+            "color=%s, resolution=%s, head_light=%s",
+            settings.get("auto_exposure_enabled"),
+            settings.get("gain"),
+            settings.get("exposure_ms"),
+            "color" if color else "gray",
+            res_name,
+            "on" if settings.get("head_light") else "off",
         )
 
     def _on_say(self, text: str) -> None:
@@ -461,7 +465,7 @@ class Brain:
             try:
                 cli.say(text)
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  say failed: {e}")
+                logger.warning("say failed: %s", e)
 
     def stop_remote_control(self) -> None:
         if self._remote_control is not None:

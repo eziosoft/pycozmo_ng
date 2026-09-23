@@ -30,6 +30,8 @@ try:
 except ImportError:
     HAS_AIOHTTP = False
 
+from pycozmo.logger import logger
+
 
 class WSServer:
     """Low-level WebSocket + optional HTTP server.
@@ -112,15 +114,15 @@ class WSServer:
             site = web.TCPSite(runner, self.host, self.port + 1)
             await site.start()
             http_runner = runner
-            print(f"✅ Web viewer HTTP  at http://{self.host}:{self.port + 1}")
+            logger.info("Web viewer HTTP at http://%s:%s", self.host, self.port + 1)
         else:
-            print("⚠️  aiohttp not installed — HTTP serving disabled")
-            print(
-                "   Open the HTML file directly or install aiohttp: pip install aiohttp"
+            logger.warning("aiohttp not installed — HTTP serving disabled")
+            logger.warning(
+                "Open the HTML file directly or install aiohttp: pip install aiohttp"
             )
 
         bind_note = " (all interfaces)" if self.host == "0.0.0.0" else ""
-        print(f"✅ Web viewer WS    at ws://{self.host}:{self.port}{bind_note}")
+        logger.info("Web viewer WS at ws://%s:%s%s", self.host, self.port, bind_note)
 
         try:
             await self._run_forever

@@ -7,6 +7,7 @@ import time
 import numpy as np
 
 import pycozmo
+from pycozmo.logger import logger
 from pycozmo.navigation.astar import AStarPlanner, PathPoint
 from pycozmo.navigation.cube_approach import CubeApproach
 from pycozmo.navigation.dock_state import DockState
@@ -55,7 +56,7 @@ class Navigator:
         with self.ds.lock:
             self.ds.on_charger = state
         if state:
-            print("On charger detected")
+            logger.info("On charger detected")
             threading.Thread(target=self._reset_pose_origin, daemon=True).start()
 
     def _on_charging_change(self, cli, state: bool) -> None:
@@ -64,7 +65,7 @@ class Navigator:
         with self.ds.lock:
             self.ds.charging = state
         if state:
-            print("Charging detected")
+            logger.info("Charging detected")
             threading.Thread(target=self._reset_pose_origin, daemon=True).start()
 
     def _reset_pose_origin(self) -> None:
@@ -89,7 +90,7 @@ class Navigator:
         with self.ds.lock:
             self.ds.origin_reset_origin_id = cli.pose.origin_id
             self.ds.dock_pose = cli.pose
-        print("Pose origin reset - current pose is now origin")
+        logger.info("Pose origin reset - current pose is now origin")
 
     # ------------------------------------------------------------------
     # Click-to-navigate (COZMO-28 / COZMO-30)
@@ -111,11 +112,11 @@ class Navigator:
             wm = getattr(self.web_viewer, "world_map", None)
             if wm is not None:
                 wm.clear_astar_path()
-            print("Navigation cancelled")
+            logger.info("Navigation cancelled")
             return
 
         if not self.cli:
-            print("Navigation: no robot connected")
+            logger.warning("Navigation: no robot connected")
             return
 
         robot_pose = self.cli.pose
@@ -126,8 +127,8 @@ class Navigator:
         dy = world_left - robot_y
         dist = math.sqrt(dx * dx + dy * dy)
 
-        print(
-            f"Navigating to ({world_forward:.0f}, {world_left:.0f}) - dist={dist:.0f}mm"
+        logger.info(
+            "Navigating to (%.0f, %.0f) - dist=%.0fmm", world_forward, world_left, dist
         )
 
         def _nav_thread():
@@ -135,7 +136,7 @@ class Navigator:
                 if self.astar_enabled and self.astar_planner is not None:
                     self._follow_astar_path(world_forward, world_left)
                 elif dist < 10.0:
-                    print("Already at target")
+                    logger.info("Already at target")
                 else:
                     heading = math.atan2(dy, dx)
                     target_pose = Pose(
@@ -146,11 +147,11 @@ class Navigator:
                     )
                     ok = self.cli.go_to_pose(target_pose, relative_to_robot=False)
                     if ok:
-                        print("Arrived at target")
+                        logger.info("Arrived at target")
                     else:
-                        print("Navigation failed — path rejected or timed out")
+                        logger.warning("Navigation failed — path rejected or timed out")
             except Exception as e:  # noqa: BLE001
-                print(f"Navigation error: {e}")
+                logger.exception("Navigation error: %s", e)
             finally:
                 self._path_following = False
 
@@ -175,7 +176,7 @@ class Navigator:
             return
 
         if self.astar_planner is None:
-            print("A*: no planner — falling back to built-in navigation")
+            logger.warning("A*: no planner — falling back to built-in navigation")
             self._go_to_pose_goal(goal_x, goal_y)
             return
 
@@ -200,10 +201,10 @@ class Navigator:
                 self.astar_planner.find_path(start_x, start_y, goal_x, goal_y) or []
             )
             _publish_path(self._path_waypoints)
-            print(f"A*: computed {len(self._path_waypoints)} waypoints")
+            logger.info("A*: computed %d waypoints", len(self._path_waypoints))
 
         if not self._path_waypoints:
-            print("A*: no path found — falling back to built-in navigation")
+            logger.warning("A*: no path found — falling back to built-in navigation")
             with self._path_follow_lock:
                 self._path_following = False
             _clear_path()
@@ -218,12 +219,12 @@ class Navigator:
                     math.hypot(goal_x - pose.position.x, goal_y - pose.position.y)
                     <= ASTAR_GOAL_TOL_MM
                 ):
-                    print("A*: reached goal")
+                    logger.info("A*: reached goal")
                     break
 
                 attempts += 1
                 if attempts > ASTAR_MAX_REPLAN_ATTEMPTS:
-                    print("A*: giving up after max replan attempts")
+                    logger.warning("A*: giving up after max replan attempts")
                     break
 
                 pts = [(w.x, w.y) for w in self._path_waypoints]
@@ -236,7 +237,7 @@ class Navigator:
                 )
 
                 if not self._path_following:
-                    print("A*: path following cancelled")
+                    logger.info("A*: path following cancelled")
                     break
 
                 pose = cli.pose
@@ -244,7 +245,7 @@ class Navigator:
                     math.hypot(goal_x - pose.position.x, goal_y - pose.position.y)
                     <= ASTAR_GOAL_TOL_MM
                 ):
-                    print("A*: reached goal")
+                    logger.info("A*: reached goal")
                     break
 
                 # Interrupted (new obstacle) or fell short — replan from here.
@@ -252,12 +253,12 @@ class Navigator:
                     pose.position.x, pose.position.y, goal_x, goal_y
                 )
                 if not new_path:
-                    print("A*: replan failed — no path to goal")
+                    logger.warning("A*: replan failed — no path to goal")
                     break
                 with self._path_follow_lock:
                     self._path_waypoints = new_path
                 _publish_path(new_path)
-                print(f"A*: replanned — {len(new_path)} waypoints")
+                logger.info("A*: replanned — %d waypoints", len(new_path))
         finally:
             self._path_following = False
             _clear_path()
@@ -301,7 +302,9 @@ class Navigator:
             ):
                 continue
             if not planner.is_traversable(w.x, w.y):
-                print(f"A*: waypoint ({w.x:.0f}, {w.y:.0f}) now blocked — replanning")
+                logger.warning(
+                    "A*: waypoint (%.0f, %.0f) now blocked — replanning", w.x, w.y
+                )
                 return True
         return False
 
@@ -317,9 +320,9 @@ class Navigator:
             relative_to_robot=False,
         )
         if ok:
-            print("Arrived at target")
+            logger.info("Arrived at target")
         else:
-            print("Navigation failed — path rejected or timed out")
+            logger.warning("Navigation failed — path rejected or timed out")
 
     def set_astar_planner(self, planner: AStarPlanner | None) -> None:
         """Inject or remove the A* planner."""
@@ -330,7 +333,7 @@ class Navigator:
         self.astar_enabled = enabled
         if not enabled:
             self._path_following = False
-            print(f"A* {'disabled' if not enabled else 'enabled'}")
+            logger.info("A* %s", "disabled" if not enabled else "enabled")
 
     # ------------------------------------------------------------------
     # Closed-loop drive (COZMO-35)
@@ -370,7 +373,7 @@ class Navigator:
         """
         cli = self.cli
         if cli is None:
-            print("Drive: no robot connected")
+            logger.warning("Drive: no robot connected")
             return False
 
         t0 = time.monotonic()
@@ -394,14 +397,14 @@ class Navigator:
                 time.sleep(0.05)
 
             if not reached and time.monotonic() - t0 > timeout_s:
-                print("Nav timeout")
+                logger.warning("Nav timeout")
             if reached and final_heading is not None:
                 self._align_heading(final_heading, align_tol_rad)
         finally:
             cli.stop_all_motors()
 
         if reached:
-            print(f"Arrived at ({tx:.0f}, {ty:.0f})")
+            logger.info("Arrived at (%.0f, %.0f)", tx, ty)
 
         return reached
 
@@ -463,7 +466,7 @@ class Navigator:
             if moved >= dist_mm - 4.0 and err <= math.radians(3.0):
                 return True
             time.sleep(0.05)
-        print(f"Forward move of {dist_mm:.0f}mm not reached")
+        logger.warning("Forward move of %.0fmm not reached", dist_mm)
         return False
 
     # ------------------------------------------------------------------
@@ -497,7 +500,7 @@ class Navigator:
     def _on_approach_cube(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
         """Handle cube click from browser — delegates to CubeApproach."""
         if not self.cli:
-            print("Approach: no robot connected")
+            logger.warning("Approach: no robot connected")
             return
         ca = self._get_cube_approach()
         ca.approach(cube_idx, cube_x, cube_y)
@@ -509,10 +512,10 @@ class Navigator:
     def _on_dock(self) -> None:
         """Handle 'z' keypress - drive robot back into the dock."""
         if not self.cli:
-            print("Dock: no robot connected")
+            logger.warning("Dock: no robot connected")
             return
         if self.ds.dock_pose is None:
-            print("Dock: no start pose recorded")
+            logger.warning("Dock: no start pose recorded")
             return
 
         DOCK_DRIVE_DIST = 150.0
@@ -574,13 +577,13 @@ class Navigator:
         def _dock_thread():
             try:
                 turn_pose = Pose(turn_x, turn_y, 0, angle_z=Angle(radians=dock_heading))
-                print("Driving to 150mm in front of dock")
+                logger.info("Driving to 150mm in front of dock")
                 self.cli.go_to_pose(turn_pose, relative_to_robot=False)
                 time.sleep(0.3)
 
                 docked = False
                 for attempt in range(1, DOCK_MAX_RETRIES + 1):
-                    print(f"Docking attempt {attempt}/{DOCK_MAX_RETRIES}")
+                    logger.info("Docking attempt %d/%d", attempt, DOCK_MAX_RETRIES)
                     if _reverse_until_contact():
                         docked = True
                         break
@@ -590,7 +593,7 @@ class Navigator:
                         break
 
                     if attempt < DOCK_MAX_RETRIES:
-                        print("No charge at contact - backing away to retry")
+                        logger.warning("No charge at contact - backing away to retry")
                         self.cli.drive_wheels(
                             lwheel_speed=DOCK_RETRY_SPEED,
                             rwheel_speed=DOCK_RETRY_SPEED,
@@ -598,20 +601,21 @@ class Navigator:
                         )
                         time.sleep(0.3)
                     else:
-                        print(
-                            f"Docking failed after {DOCK_MAX_RETRIES} attempts "
-                            f"(dist={_dist_to_dock():.0f}mm, no charge)"
+                        logger.warning(
+                            "Docking failed after %d attempts (dist=%.0fmm, no charge)",
+                            DOCK_MAX_RETRIES,
+                            _dist_to_dock(),
                         )
 
                 self.cli.stop_all_motors()
 
                 if docked or _is_charging():
                     self._reset_pose_origin()
-                    print("Docked and pose reset - dock is now origin")
+                    logger.info("Docked and pose reset - dock is now origin")
                 elif not docked:
-                    print("Docking did not complete - no pose reset")
+                    logger.warning("Docking did not complete - no pose reset")
             except Exception as e:  # noqa: BLE001
-                print(f"Dock error: {e}")
+                logger.exception("Dock error: %s", e)
 
         t = threading.Thread(target=_dock_thread, daemon=True)
         t.start()
@@ -632,9 +636,9 @@ class Navigator:
                 target=self._test_mode_loop, daemon=True
             )
             self._test_mode_thread.start()
-            print("Test mode ON")
+            logger.info("Test mode ON")
         else:
-            print("Test mode OFF")
+            logger.info("Test mode OFF")
 
     def _test_mode_loop(self) -> None:
         """Continuously approach cubes with 3 second waits."""
@@ -652,6 +656,6 @@ class Navigator:
             cube_idx = next(iter(cubes))
             cube = cubes[cube_idx]
             cx, cy, _ = cube.position
-            print(f"Test mode: approaching cube {cube_idx + 1}")
+            logger.info("Test mode: approaching cube %d", cube_idx + 1)
             self._on_approach_cube(cube_idx, float(cx), float(cy))
             time.sleep(3.0)

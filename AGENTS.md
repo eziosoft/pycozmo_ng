@@ -208,6 +208,7 @@ This branch includes:
 ## Code Style
 
 - **Python**: ruff (max line length 120, PEP 8). Every `.py` file must pass `ruff check` and `ruff format --check` before committing.
+- **No `print()`** in library or entry-script code — use the loggers from `pycozmo/logger.py` (`logger`, `logger_cubes`, ...). Levels: info = progress/status, warning = recoverable problems, `logger.exception` in `except` blocks, debug = per-frame/per-packet detail. Do not embed severity (emoji, `WARNING:`, banners) in message text. `print` is allowed only in docstring usage examples, `not_used/`, and throwaway test scripts. Details: LIFIC COZMO-DOC-12.
 - **JS**: eslint (recommended: `@eslint/js` + `eslint-plugin-unicorn`). Web viewer files live in `pycozmo/web/static/`.
 - Type hints encouraged
 - Docstrings encouraged

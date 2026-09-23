@@ -8,6 +8,7 @@ No web streaming logic — that's delegated to WebStreamer.
 import time
 
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
+from pycozmo.logger import logger
 from pycozmo.vision.cube_detector.detection_pipeline import DetectionPipeline
 from pycozmo.vision.occupancy_map.floor_pipeline import FloorPipeline
 from pycozmo.vision.frame_state import FrameState
@@ -62,20 +63,20 @@ class FrameHandler:
     def save_frames(self):
         """Save current frames to disk (debug helper)."""
         if self.fs.latest_raw_frame is None:
-            print("No frames to save yet")
+            logger.warning("No frames to save yet")
             return
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
 
         raw_filename = f"frame_raw_{timestamp}.png"
         self.fs.latest_raw_frame.save(raw_filename)
-        print(f"Saved raw frame: {raw_filename}")
+        logger.info("Saved raw frame: %s", raw_filename)
 
         if self.fs.latest_annotated_frame is not None:
             annotated_filename = f"frame_annotated_{timestamp}.png"
             self.fs.latest_annotated_frame.save(annotated_filename)
-            print(f"Saved annotated frame: {annotated_filename}")
+            logger.info("Saved annotated frame: %s", annotated_filename)
 
         with self.fs.detections_lock:
             n_det = len(self.fs.latest_detections)
-        print(f"   Detections: {n_det}")
+        logger.info("Detections: %d", n_det)

@@ -31,7 +31,7 @@ from pycozmo.event import (
     EvtRobotPickedUpChange,
     EvtRobotStateUpdated,
 )
-from pycozmo.logger import setup_basic_logging
+from pycozmo.logger import logger, setup_basic_logging
 from pycozmo.navigation.world_map import WorldMap
 from pycozmo.protocol import protocol_encoder
 from pycozmo.vision.cube_detector.detection_pipeline import DetectionPipeline
@@ -517,7 +517,7 @@ class Cozmo:
         if resolution is None:
             resolution = protocol_encoder.ImageResolution.QVGA
 
-        print("Calibrating robot center (head to max-down)...")
+        logger.info("Calibrating robot center (head to max-down)...")
 
         # Temporarily enable camera with manual exposure for calibration
         self._cli.enable_camera(enable=True, color=False, resolution=resolution)
@@ -552,14 +552,14 @@ class Cozmo:
             avg_offset = sum(offsets) / len(offsets)
             dp.camera_lateral_offset_mm = avg_offset
             dp._robot_center_measured = True
-            print(
-                f"   Robot center detected: "
-                f"lateral_offset={avg_offset:+.2f}mm "
-                f"(avg of {len(offsets)} frames)"
+            logger.info(
+                "Robot center detected: lateral_offset=%+.2f mm (avg of %d frames)",
+                avg_offset,
+                len(offsets),
             )
             return avg_offset
 
-        print("   WARNING: Robot center NOT detected (circles not found)")
+        logger.warning("Robot center NOT detected (circles not found)")
         return None
 
     # ------------------------------------------------------------------
@@ -593,7 +593,7 @@ class Cozmo:
     def set_origin(self) -> None:
         """Set the localization origin to the current robot position."""
         self._cli.conn.send(protocol_encoder.SetOrigin())
-        print("Origin set to current position")
+        logger.info("Origin set to current position")
 
     # ------------------------------------------------------------------
     # Main run loop

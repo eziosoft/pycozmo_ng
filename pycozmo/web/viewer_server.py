@@ -19,6 +19,7 @@ Usage:
 import asyncio
 import time
 
+from pycozmo.logger import logger
 from pycozmo.navigation.world_map import WorldMap
 from pycozmo.web.file_server import FileServer
 from pycozmo.web.mjpeg_streamer import MjpegEndpoint
@@ -417,7 +418,7 @@ class WebViewerServer:
                     try:
                         listener(set())
                     except Exception as e:  # noqa: BLE001
-                        print(f"⚠️  control listener (final stop) failed: {e}")
+                        logger.warning("control listener (final stop) failed: %s", e)
 
     def _fire_active_clients_change(self) -> None:
         count = len(self._clients)
@@ -428,7 +429,7 @@ class WebViewerServer:
             try:
                 listener(count)
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  active-clients listener failed: {e}")
+                logger.warning("active-clients listener failed: %s", e)
 
     # -- server lifecycle ---------------------------------------------------
 
@@ -453,12 +454,12 @@ class WebViewerServer:
 def main():
     server = WebViewerServer()
     server.start()
-    print("Press Ctrl+C to stop")
+    logger.info("Press Ctrl+C to stop")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n🛑 Stopping web viewer server...")
+        logger.info("Stopping web viewer server...")
         server.close()
 
 

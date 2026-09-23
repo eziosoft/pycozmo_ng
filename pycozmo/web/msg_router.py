@@ -11,6 +11,7 @@ import json
 import numpy as np
 
 from pycozmo import coords
+from pycozmo.logger import logger
 
 
 class MsgRouter:
@@ -103,7 +104,7 @@ class MsgRouter:
             try:
                 listener(set(keys))
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  control listener failed: {e}")
+                logger.warning("control listener failed: %s", e)
 
     def _on_navigate_to(self, msg: dict) -> None:
         listener = self._navigate_listener
@@ -114,7 +115,7 @@ class MsgRouter:
                 world_pos = coords.scene_to_world_point(np.array([scene_x, 0, scene_z]))
                 listener(float(world_pos[0]), float(world_pos[1]))
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  navigate listener failed: {e}")
+                logger.warning("navigate listener failed: %s", e)
 
     def _on_navigate_cancel(self, msg: dict) -> None:
         del msg
@@ -123,7 +124,7 @@ class MsgRouter:
             try:
                 listener(None)
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  navigate cancel failed: {e}")
+                logger.warning("navigate cancel failed: %s", e)
 
     def _on_approach_cube(self, msg: dict) -> None:
         listener = self._approach_listener
@@ -140,9 +141,9 @@ class MsgRouter:
                 pos = cubes[cube_idx]["position"]
                 listener(cube_idx, float(pos[0]), float(pos[1]))
             else:
-                print(f"⚠️  approach_cube: {cube_id_str} not in world map")
+                logger.warning("approach_cube: %s not in world map", cube_id_str)
         except Exception as e:  # noqa: BLE001
-            print(f"⚠️  approach listener failed: {e}")
+            logger.warning("approach listener failed: %s", e)
 
     def _on_dock(self, msg: dict) -> None:
         del msg
@@ -151,7 +152,7 @@ class MsgRouter:
             try:
                 listener()
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  dock listener failed: {e}")
+                logger.warning("dock listener failed: %s", e)
 
     def _on_camera_settings(self, msg: dict) -> None:
         listener = self._camera_settings_listener
@@ -169,7 +170,7 @@ class MsgRouter:
                 self._camera_settings.update(settings)
                 listener(settings)
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  camera_settings listener failed: {e}")
+                logger.warning("camera_settings listener failed: %s", e)
 
     def _on_say(self, msg: dict) -> None:
         listener = self._say_listener
@@ -178,7 +179,7 @@ class MsgRouter:
                 text = msg.get("text", "")
                 listener(text)
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  say listener failed: {e}")
+                logger.warning("say listener failed: %s", e)
 
     def _on_test_mode(self, msg: dict) -> None:
         listener = self._test_mode_listener
@@ -187,7 +188,7 @@ class MsgRouter:
                 enabled = msg.get("enabled", False)
                 listener(enabled)
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  test_mode listener failed: {e}")
+                logger.warning("test_mode listener failed: %s", e)
 
     def _on_astar_toggle(self, msg: dict) -> None:
         listener = self._astar_toggle_listener
@@ -196,4 +197,4 @@ class MsgRouter:
                 enabled = msg.get("enabled", False)
                 listener(enabled)
             except Exception as e:  # noqa: BLE001
-                print(f"⚠️  astar_toggle listener failed: {e}")
+                logger.warning("astar_toggle listener failed: %s", e)
