@@ -15,7 +15,7 @@ err() { printf "\033[1;31m[start.sh]\033[0m %s\n" "$*" >&2; }
 
 if [[ "$(uname -s)" != "Linux" ]]; then
     err "This script must run on the Raspberry Pi (detected: $(uname -s))."
-    err "Sync to the Pi first: ./sync_to_pi.sh"
+    err "Sync to the Pi first: ./not_used/sync_to_pi.sh"
     exit 1
 fi
 

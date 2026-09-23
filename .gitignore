@@ -17,6 +17,6 @@ __pycache__/
 
 /.mypy_cache/
 
-/examples/*.png
-APK/
-dev
+/not_used/examples/*.png
+not_used/APK/
+not_used/dev/

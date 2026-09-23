@@ -113,16 +113,16 @@ If you have ideas for other functionality [share them via GitHub](https://github
 Tools
 -----
 
-- [pycozmo_app.py](tools/pycozmo_app.py) - an alternative Cozmo application, implementing off-board functions
+- [pycozmo_app.py](not_used/tools/pycozmo_app.py) - an alternative Cozmo application, implementing off-board functions
     ([video](https://youtu.be/gMEc6RzIm-E)).
-- [pycozmo_dump.py](tools/pycozmo_dump.py) - a command-line application that can read and annotate Cozmo communication
+- [pycozmo_dump.py](not_used/tools/pycozmo_dump.py) - a command-line application that can read and annotate Cozmo communication
     from [pcap files](https://en.wikipedia.org/wiki/Pcap) or capture it live using
     [pypcap](https://github.com/pynetwork/pypcap).
-- [pycozmo_replay.py](tools/pycozmo_replay.py) - a basic command-line application that can replay .pcap files back to
+- [pycozmo_replay.py](not_used/tools/pycozmo_replay.py) - a basic command-line application that can replay .pcap files back to
     Cozmo.
-- [pycozmo_anim.py](tools/pycozmo_anim.py) - a tool for examining and manipulating animation files.
-- [pycozmo_update.py](tools/pycozmo_update.py) - a tool for over-the-air (OTA) updates of Cozmo's firmware.
-- [pycozmo_protocol_generator.py](tools/pycozmo_protocol_generator.py) - a tool for generating Cozmo protocol encoder
+- [pycozmo_anim.py](not_used/tools/pycozmo_anim.py) - a tool for examining and manipulating animation files.
+- [pycozmo_update.py](not_used/tools/pycozmo_update.py) - a tool for over-the-air (OTA) updates of Cozmo's firmware.
+- [pycozmo_protocol_generator.py](not_used/tools/pycozmo_protocol_generator.py) - a tool for generating Cozmo protocol encoder
     code.
 
 **Note**: PyCozmo and `pycozmo_protocol_generator.py` in particular could be used as a base for creating a Cozmo protocol
@@ -133,32 +133,32 @@ Examples
 --------
 
 Basic:
-- [minimal.py](examples/minimal.py) - minimal code to communicate with Cozmo, using PyCozmo
-- [extremes.py](examples/extremes.py) - demonstrates Cozmo lift and head control
-- [backpack_lights.py](examples/backpack_lights.py) - demonstrates Cozmo backpack LED control
-- [display_image.py](examples/display_image.py) - demonstrates visualization of image files on Cozmo's display
-- [events.py](examples/events.py) - demonstrates event handling
-- [camera.py](examples/camera.py) - demonstrates capturing a camera image 
-- [go_to_pose.py](examples/go_to_pose.py) - demonstrates moving to a specific pose (position and orientation) 
-- [path.py](examples/path.py) - demonstrates following a predefined path
+- [minimal.py](not_used/examples/minimal.py) - minimal code to communicate with Cozmo, using PyCozmo
+- [extremes.py](not_used/examples/extremes.py) - demonstrates Cozmo lift and head control
+- [backpack_lights.py](not_used/examples/backpack_lights.py) - demonstrates Cozmo backpack LED control
+- [display_image.py](not_used/examples/display_image.py) - demonstrates visualization of image files on Cozmo's display
+- [events.py](not_used/examples/events.py) - demonstrates event handling
+- [camera.py](not_used/examples/camera.py) - demonstrates capturing a camera image 
+- [go_to_pose.py](not_used/examples/go_to_pose.py) - demonstrates moving to a specific pose (position and orientation) 
+- [path.py](not_used/examples/path.py) - demonstrates following a predefined path
 
 Advanced:
-- [display_lines.py](examples/display_lines.py) - demonstrates 2D graphics, using
+- [display_lines.py](not_used/examples/display_lines.py) - demonstrates 2D graphics, using
     [PIL.ImageDraw](https://pillow.readthedocs.io/en/stable/reference/ImageDraw.html) on Cozmo's display
     ([video](https://youtu.be/ZT81PlmItrU))
-- [rc.py](examples/rc.py) - turns Cozmo into an RC tank that can be driven with an XBox 360 Wireless controller or 
+- [rc.py](not_used/examples/rc.py) - turns Cozmo into an RC tank that can be driven with an XBox 360 Wireless controller or 
     Logitech Gamepad F310
-- [video.py](examples/video.py) - demonstrates visualizing video captured from the camera back on display
-- [cube_lights.py](examples/cube_lights.py) - demonstrates cube connection and LED control
-- [cube_light_animation.py](examples/cube_light_animation.py) - demonstrates cube LED animation control
-- [charger_lights.py](examples/charger_lights.py) - demonstrates Cozmo charging platform LED control
-- [audio.py](examples/audio.py) - demonstrates 22 kHz, 16-bit, mono WAVE file playback through Cozmo's speaker 
-- [nvram.py](examples/nvram.py) - demonstrates reading data from Cozmo's NVRAM (non-volatile memory)
-- [procedural_face.py](examples/procedural_face.py) - demonstrates drawing a procedural face on Cozmo's display
-- [procedural_face_show.py](examples/procedural_face_show.py) - demonstrates generating a procedural face
-- [procedural_face_expressions.py](examples/procedural_face_expressions.py) - demonstrates displaying various facial
+- [video.py](not_used/examples/video.py) - demonstrates visualizing video captured from the camera back on display
+- [cube_lights.py](not_used/examples/cube_lights.py) - demonstrates cube connection and LED control
+- [cube_light_animation.py](not_used/examples/cube_light_animation.py) - demonstrates cube LED animation control
+- [charger_lights.py](not_used/examples/charger_lights.py) - demonstrates Cozmo charging platform LED control
+- [audio.py](not_used/examples/audio.py) - demonstrates 22 kHz, 16-bit, mono WAVE file playback through Cozmo's speaker 
+- [nvram.py](not_used/examples/nvram.py) - demonstrates reading data from Cozmo's NVRAM (non-volatile memory)
+- [procedural_face.py](not_used/examples/procedural_face.py) - demonstrates drawing a procedural face on Cozmo's display
+- [procedural_face_show.py](not_used/examples/procedural_face_show.py) - demonstrates generating a procedural face
+- [procedural_face_expressions.py](not_used/examples/procedural_face_expressions.py) - demonstrates displaying various facial
     expressions ([video](https://youtu.be/UyMTEOG2FyU))
-- [anim.py](examples/anim.py) - demonstrates animating Cozmo
+- [anim.py](not_used/examples/anim.py) - demonstrates animating Cozmo
 
 
 PyCozmo In The Wild

@@ -82,7 +82,7 @@ The 5 Backpack LEDs can be set controlled with 2 messages:
 
 Each color is defined by a 5-bit value for a total of 32768 colors.
 
-See `examples/backpack_lights.py` for example usage.
+See `not_used/examples/backpack_lights.py` for example usage.
 
 
 Backpack Button
@@ -96,7 +96,7 @@ connection and does not require `Enable` to be used.
 The `RobotState` message has a `backpack_touch_sensor_raw` field but
 it seems that it's value does not change as a result of button presses.
 
-See `examples/events.py` for example usage.
+See `not_used/examples/events.py` for example usage.
 
 
 Wheels
@@ -141,7 +141,7 @@ traversing a path. The `curr_path_segment` filed indicates which segment is bein
 The `ClearPath` message can be used to destroy an already composed path. The `TrimPath` message can be used to delete
 path segments from the beginning or the end of a composed path.
 
-See `examples/path.py` and `examples/go_to_pose.py` for example usage.
+See `not_used/examples/path.py` and `not_used/examples/go_to_pose.py` for example usage.
 
 
 Head
@@ -160,7 +160,7 @@ triggered on connection. The head can be forced to an unknown angle for example 
 In such situations, the robot recalibrates the head motor automatically. Calibration can also be triggered on request,
 using the `StartMotorCalibration` message. The `MotorCalibration` message indicates whether calibration is in progress.
 
-See `examples/extremes.py` for example usage.
+See `not_used/examples/extremes.py` for example usage.
 
 
 Lift
@@ -177,7 +177,7 @@ The motor can be stopped using the `StopAllMotors` message.
 The robot measures the angle of the lift, relative to its lowest possible position. It is calibrated similar to the
 head motor.
 
-See `examples/extremes.py` for example usage.
+See `not_used/examples/extremes.py` for example usage.
 
 
 OLED display
@@ -194,7 +194,7 @@ Display and audio are synchronized by audio messages (`OutputAudio` and `OutputS
 `AnimationState` message which can be enabled using the `EnableAnimationState` message provide statistics on display
 usage.
 
-See `examples/display_image.py` and `examples/display_lines.py` for example usage.
+See `not_used/examples/display_image.py` and `not_used/examples/display_lines.py` for example usage.
 
 
 Speaker
@@ -208,7 +208,7 @@ Speaker volume can be adjusted with the `SetRobotVolume` message.
 `AnimationState` message which can be enabled using the `EnableAnimationState` message provide statistics on audio
 usage.
 
-See `examples/audio.py` for example usage. 
+See `not_used/examples/audio.py` for example usage. 
 
 
 Camera
@@ -227,7 +227,7 @@ not transmitted to save bandwidth.
 The `ImageImuData` message provides accelerometer readings at the time of capturing every image to allow for motion
 blur compensation.
  
-See `examples/camera.py` for example usage. 
+See `not_used/examples/camera.py` for example usage. 
 
 
 IR LED
@@ -247,7 +247,7 @@ In addition, the robot automatically detects and communicates 2 types of events.
 the robot has been moved rapidly by an external force along the x or y axes. The `FallingStarted` and `FallingStopped`
 messages are send if the robot is moving rapidly along the z axis.
 
-See `examples/events.py` for example usage.
+See `not_used/examples/events.py` for example usage.
 
 
 Gyro
@@ -255,7 +255,7 @@ Gyro
 
 The `RobotState` message communicates gyro readings which represent angular velocity around the x, y, and z axes.
 
-See `examples/events.py` for example usage.
+See `not_used/examples/events.py` for example usage.
 
 
 Cliff Sensor
@@ -268,7 +268,7 @@ The `RobotState` message communicates the raw cliff sensor readings.
 
 In addition, the robot can be made to automatically stop when a cliff is detected with the `EnableStopOnCliff` message.
 
-See `examples/events.py` for example usage.
+See `not_used/examples/events.py` for example usage.
 
 
 Battery voltage
@@ -309,7 +309,7 @@ A backup through the mobile app, preserves the data behind the following keys:
 - NVEntry_InventoryData
 - NVEntry_LabAssignments
 
-See `examples/nvram.py` for example usage.
+See `not_used/examples/nvram.py` for example usage.
 
 
 Firmware Updates
@@ -374,7 +374,7 @@ A cube has to be "selected" first, using the `CubeId` message. A subsequent `Cub
 Cubes can be programmed to perform simple LED light animations autonomously using the `LightState` structure and the
 `CubeId.rotation_period_frames` field.
 
-See `examples/cube_lights.py` and `examples/cube_light_animation.py` for example usage.
+See `not_used/examples/cube_lights.py` and `not_used/examples/cube_light_animation.py` for example usage.
 
 
 Cube Battery Voltage
@@ -409,4 +409,4 @@ Animations are controlled with the `StartAnimation`, `EndAnimation`, and `AbortA
 Keyframes are transferred with the `AnimHead`, `AnimLift`, `AnimBody`, `AnimBackpackLights`, `RecordHeading`,
 `TurnToRecordedHeading`, and `OutputAudio` messages.
    
-See `examples/anim.py` for example usage.
+See `not_used/examples/anim.py` for example usage.
