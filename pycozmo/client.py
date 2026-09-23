@@ -16,7 +16,7 @@ from PIL import Image
 
 from pycozmo.animation import anim_controller
 from pycozmo.protocol import protocol_declaration, protocol_encoder
-from pycozmo.sound import tts
+from pycozmo.sound import audio, tts
 from pycozmo.transport import conn
 from pycozmo.util import filter, object, robot, robot_debug
 from pycozmo.vision import camera, image_encoder
@@ -1051,6 +1051,15 @@ class Client(event.Dispatcher):
         """Set audio output volume to a level in the range 0-65535."""
         pkt = protocol_encoder.SetRobotVolume(level=level)
         self.conn.send(pkt)
+
+    def play_audio(self, fspec: str) -> None:
+        """Load a WAVE file and queue it on the robot's audio pipeline.
+
+        Args:
+            fspec: Path to a 16-bit 22050/48000 Hz WAVE file.
+        """
+        pkts = audio.load_wav(fspec)
+        self.anim_controller.play_audio(pkts)
 
     def say(self, text: str) -> None:
         """Say text through the Cozmo robot using offline TTS.
