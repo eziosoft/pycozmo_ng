@@ -38,6 +38,5 @@ pycozmo package
     pycozmo.protocol_utils
     pycozmo.robot
     pycozmo.robot_debug
-    pycozmo.run
     pycozmo.util
     pycozmo.window

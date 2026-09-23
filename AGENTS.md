@@ -61,8 +61,7 @@ pycozmo/           # Main library
 ├── event.py       # Event dispatcher
 ├── exception.py   # Exception classes
 ├── json_loader.py # JSON config loader
-├── logger.py      # Logging setup
-├── run.py         # connect(), setup_basic_logging()
+├── logger.py      # Logging setup, configure_basic_logging()
 ├── image_encoder.py  # Image encoding utilities
 ├── remote_control.py # Keyboard remote control
 ├── wifi.py        # WiFi auto-connect helper

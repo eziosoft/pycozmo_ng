@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 import pycozmo
-from pycozmo import run
 from pycozmo.brain import Brain
 from pycozmo.event import (
     EvtRobotChargingChange,
@@ -32,6 +31,7 @@ from pycozmo.event import (
     EvtRobotPickedUpChange,
     EvtRobotStateUpdated,
 )
+from pycozmo.logger import setup_basic_logging
 from pycozmo.navigation.world_map import WorldMap
 from pycozmo.protocol import protocol_encoder
 from pycozmo.vision.detection_pipeline import DetectionPipeline
@@ -326,7 +326,7 @@ class Cozmo:
         if self._connected:
             return self
 
-        run.setup_basic_logging()
+        setup_basic_logging()
         self._cli = pycozmo.Client(
             robot_addr=(host, port),
             **kwargs,

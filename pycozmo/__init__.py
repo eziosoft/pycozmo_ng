@@ -47,7 +47,6 @@ from .protocol import (  # noqa: F401
     protocol_generator,
     protocol_utils,
 )
-from .run import *
 from .transport import conn, frame, window  # noqa: F401
 from .vision import camera  # noqa: F401
 from .cozmo import Cozmo
@@ -59,7 +58,6 @@ __all__ = [
     "Client",
     "Cozmo",
     "Frame",
-    "connect",
     "logger",
     "logger_protocol",
     "logger_robot",
