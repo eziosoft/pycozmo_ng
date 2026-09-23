@@ -13,7 +13,8 @@ from collections.abc import Iterable
 import numpy as np
 from PIL import Image
 
-from pycozmo import image_encoder, lights, logger
+from pycozmo import lights, logger
+from pycozmo.vision import image_encoder
 from pycozmo.animation import anim_encoder
 from pycozmo.display import procedural_face
 from pycozmo.json_loader import find_file, load_json_file

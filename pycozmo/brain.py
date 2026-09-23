@@ -372,7 +372,7 @@ class Brain:
 
     def install_remote_control(self, cli) -> None:
         """Wire browser keyboard input to Cozmo's motors."""
-        from pycozmo.remote_control import RemoteControl
+        from pycozmo.navigation.remote_control import RemoteControl
 
         self._remote_control = RemoteControl(cli)
         self._remote_control.start()

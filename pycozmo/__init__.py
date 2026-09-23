@@ -24,7 +24,6 @@ from .util.robot import *
 from . import (  # noqa: F401
     brain,
     exception,
-    image_encoder,
     lights,
     protocol,
     sound,
@@ -44,7 +43,7 @@ from .protocol import (  # noqa: F401
     protocol_utils,
 )
 from .transport import conn, frame, window  # noqa: F401
-from .vision import camera  # noqa: F401
+from .vision import camera, image_encoder  # noqa: F401
 from .cozmo import Cozmo
 
 __version__ = "0.8.0"

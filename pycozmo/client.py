@@ -19,12 +19,11 @@ from pycozmo.protocol import protocol_declaration, protocol_encoder
 from pycozmo.sound import tts
 from pycozmo.transport import conn
 from pycozmo.util import filter, object, robot, robot_debug
-from pycozmo.vision import camera
+from pycozmo.vision import camera, image_encoder
 
 from . import (
     event,
     exception,
-    image_encoder,
     lights,
     logger,
     logger_robot,

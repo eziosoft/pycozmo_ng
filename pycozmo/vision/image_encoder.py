@@ -26,7 +26,7 @@ def render(image: bytes) -> None:
                 sys.stdout.write(" ")
             sys.stdout.write(chr(ord("0") + image[y * 128 + x])) if image[
                 y * 128 + x
-            ] else sys.stdout.write(".")
+            ] else sys.stdout.write("..")
         sys.stdout.write("\n")
 
 

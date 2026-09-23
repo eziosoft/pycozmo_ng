@@ -32,7 +32,7 @@ import threading
 import time
 from collections.abc import Iterable
 
-from . import robot
+from pycozmo import robot
 
 logger = logging.getLogger(__name__)
 

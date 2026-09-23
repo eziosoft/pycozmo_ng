@@ -1,6 +1,6 @@
 import unittest
 
-from pycozmo.image_encoder import ImageDecoder, image_to_str
+from pycozmo.vision.image_encoder import ImageDecoder, image_to_str
 from pycozmo.tests.image_encoder_fixtures import FIXTURES
 from pycozmo.util import hex_load
 
