@@ -2,7 +2,7 @@
 
 The controller is validated against a kinematic unicycle model: wheel speeds
 produce forward speed ``(vl + vr) / 2`` and yaw rate ``(vr - vl) / track``,
-integrated at the same 20 Hz tick used by ``Navigator._drive_to_point``.
+integrated at the same 20 Hz tick used by ``Navigator.drive_to_point``.
 """
 
 import math
@@ -32,7 +32,7 @@ def _advance(x, y, yaw, vl, vr):
 def _simulate(
     x0, y0, yaw0, tx, ty, *, align_to=None, stop_mm=STOP_MM, timeout_s=TIMEOUT_S
 ):
-    """Mirror ``Navigator._drive_to_point``: drive closed-loop to the target,
+    """Mirror ``Navigator.drive_to_point``: drive closed-loop to the target,
     then turn in place to ``align_to`` (if given). Returns
     ``(arrived, t_s, end_pose, min_dist)``."""
     x, y, yaw = x0, y0, yaw0

@@ -101,13 +101,13 @@ pycozmo/           # Main library
 │   ├── robot_center.py      # RobotCenterDetector — two-ring calibration
 │   └── robot_center.py      # RobotCenterResult dataclass
 ├── navigation/    # Navigation subsystem
+│   ├── astar.py            # AStarPlanner, PathPoint — A* pathfinding
 │   ├── cube_approach.py     # CubeApproach — two-step standoff approach
 │   ├── dock_state.py        # DockState — charger/dock pose tracking
-│   ├── interfaces.py        # Navigation interfaces
-│   ├── navigator.py         # Navigator — navigate, approach, dock
+│   ├── navigator.py         # Navigator — navigate, approach, dock, stop
+│   ├── remote_control.py    # RemoteControl — browser keyboard driving
 │   ├── steering.py          # steer_velocities, wrap_pi — differential drive
-│   ├── world_map.py         # WorldMap — fused robot/cube poses, path trail
-│   └── world_map_interfaces.py # WorldMap interface protocols
+│   └── world_map.py         # WorldMap — fused robot/cube poses, path trail
 ├── animation/     # Animation and behavior system
 │   ├── anim.py          # Anim — animation playback
 │   ├── anim_controller.py  # AnimController — animation scheduling

@@ -135,10 +135,9 @@ class MsgRouter:
             cube_idx = int(cube_id_str.replace("cube_", "")) - 1
             if self._world_map is None:
                 return
-            world = self._world_map.get_world_state()
-            cubes = world.get("cubes", {})
-            if cube_idx in cubes:
-                pos = cubes[cube_idx]["position"]
+            cube = self._world_map.get_cube(cube_idx)
+            if cube is not None:
+                pos = cube.position
                 listener(cube_idx, float(pos[0]), float(pos[1]))
             else:
                 logger.warning("approach_cube: %s not in world map", cube_id_str)

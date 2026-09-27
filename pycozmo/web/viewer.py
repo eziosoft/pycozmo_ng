@@ -99,7 +99,7 @@ class WebBridge:
 
         self.web_viewer.broadcast()
 
-    def _on_robot_state_for_trail(self, c):
+    def on_robot_state_for_trail(self, c):
         """Push robot pose into world map for path tracking. (COZMO-27)"""
         try:
             pose = c.pose

@@ -263,3 +263,35 @@ class TestWorldMapRotationAlpha:
         """Custom rotation_alpha is stored."""
         wm = WorldMap(rotation_alpha=0.05)
         assert wm.rotation_alpha == pytest.approx(0.05)
+
+
+class TestGetCube:
+    """Single-cube locked lookup (used by the facade and message router)."""
+
+    def test_unknown_cube_returns_none(self):
+        wm = WorldMap()
+        assert wm.get_cube(0) is None
+        assert wm.get_cube(42) is None
+
+    def test_returns_fused_state_for_known_cube(self):
+        wm = WorldMap()
+        wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
+        wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
+
+        cube = wm.get_cube(0)
+        assert cube is not None
+        assert cube.confidence == pytest.approx(0.9)
+        # Robot at origin, cube 200 mm ahead -> 200+30 camera setback.
+        np.testing.assert_allclose(cube.position[:2], [230.0, 0.0], atol=1e-6)
+        # Only cube key 0 exists.
+        assert wm.get_cube(1) is None
+
+    def test_returns_a_copy(self):
+        """Mutation of the returned state must not touch the live map."""
+        wm = WorldMap()
+        wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
+        wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
+
+        cube = wm.get_cube(0)
+        cube.position[0] = 9999.0
+        assert wm.get_cube(0).position[0] != 9999.0

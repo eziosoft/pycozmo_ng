@@ -433,6 +433,12 @@ class WebViewerServer:
 
     # -- server lifecycle ---------------------------------------------------
 
+    @property
+    def is_running(self) -> bool:
+        """Whether the WebSocket + HTTP server thread is alive."""
+        thread = self._ws_server._thread
+        return thread is not None and thread.is_alive()
+
     def start(self):
         """Start the WebSocket + HTTP server in a background thread."""
         if self._ws_server._thread and self._ws_server._thread.is_alive():

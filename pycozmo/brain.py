@@ -62,6 +62,7 @@ class Brain:
         self.annotation_engine: AnnotationEngine | None = None
         self.event_dispatcher: DetectionEventDispatcher | None = None
         self.floor_pipeline: FloorPipeline | None = None
+        self.camera_calibration = None  # Set by setup_vision()
 
         # Remote control (COZMO-25)
         self._remote_control = None
@@ -109,8 +110,8 @@ class Brain:
 
     def setup_vision(
         self,
-        cli,
-        camera_calibration,
+        camera_calibration=None,
+        calibration_timeout: float = 10.0,
         process_every_n_frames: int = 1,
         undistort: bool = False,
         enable_floor_projection: bool = True,
@@ -128,19 +129,40 @@ class Brain:
         enable_face_detection: bool = True,
         face_detect_every_n_frames: int = 1,
     ):
-        """Set up the vision pipeline components.
+        """Set up the vision pipeline components and register event handlers.
 
         This wires together DetectionPipeline, AnnotationEngine,
-        DetectionEventDispatcher, and FloorPipeline. Event handlers
-        are registered on the client.
+        DetectionEventDispatcher, and FloorPipeline, then registers all
+        event handlers on the client: the camera image handler plus the
+        subsystem handlers (charger state, cube connection, robot state
+        trail, pick-up).
+
+        Requires a connection: if ``camera_calibration`` is None it is
+        retrieved from the robot.
 
         Args:
+            camera_calibration: CameraCalibration instance. If None,
+                retrieves it from the robot (needs ``self.cli``).
+            calibration_timeout: Seconds to wait for calibration retrieval.
             face_detect_every_n_frames: Run face detection every Nth
                 processed frame (1 = every frame). Higher values reduce
                 CPU load — faces are static enough that every 3rd frame
                 is usually sufficient.
         """
+        if self.cli is None:
+            raise RuntimeError(
+                "Not connected - call Cozmo.connect() before setup_vision"
+            )
 
+        if camera_calibration is None:
+            from pycozmo.vision.calibration.camera_calibration import (
+                CameraCalibrationRetriever,
+            )
+
+            retriever = CameraCalibrationRetriever(self.cli)
+            camera_calibration = retriever.get_calibration(timeout=calibration_timeout)
+
+        self.camera_calibration = camera_calibration
         self._face_detect_every_n_frames = face_detect_every_n_frames
 
         # Detection pipeline (core detection logic) - uses factory for DI
@@ -200,7 +222,22 @@ class Brain:
                 undistort,
             )
 
-        cli.add_handler(event.EvtNewRawCameraImage, on_camera_image)
+        # Subsystem event handlers (navigation, cubes, web trail, pick-up)
+        self.cli.add_handler(event.EvtNewRawCameraImage, on_camera_image)
+        self.cli.add_handler(
+            event.EvtRobotOnChargerChange, self.navigator.on_charger_change
+        )
+        self.cli.add_handler(
+            event.EvtRobotChargingChange, self.navigator.on_charging_change
+        )
+        self.cli.add_handler(
+            protocol_encoder.ObjectConnectionState,
+            self.cubes.on_object_connection_state,
+        )
+        self.cli.add_handler(
+            event.EvtRobotStateUpdated, self.web.on_robot_state_for_trail
+        )
+        self.cli.add_handler(event.EvtRobotPickedUpChange, self._on_picked_up)
 
         logger_cubes.info(
             f"Vision pipeline initialized (processing every "
@@ -377,9 +414,9 @@ class Brain:
         self._remote_control = RemoteControl(cli)
         self._remote_control.start()
         self.web_viewer.set_control_listener(self._remote_control.update_keys)
-        self.web_viewer.set_navigate_listener(self.navigator._on_navigate_to)
-        self.web_viewer.set_approach_listener(self.navigator._on_approach_cube)
-        self.web_viewer.set_dock_listener(self.navigator._on_dock)
+        self.web_viewer.set_navigate_listener(self.navigator.navigate_to)
+        self.web_viewer.set_approach_listener(self.navigator.approach_cube_at)
+        self.web_viewer.set_dock_listener(self.navigator.dock)
         self.web_viewer.set_camera_settings_listener(self._on_camera_settings)
         self.web_viewer.set_say_listener(self._on_say)
         self.web_viewer.set_test_mode_listener(self.navigator.set_test_mode)

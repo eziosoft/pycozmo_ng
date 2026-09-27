@@ -4,7 +4,10 @@ Tests message dispatch logic without any WebSocket or asyncio overhead.
 """
 
 import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import numpy as np
 
 from pycozmo.web.msg_router import MsgRouter
 
@@ -12,11 +15,12 @@ from pycozmo.web.msg_router import MsgRouter
 class TestMsgRouterDispatch:
     def setup_method(self):
         self.wm = MagicMock()
-        self.wm.get_world_state.return_value = {
-            "cubes": {
-                0: {"position": [100.0, 200.0, 0.0]},
-            }
-        }
+        # Only world-map key 0 ("cube_1") exists.
+        self.wm.get_cube.side_effect = lambda idx: (
+            SimpleNamespace(position=np.array([100.0, 200.0, 0.0]))
+            if idx == 0
+            else None
+        )
         self.router = MsgRouter(world_map=self.wm)
 
     def test_unknown_type_ignored(self):

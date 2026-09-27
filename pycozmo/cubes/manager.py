@@ -59,6 +59,16 @@ class CubeManager:
                 return cube_id
         return None
 
+    @property
+    def connected_cubes(self) -> dict[int, int]:
+        """Cube IDs (1..3) currently connected over BLE, mapped to object IDs.
+
+        Maintained from ObjectConnectionState events (the BLE cycler
+        reconnects cubes as it cycles), so membership can change while
+        the keepalive worker runs.
+        """
+        return dict(self.ct.object_id_map)
+
     def _cube_id_for_object_id(self, cli, object_id: int) -> int | None:
         """Reverse lookup: temporary object_id -> detected cube_id (1..3)."""
         info = cli.connected_objects.get(object_id)

@@ -65,6 +65,16 @@ _Avoid_: averaging, filtering (when it erases world-frame stability)
 - `world_yaw_to_scene()` — yaw passes through unchanged (det = +1)
 - `scene_to_world_point()` — inverse of `world_to_scene_point`
 
+**Cube ID vs world-map index**:
+Two numbering conventions exist and must not be mixed inside one call. **Cube
+IDs 1-3** are user-facing: the physical cubes, the `CubeManager` factory/
+connection maps, browser labels (`cube_1`), and the whole `Cozmo` facade
+(`cozmo.world_map.cubes`, `cozmo.navigator.approach_cube`, `cozmo.cubes.*`).
+The **world-map index 0-2** is internal: detection output (`marker_id // 6`)
+and `WorldMap` keys, always `world_index = cube_id - 1`. The facade converts
+at its boundary; `MsgRouter` converts browser strings the same way.
+_Avoid_: calling the world-map index "cube ID" in public API.
+
 **Face index mapping** (cube marker faces, 0-5):
 | face_idx | face_type | rotation | Marker file |
 |----------|-----------|----------|-------------|

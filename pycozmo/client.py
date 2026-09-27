@@ -847,7 +847,7 @@ class Client(event.Dispatcher):
         pose (rebuilt after a settle so the follower never sees a
         discontinuous start).
 
-        Unlike the Python-side closed loop (``Navigator._drive_to_point``),
+        Unlike the Python-side closed loop (``Navigator.drive_to_point``),
         the trajectory — accel/decel ramps and wheel control — runs on the
         robot at high rate, independent of WiFi latency. This is the
         recommended way to drive along a planned (e.g. A*) polyline.

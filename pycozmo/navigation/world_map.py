@@ -439,6 +439,20 @@ class WorldMap:
 
     # -- read API -----------------------------------------------------------
 
+    @staticmethod
+    def _copy_cube_state(cube_state: CubeState) -> CubeState:
+        """Return a deep copy of one cube state (arrays copied)."""
+        return CubeState(
+            position=cube_state.position.copy(),
+            rotation_matrix=cube_state.rotation_matrix.copy(),
+            confidence=cube_state.confidence,
+            num_faces=cube_state.num_faces,
+            face_idx=cube_state.face_idx,
+            face_rotation=cube_state.face_rotation,
+            age=cube_state.age,
+            updated_at=cube_state.updated_at,
+        )
+
     def get_robot_pose(self) -> tuple[np.ndarray, float]:
         """Return (world position mm, yaw rad)."""
         with self._lock:
@@ -448,18 +462,20 @@ class WorldMap:
         """Return a copy of the fused cube states (world frame)."""
         with self._lock:
             return {
-                cube_id: CubeState(
-                    position=cube_state.position.copy(),
-                    rotation_matrix=cube_state.rotation_matrix.copy(),
-                    confidence=cube_state.confidence,
-                    num_faces=cube_state.num_faces,
-                    face_idx=cube_state.face_idx,
-                    face_rotation=cube_state.face_rotation,
-                    age=cube_state.age,
-                    updated_at=cube_state.updated_at,
-                )
+                cube_id: self._copy_cube_state(cube_state)
                 for cube_id, cube_state in self._cubes.items()
             }
+
+    def get_cube(self, cube_id: int) -> CubeState | None:
+        """Return a copy of one fused cube state, or None if unknown.
+
+        ``cube_id`` is the 0-indexed world-map key (``cube_id = physical
+        cube ID - 1``). Single locked lookup — cheaper than
+        :meth:`get_cubes` when only one cube is needed.
+        """
+        with self._lock:
+            cube_state = self._cubes.get(cube_id)
+            return self._copy_cube_state(cube_state) if cube_state else None
 
     def get_path_points(self) -> list:
         """Return a copy of the path points (world frame, mm)."""

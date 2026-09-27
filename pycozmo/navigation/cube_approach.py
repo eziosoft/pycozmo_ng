@@ -1,6 +1,6 @@
 """CubeApproach — two-step standoff approach and grab alignment.
 
-Extracted from Navigator._on_approach_cube (COZMO-40).  The class takes a
+Extracted from Navigator.approach_cube_at (COZMO-40).  The class takes a
 robot client, a cube-state reader, and two driving callbacks so it can be
 unit-tested without live hardware.
 """
@@ -26,7 +26,7 @@ class CubeApproach:
         get_cube_state  ``Callable[[int], CubeState | None]`` — returns the
                         fused world-frame state for a given cube index.
         drive_to_point  ``Callable[[tx, ty, *, stop_mm, timeout_s, ...], bool]``
-                        Closed-loop drive to a point (Navigator._drive_to_point).
+                        Closed-loop drive to a point (Navigator.drive_to_point).
         move_forward    ``Callable[[dist_mm], bool]`` Straight-ahead creep
                         (Navigator._move_forward).
     """

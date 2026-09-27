@@ -45,12 +45,14 @@ class Navigator:
         self._current_waypoint_idx = 0
         self._path_following = False
         self._path_follow_lock = threading.Lock()
+        # Set by stop(), cleared at the next closed-loop drive entry.
+        self._stop_requested = threading.Event()
 
     # ------------------------------------------------------------------
     # Charger / origin handlers (COZMO-28)
     # ------------------------------------------------------------------
 
-    def _on_charger_change(self, cli, state: bool) -> None:
+    def on_charger_change(self, cli, state: bool) -> None:
         """Record whether the robot is physically on the charger."""
         del cli
         with self.ds.lock:
@@ -59,7 +61,7 @@ class Navigator:
             logger.info("On charger detected")
             threading.Thread(target=self._reset_pose_origin, daemon=True).start()
 
-    def _on_charging_change(self, cli, state: bool) -> None:
+    def on_charging_change(self, cli, state: bool) -> None:
         """Record whether the robot is actively charging."""
         del cli
         with self.ds.lock:
@@ -96,10 +98,16 @@ class Navigator:
     # Click-to-navigate (COZMO-28 / COZMO-30)
     # ------------------------------------------------------------------
 
-    def _on_navigate_to(self, world_forward: float, world_left: float) -> None:
-        """Handle click-to-navigate from browser.
+    def navigate_to(
+        self, world_forward: float | None, world_left: float | None = None
+    ) -> None:
+        """Navigate to a world position — or cancel the active navigation.
 
-        world_forward = X (Anki frame), world_left = Y (Anki frame).
+        ``world_forward`` = X (Anki frame), ``world_left`` = Y (Anki frame).
+        Passing ``world_forward=None`` cancels navigation and stops the
+        motors (the browser's navigate-cancel sends a single ``None``
+        argument).
+
         When A* is enabled and a planner is set, computes an obstacle-
         avoiding path through the occupancy grid and follows it with the
         robot's built-in path follower. Otherwise drives straight to the
@@ -164,7 +172,7 @@ class Navigator:
         The remaining path is sent as a single built-in Cozmo path
         (``Client.execute_polyline``), so the robot runs its own
         high-rate trajectory generator instead of the Python closed loop
-        (WiFi latency made ``_drive_to_point`` unreliable). The occupancy
+        (WiFi latency made ``drive_to_point`` unreliable). The occupancy
         map is monitored while the path executes — if a remaining
         waypoint becomes occupied the path is interrupted and a new A*
         search is issued from the current pose. The active path is
@@ -339,7 +347,7 @@ class Navigator:
     # Closed-loop drive (COZMO-35)
     # ------------------------------------------------------------------
 
-    def _drive_to_point(
+    def drive_to_point(
         self,
         tx: float,
         ty: float,
@@ -358,6 +366,10 @@ class Navigator:
         missing any target not exactly on that ray). Ends by turning in place
         to ``final_heading`` (if given) once close.
 
+        Entry clears the stop latch set by :meth:`stop`, so a new drive
+        re-arms movement; the loop exits early if ``stop()`` is called
+        while it runs.
+
         Args:
             tx, ty: Target position (mm, world frame).
             stop_mm: Stop when within this distance of the target.
@@ -369,17 +381,21 @@ class Navigator:
 
         Returns:
             True if the target was reached (within tolerance), False on
-            timeout.
+            timeout or when interrupted by :meth:`stop`.
         """
         cli = self.cli
         if cli is None:
             logger.warning("Drive: no robot connected")
             return False
 
+        self._stop_requested.clear()
         t0 = time.monotonic()
         reached = False
         try:
             while time.monotonic() - t0 <= timeout_s:
+                if self._stop_requested.is_set():
+                    logger.info("Drive interrupted by stop()")
+                    break
                 pose = cli.pose
                 ex, ey = tx - pose.position.x, ty - pose.position.y
                 if math.hypot(ex, ey) <= stop_mm:
@@ -423,6 +439,8 @@ class Navigator:
         t0 = time.monotonic()
         try:
             while time.monotonic() - t0 <= timeout_s:
+                if self._stop_requested.is_set():
+                    break
                 yaw = cli.pose.rotation.angle_z.radians
                 err = wrap_pi(target_heading - yaw)
                 if abs(err) < tol_rad:
@@ -437,7 +455,7 @@ class Navigator:
         """Drive straight ahead ``dist_mm`` using the onboard planner.
 
         ``go_to_pose`` (relative to the robot) is used instead of the Python
-        closed loop (``_drive_to_point``) for these very short moves: right
+        closed loop (``drive_to_point``) for these very short moves: right
         after a ``go_to_pose`` the robot can still be finalizing its path and
         ignores raw ``drive_wheels`` commands. (COZMO-37)
 
@@ -480,7 +498,7 @@ class Navigator:
             self._cube_approach = CubeApproach(
                 cli=self.cli,
                 get_cube_state=lambda idx: world_map.get_cubes().get(idx),
-                drive_to_point=self._drive_to_point,
+                drive_to_point=self.drive_to_point,
                 move_forward=self._move_forward,
             )
         # Refresh cli reference (may reconnect)
@@ -497,8 +515,38 @@ class Navigator:
         """Pick the cube face to approach — delegates to CubeApproach."""
         return CubeApproach.pick_face_normal(cube_pos, cube_rot, robot_pos, robot_yaw)
 
-    def _on_approach_cube(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
-        """Handle cube click from browser — delegates to CubeApproach."""
+    def approach_cube(self, cube_id: int) -> bool:
+        """Approach and align with the cube with the given ID (1-3).
+
+        Resolves the cube's world position from the world map, then starts
+        the two-step approach in the background.
+
+        Returns:
+            True if the approach was started (the cube was found in the
+            world map), False otherwise.
+        """
+        if not self.cli:
+            logger.warning("Approach: no robot connected")
+            return False
+        wm = getattr(self.web_viewer, "world_map", None)
+        if wm is None:
+            logger.warning("Approach: world map not available")
+            return False
+        cube = wm.get_cube(cube_id - 1)
+        if cube is None:
+            logger.warning("Approach: cube %d not in world map", cube_id)
+            return False
+        position = cube.position
+        self.approach_cube_at(cube_id - 1, float(position[0]), float(position[1]))
+        return True
+
+    def approach_cube_at(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
+        """Approach the cube at world position (x, y) — delegates to CubeApproach.
+
+        ``cube_idx`` is the 0-indexed world-map key; the browser message
+        router resolves the pose and calls this directly. Use
+        :meth:`approach_cube` to address a cube by its ID (1-3).
+        """
         if not self.cli:
             logger.warning("Approach: no robot connected")
             return
@@ -509,8 +557,8 @@ class Navigator:
     # Docking (COZMO-28)
     # ------------------------------------------------------------------
 
-    def _on_dock(self) -> None:
-        """Handle 'z' keypress - drive robot back into the dock."""
+    def dock(self) -> None:
+        """Drive robot back into the dock (in the background)."""
         if not self.cli:
             logger.warning("Dock: no robot connected")
             return
@@ -621,6 +669,28 @@ class Navigator:
         t.start()
 
     # ------------------------------------------------------------------
+    # Stop (public motion control)
+    # ------------------------------------------------------------------
+
+    def stop(self) -> None:
+        """Stop all movement.
+
+        Cancels A* path following and test mode, interrupts any active
+        closed-loop drive, clears the published A* path, and stops the
+        motors. A subsequent motion command re-arms movement.
+        """
+        self._stop_requested.set()
+        self.set_test_mode(False)
+        with self._path_follow_lock:
+            self._path_following = False
+        wm = getattr(self.web_viewer, "world_map", None)
+        if wm is not None:
+            wm.clear_astar_path()
+        if self.cli is not None:
+            self.cli.stop_all_motors()
+        logger.info("Stopped")
+
+    # ------------------------------------------------------------------
     # Test mode — loop approach on cubes with 3 sec pauses
     # ------------------------------------------------------------------
 
@@ -657,5 +727,5 @@ class Navigator:
             cube = cubes[cube_idx]
             cx, cy, _ = cube.position
             logger.info("Test mode: approaching cube %d", cube_idx + 1)
-            self._on_approach_cube(cube_idx, float(cx), float(cy))
+            self.approach_cube_at(cube_idx, float(cx), float(cy))
             time.sleep(3.0)

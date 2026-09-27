@@ -10,8 +10,8 @@ Usage:
 
     cozmo = Cozmo()
     with cozmo.connect():
-        cozmo.setup_vision(camera_calibration=cal)
-        cozmo.enable_camera()
+        cozmo.vision.start()
+        cozmo.navigator.drive_to(x=100, y=0)
         cozmo.run()
 """
 
@@ -25,24 +25,51 @@ if TYPE_CHECKING:
 
 import pycozmo
 from pycozmo.brain import Brain
-from pycozmo.event import (
-    EvtRobotChargingChange,
-    EvtRobotOnChargerChange,
-    EvtRobotPickedUpChange,
-    EvtRobotStateUpdated,
-)
 from pycozmo.logger import logger, setup_basic_logging
-from pycozmo.navigation.world_map import WorldMap
+from pycozmo.navigation.world_map import CubeState, WorldMap
 from pycozmo.protocol import protocol_encoder
 from pycozmo.vision.cube_detector.detection_pipeline import DetectionPipeline
 from pycozmo.web.viewer_server import WebViewerServer
 
 
 class VisionAPI:
-    """High-level vision interface: start/stop, frame access."""
+    """High-level vision interface: start/stop, frame access, detections."""
 
     def __init__(self, brain: Brain):
         self._brain = brain
+
+    def start(self, resolution=None, **kwargs) -> None:
+        """Set up the vision pipeline and enable the camera.
+
+        Convenience for the common case — equivalent to calling
+        :meth:`Cozmo.setup_vision` followed by :meth:`Cozmo.enable_camera`.
+
+        Args:
+            resolution: ImageResolution enum (default: QVGA).
+            **kwargs: Passed through to :meth:`Cozmo.setup_vision`.
+
+        Raises:
+            RuntimeError: If not connected to the robot.
+        """
+        brain = self._brain
+        if brain.cli is None:
+            raise RuntimeError("Not connected - call Cozmo.connect() first")
+        brain.setup_vision(**kwargs)
+        if resolution is None:
+            resolution = protocol_encoder.ImageResolution.QVGA
+        brain.enable_camera_persistent(brain.cli, resolution)
+
+    def stop(self) -> None:
+        """Stop the camera stream (no-op when not connected)."""
+        brain = self._brain
+        cli = brain.cli
+        if cli is None:
+            return
+        fs = brain.frame_state
+        resolution = fs.camera_resolution or protocol_encoder.ImageResolution.QVGA
+        cli.enable_camera(enable=False, color=False, resolution=resolution)
+        fs.camera_active = False
+        logger.info("Camera stopped")
 
     @property
     def annotation(self):
@@ -73,45 +100,46 @@ class VisionAPI:
     @property
     def camera_calibration(self):
         """Get the camera calibration (available after setup_vision)."""
-        return getattr(self._brain, "_camera_calibration", None)
+        return self._brain.camera_calibration
 
 
 class CubesAPI:
-    """High-level cube interface."""
+    """High-level cube interface (cube IDs are 1-3).
+
+    Cube LED control (``set_lights``) is not implemented yet — there is
+    no cube object model; :meth:`start_lights` runs the BLE keepalive
+    cycler that holds the cubes' connections alive.
+    """
 
     def __init__(self, brain: Brain):
         self._brain = brain
 
     @property
-    def connected(self):
-        """Get connected cube IDs."""
+    def connected(self) -> list[int]:
+        """Cube IDs (1-3) currently connected over BLE."""
         return list(self._brain.cubes.connected_cubes.keys())
 
-    def get_cube(self, cube_id: int):
-        """Get a cube by ID (1-3)."""
-        return self._brain.cubes.get_cube(cube_id)
+    def discover(self) -> None:
+        """Discover available cubes and build the factory_id mapping."""
+        self._require_connection()
+        self._brain.cubes.setup_cube_mapping(self._brain.cli)
 
-    def set_lights(self, cube_id: int, color):
-        """Set cube LED color."""
-        cube = self.get_cube(cube_id)
-        if cube:
-            cube.set_lights(color)
-
-    def discover(self, cli) -> None:
-        """Discover available cubes and build factory_id mapping."""
-        self._brain.cubes.setup_cube_mapping(cli)
-
-    def start_lights(self, cli) -> None:
+    def start_lights(self) -> None:
         """Start the cube BLE keepalive cycler."""
-        self._brain.cubes.start_cube_light_worker(cli)
+        self._require_connection()
+        self._brain.cubes.start_cube_light_worker(self._brain.cli)
 
     def stop_lights(self) -> None:
         """Stop the cube BLE keepalive cycler."""
         self._brain.cubes.stop_cube_light_worker()
 
+    def _require_connection(self) -> None:
+        if self._brain.cli is None:
+            raise RuntimeError("Not connected - call Cozmo.connect() first")
+
 
 class NavigatorAPI:
-    """High-level navigation interface."""
+    """High-level navigation interface (world positions in mm, cube IDs 1-3)."""
 
     def __init__(self, brain: Brain):
         self._brain = brain
@@ -121,15 +149,19 @@ class NavigatorAPI:
         """Drive to a world position (mm)."""
         return self._navigator.drive_to_point(x, y, **kwargs)
 
-    def approach_cube(self, cube_id: int, **kwargs) -> bool:
-        """Approach and align with a cube."""
-        return self._navigator.approach_cube(cube_id, **kwargs)
+    def approach_cube(self, cube_id: int) -> bool:
+        """Approach and align with the cube with the given ID (1-3).
 
-    def dock(self, **kwargs) -> bool:
-        """Drive back to dock/origin."""
-        return self._navigator.dock(**kwargs)
+        Returns True if the approach was started (the cube is in the
+        world map), False otherwise.
+        """
+        return self._navigator.approach_cube(cube_id)
 
-    def stop(self):
+    def dock(self) -> None:
+        """Drive back to dock/origin (in the background)."""
+        self._navigator.dock()
+
+    def stop(self) -> None:
         """Stop all movement."""
         self._navigator.stop()
 
@@ -143,7 +175,11 @@ class NavigatorAPI:
 
 
 class WorldMapAPI:
-    """Read-only access to the world map."""
+    """Read-only access to the world map (world frame, mm).
+
+    Cube-facing members use cube IDs 1-3 like the rest of the public
+    API; the world map itself keys cubes 0-2.
+    """
 
     def __init__(self, brain: Brain):
         self._world_map: WorldMap = brain.web_viewer.world_map
@@ -154,18 +190,21 @@ class WorldMapAPI:
         return self._world_map.get_robot_pose()
 
     @property
-    def cubes(self):
-        """Get all known cube poses in world frame."""
-        return self._world_map.get_all_cube_poses()
+    def cubes(self) -> dict[int, CubeState]:
+        """Get all known cube poses, keyed by cube ID (1-3)."""
+        return {
+            cube_idx + 1: state
+            for cube_idx, state in self._world_map.get_cubes().items()
+        }
 
     @property
     def path(self):
-        """Get the robot's path trail."""
-        return self._world_map.get_path()
+        """Get the robot's path trail (world frame, mm)."""
+        return self._world_map.get_path_points()
 
-    def get_cube(self, cube_id: int):
-        """Get a specific cube's world pose."""
-        return self._world_map.get_cube_pose(cube_id)
+    def get_cube(self, cube_id: int) -> CubeState | None:
+        """Get one cube's world state by cube ID (1-3), or None if unknown."""
+        return self._world_map.get_cube(cube_id - 1)
 
 
 class SensorsAPI:
@@ -237,10 +276,8 @@ class WebViewerAPI:
 
     @property
     def is_running(self) -> bool:
-        return (
-            self._web_viewer._ws_server._thread is not None
-            and self._web_viewer._ws_server._thread.is_alive()
-        )
+        """Whether the web viewer server is running."""
+        return self._web_viewer.is_running
 
 
 class Cozmo:
@@ -261,7 +298,6 @@ class Cozmo:
         self._brain = Brain()
         self._connected = False
         self._cli = None
-        self._camera_calibration = None
 
         # Public subsystem APIs (lazy-initialized)
         self._vision: VisionAPI | None = None
@@ -428,6 +464,9 @@ class Cozmo:
     ):
         """Set up the vision pipeline and register all internal event handlers.
 
+        Requires a connection: when ``camera_calibration`` is None it is
+        retrieved from the robot.
+
         Args:
             camera_calibration: CameraCalibration instance. If None, retrieves
                 it from the robot automatically.
@@ -442,17 +481,9 @@ class Cozmo:
             face_detect_every_n_frames: Run face detection every Nth processed
                 frame (1 = every frame). Higher values reduce CPU load.
         """
-        if camera_calibration is None:
-            from pycozmo.vision.calibration.camera_calibration import CameraCalibrationRetriever
-
-            retriever = CameraCalibrationRetriever(self._cli)
-            camera_calibration = retriever.get_calibration(timeout=calibration_timeout)
-
-        self._camera_calibration = camera_calibration
-        self._brain._camera_calibration = camera_calibration
         self._brain.setup_vision(
-            self._cli,
             camera_calibration=camera_calibration,
+            calibration_timeout=calibration_timeout,
             process_every_n_frames=process_every_n_frames,
             undistort=undistort,
             enable_floor_projection=enable_floor_projection,
@@ -462,27 +493,6 @@ class Cozmo:
             enable_face_detection=enable_face_detection,
             face_detect_every_n_frames=face_detect_every_n_frames,
         )
-        self._register_vision_handlers(enable_floor_projection)
-
-    def _register_vision_handlers(self, enable_floor_projection: bool) -> None:
-        """Register all event handlers needed by the vision pipeline."""
-        self._cli.add_handler(
-            EvtRobotOnChargerChange,
-            self._brain.navigator._on_charger_change,
-        )
-        self._cli.add_handler(
-            EvtRobotChargingChange,
-            self._brain.navigator._on_charging_change,
-        )
-        self._cli.add_handler(
-            pycozmo.protocol_encoder.ObjectConnectionState,
-            self._brain.cubes.on_object_connection_state,
-        )
-        self._cli.add_handler(
-            EvtRobotStateUpdated,
-            self._brain.web._on_robot_state_for_trail,
-        )
-        self._cli.add_handler(EvtRobotPickedUpChange, self._brain._on_picked_up)
 
     # ------------------------------------------------------------------
     # Annotation options
@@ -576,15 +586,15 @@ class Cozmo:
 
     def discover_cubes(self) -> None:
         """Discover available cubes and build factory_id mapping."""
-        self._brain.cubes.setup_cube_mapping(self._cli)
+        self.cubes.discover()
 
     def start_cube_lights(self) -> None:
         """Start the cube BLE keepalive cycler."""
-        self._brain.cubes.start_cube_light_worker(self._cli)
+        self.cubes.start_lights()
 
     def stop_cube_lights(self) -> None:
         """Stop the cube BLE keepalive cycler."""
-        self._brain.cubes.stop_cube_light_worker()
+        self.cubes.stop_lights()
 
     # ------------------------------------------------------------------
     # Localization

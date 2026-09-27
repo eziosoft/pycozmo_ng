@@ -4,7 +4,7 @@
 follower is exercised with a mock CLI whose ``execute_polyline`` side
 effect simulates arrival / interruption — no live robot needed.
 
-Motivation: the Python-side closed loop (``_drive_to_point``) was unreliable
+Motivation: the Python-side closed loop (``drive_to_point``) was unreliable
 because wheel commands and pose updates travel over WiFi; the firmware path
 follower runs the trajectory at high rate on the robot.
 """
