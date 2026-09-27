@@ -27,7 +27,7 @@ def test_battery_reports_robot_state(cozmo):
 
 
 def test_robot_state_trail_handler_registered(vision, cozmo):
-    """Brain.setup_vision registers WebBridge.on_robot_state_for_trail."""
+    """Brain.setup_vision registers Brain._on_robot_state."""
     if not wait_for(lambda: len(cozmo.world_map.path) > 0, timeout=5.0):
         # Robot may only send state on change — jiggle the head to force packets.
         cozmo.set_head_angle(-20)

@@ -1,11 +1,7 @@
-"""Web subpackage — viewer bridge, streaming, telemetry."""
+"""Web subpackage — web viewer server and static streaming endpoints."""
 
-from pycozmo.web.streamer import WebStreamer
-from pycozmo.web.viewer import WebBridge
 from pycozmo.web.viewer_server import WebViewerServer
 
 __all__ = [
-    "WebBridge",
-    "WebStreamer",
     "WebViewerServer",
 ]

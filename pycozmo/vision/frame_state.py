@@ -7,10 +7,12 @@ import time
 class FrameState:
     """Mutable container for frame lifecycle, detections, and camera state.
 
-    Owned by FrameHandler; read by Brain.run() for staleness checks and
-    by WebBridge for streaming.
+    Written by :class:`~pycozmo.vision.frame_stage.FrameStage` (frames,
+    detections) and by ``Brain`` (camera lifecycle); read by
+    ``Brain.run()`` for staleness checks and by the ``Cozmo`` facade
+    for frame access.
 
-    All mutable scalar state is protected by :attr:`frame_lock`.
+    :attr:`frame_lock` protects the scalar lifecycle state;
     :attr:`detections_lock` protects :attr:`latest_detections` only.
     """
 
@@ -33,9 +35,6 @@ class FrameState:
         self.latest_raw_frame = None
         self.latest_annotated_frame = None
         self.latest_detections: list = []
-        self.latest_floor_image = None
-        self.latest_occupancy_grid = None
-        self.latest_occupancy_map_image = None
 
     @property
     def running(self) -> bool:

@@ -9,15 +9,10 @@ as the public API.
 import time
 from typing import ClassVar
 
-import cv2
-import numpy as np
-from PIL import Image
-
 import pycozmo
 from pycozmo import event
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.cubes.manager import CubeManager
-from pycozmo.display.expressions import Happiness
 from pycozmo.logger import logger, logger_cubes
 from pycozmo.navigation.astar import AStarPlanner
 from pycozmo.navigation.dock_state import DockState
@@ -30,11 +25,9 @@ from pycozmo.vision.cube_detector.detection_pipeline import (
     create_default_detection_pipeline,
 )
 from pycozmo.vision.events import DetectionEventDispatcher
-from pycozmo.vision.occupancy_map.floor_pipeline import FloorPipeline
-from pycozmo.vision.frame_handler import FrameHandler
+from pycozmo.vision.frame_stage import FrameStage
 from pycozmo.vision.frame_state import FrameState
-from pycozmo.web.streamer import WebStreamer
-from pycozmo.web.viewer import WebBridge
+from pycozmo.vision.occupancy_map.floor_pipeline import FloorPipeline
 from pycozmo.web.viewer_server import WebViewerServer
 
 
@@ -61,7 +54,6 @@ class Brain:
 
         # Web viewer (thin adapter over the world map)
         self.web_viewer = WebViewerServer(world_map=self.world_map)
-        self.web_streamer = WebStreamer(self.web_viewer, self.frame_state)
 
         # Vision components (composition root)
         self.detection_pipeline: DetectionPipeline | None = None
@@ -73,30 +65,19 @@ class Brain:
         # Remote control (COZMO-25)
         self._remote_control = None
 
-        # Frame counters — initialized here to avoid race conditions
-        # in _on_camera_image (which runs on the event dispatch thread)
-        self._vision_frame_counter = 0
-        self._face_frame_counter = 0
-        self._face_detect_every_n_frames = 1
+        # Per-frame vision stage — owns the whole camera-frame sequence
+        # (convert → detect → annotate → publish → events → world map).
+        # Configured by setup_vision() once the detectors exist.
+        self.frame_stage = FrameStage(
+            self.frame_state, self.cube_tracking, self.world_map, self.web_viewer
+        )
 
         # Domain sub-components — each receives the state it needs
-        self.frame_handler = FrameHandler(
-            self.frame_state, self.cube_tracking, self.detection_pipeline
-        )
         self.navigator = Navigator(self.dock_state, world_map=self.world_map)
         self.cubes = CubeManager(self.cube_tracking)
-        self.web = WebBridge(
-            self.frame_state,
-            self.cube_tracking,
-            self.dock_state,
-            self.detection_pipeline,
-            world_map=self.world_map,
-        )
 
         # Wire cross-domain references
-        self.frame_handler.floor_pipeline = None  # Set after setup_vision
         self.navigator.cli = self.cli
-        self.web.web_viewer = self.web_viewer
 
         # A* pathfinding
         self.astar_planner: AStarPlanner | None = None
@@ -111,7 +92,7 @@ class Brain:
     def cli(self, value):
         self._cli = value
         self.navigator.cli = value
-        self.web.cli = value
+        self.frame_stage.cli = value
 
     def setup_vision(
         self,
@@ -168,16 +149,12 @@ class Brain:
             camera_calibration = retriever.get_calibration(timeout=calibration_timeout)
 
         self.camera_calibration = camera_calibration
-        self._face_detect_every_n_frames = face_detect_every_n_frames
 
         # Detection pipeline (core detection logic) - uses factory for DI
         self.detection_pipeline = create_default_detection_pipeline(
             camera_calibration=camera_calibration,
         )
         self.detection_pipeline.enable_face_detection = enable_face_detection
-
-        # Update frame handler with the new detection pipeline
-        self.frame_handler.detection_pipeline = self.detection_pipeline
 
         # Annotation engine (pure drawing)
         self.annotation_engine = AnnotationEngine()
@@ -203,11 +180,17 @@ class Brain:
                 floor_edge_margin_px=floor_edge_margin_px,
             )
 
-        # Wire floor pipeline to FrameHandler
-        self.frame_handler.floor_pipeline = self.floor_pipeline
-
-        # Wire web bridge to use detection pipeline
-        self.web.detection_pipeline = self.detection_pipeline
+        # Hand every per-session vision component to the frame stage in
+        # one call — it owns the whole camera-frame sequence from here.
+        self.frame_stage.configure(
+            detection_pipeline=self.detection_pipeline,
+            annotation_engine=self.annotation_engine,
+            event_dispatcher=self.event_dispatcher,
+            floor_pipeline=self.floor_pipeline,
+            process_every_n_frames=process_every_n_frames,
+            undistort=undistort,
+            face_detect_every_n_frames=face_detect_every_n_frames,
+        )
 
         # Expose occupancy map to web viewer for A* pathfinding
         if self.floor_pipeline and self.floor_pipeline.occupancy_map is not None:
@@ -218,17 +201,11 @@ class Brain:
             self.navigator.set_astar_planner(self.astar_planner)
             self.navigator.set_astar_enabled(False)
 
-        # Register camera image handler
-        def on_camera_image(cli_arg, image):
-            self._on_camera_image(
-                cli_arg,
-                image,
-                process_every_n_frames,
-                undistort,
-            )
-
-        # Subsystem event handlers (navigation, cubes, web trail, pick-up)
-        self.cli.add_handler(event.EvtNewRawCameraImage, on_camera_image)
+        # Subsystem event handlers (vision, navigation, cubes, web trail,
+        # pick-up)
+        self.cli.add_handler(
+            event.EvtNewRawCameraImage, self.frame_stage.on_camera_image
+        )
         self.cli.add_handler(
             event.EvtRobotOnChargerChange, self.navigator.on_charger_change
         )
@@ -239,125 +216,13 @@ class Brain:
             protocol_encoder.ObjectConnectionState,
             self.cubes.on_object_connection_state,
         )
-        self.cli.add_handler(
-            event.EvtRobotStateUpdated, self.web.on_robot_state_for_trail
-        )
+        self.cli.add_handler(event.EvtRobotStateUpdated, self._on_robot_state)
         self.cli.add_handler(event.EvtRobotPickedUpChange, self._on_picked_up)
 
         logger_cubes.info(
             f"Vision pipeline initialized (processing every "
             f"{process_every_n_frames} frame{'s' if process_every_n_frames > 1 else ''})"
         )
-
-    def _on_camera_image(
-        self,
-        cli,
-        image,
-        process_every_n_frames: int,
-        undistort: bool,
-    ):
-        """Handler for camera images — runs the full vision pipeline."""
-        self.frame_handler.on_raw_camera_image(cli, image)
-        self.web_streamer.update_fps()
-
-        # Frame skipping for performance
-        self._vision_frame_counter += 1
-        if self._vision_frame_counter % process_every_n_frames != 0:
-            return
-
-        try:
-            # Get current head angle from robot state
-            head_angle_rad = (
-                cli.head_angle.radians if hasattr(cli, "head_angle") else 0.0
-            )
-
-            # Single PIL→numpy→BGR conversion (reused by all downstream)
-            img_array = np.array(image)
-            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-
-            # Undistort the image using camera calibration (if enabled)
-            if undistort:
-                undistorted_bgr = cv2.undistort(
-                    img_bgr,
-                    self.detection_pipeline.camera_calibration.camera_matrix,
-                    self.detection_pipeline.camera_calibration.distortion_coefficients,
-                )
-            else:
-                undistorted_bgr = img_bgr
-
-            # Convert to PIL for annotation (only one conversion needed)
-            undistorted_rgb = cv2.cvtColor(undistorted_bgr, cv2.COLOR_BGR2RGB)
-            undistorted_image = Image.fromarray(undistorted_rgb)
-
-            # Detect cubes — pass BGR numpy directly (avoids re-conversion)
-            cube_detections = self.detection_pipeline.detect_cubes(
-                undistorted_bgr, head_angle_rad
-            )
-
-            # Detect faces (every Nth processed frame)
-            self._face_frame_counter += 1
-            if self._face_frame_counter % self._face_detect_every_n_frames == 0:
-                face_detections = self.detection_pipeline.detect_faces(
-                    undistorted_bgr, head_angle_rad
-                )
-            else:
-                face_detections = []
-
-            # Annotate image (single copy inside)
-            annotated_image = self.annotation_engine.detect_and_annotate(
-                undistorted_image,
-                cube_detections,
-                face_detections,
-                self.detection_pipeline.robot_center_result,
-            )
-
-            # Update frame state via frame handler
-            self.frame_handler.on_annotated_camera_image(
-                cli, annotated_image, cube_detections
-            )
-
-            # Push to web streamer
-            self.web_streamer.push_annotated_frame(annotated_image, cube_detections)
-
-            # Dispatch cube/face events
-            self.event_dispatcher.dispatch_cube_events(cli, cube_detections)
-            self.event_dispatcher.dispatch_face_events(cli, face_detections)
-
-            # Set face expression based on detection
-            anim_ctrl = getattr(cli, "anim_controller", None)
-            if anim_ctrl is not None:
-                if face_detections:
-                    anim_ctrl.set_face_expression(Happiness())
-                elif self._face_frame_counter % self._face_detect_every_n_frames == 0:
-                    # Only clear when we actually ran detection and found nothing
-                    anim_ctrl.clear_face_expression()
-
-            # Feed cube measurements to web viewer for 3D display
-            self.web.update_web_viewer()
-
-            # Floor projection (optional) — pass BGR numpy directly
-            if self.floor_pipeline is not None:
-                robot_pose = cli.pose if hasattr(cli, "pose") else None
-                floor_img, occ_grid, occ_map_image = self.floor_pipeline.process(
-                    undistorted_bgr, head_angle_rad, robot_pose
-                )
-                if floor_img is not None:
-                    cli.dispatch(event.EvtFloorProjectedImage, cli, floor_img, occ_grid)
-                    # Store occupancy map image for web viewer
-                    self.frame_state.latest_occupancy_map_image = occ_map_image
-
-                    # Update frame handler with floor image
-                    self.frame_handler.on_floor_projected_image(
-                        cli, floor_img, occ_grid
-                    )
-
-                    # Push to web streamer
-                    self.web_streamer.push_floor_frame(
-                        floor_img, occ_grid, self.floor_pipeline
-                    )
-
-        except (OSError, ValueError, RuntimeError) as e:
-            logger_cubes.error(f"Error processing camera image: {e}", exc_info=True)
 
     # ------------------------------------------------------------------
     # Camera lifecycle (COZMO-22)
@@ -517,6 +382,42 @@ class Brain:
             self._remote_control = None
 
     # ------------------------------------------------------------------
+    # Robot state handler (trail + telemetry)
+    # ------------------------------------------------------------------
+
+    def _on_robot_state(self, c) -> None:
+        """Push robot pose into the world map for path tracking (COZMO-27)
+        and the latest telemetry into the browser HUD."""
+        try:
+            pose = c.pose
+            pos = pose.position.x_y_z
+            yaw = pose.rotation.angle_z.radians
+            self.world_map.update_robot_pose(
+                pos, yaw, origin_id=pose.origin_id, record_path=True
+            )
+        except (AttributeError, ValueError) as e:
+            logger.debug(f"Failed to update robot pose: {e}")
+
+        try:
+            with self.dock_state.lock:
+                on_charger = self.dock_state.on_charger
+                charging = self.dock_state.charging
+            self.web_viewer.update_telemetry(
+                charging=charging,
+                on_charger=on_charger,
+                battery_voltage=round(c.battery_voltage, 3),
+                left_wheel_speed=round(c.left_wheel_speed.mmps, 1),
+                right_wheel_speed=round(c.right_wheel_speed.mmps, 1),
+                head_angle=round(c.head_angle.degrees, 1),
+                lift_height=round(c.lift_position.height.mm, 1),
+                cliff_data=c.cliff_data,
+            )
+        except (AttributeError, ValueError) as e:
+            logger.debug(f"Failed to update telemetry: {e}")
+
+        self.web_viewer.broadcast()
+
+    # ------------------------------------------------------------------
     # Pick-up handler
     # ------------------------------------------------------------------
 
@@ -531,11 +432,11 @@ class Brain:
     def start_web_viewer(self, port: int = 8765) -> None:
         """Start the web viewer server."""
         self.web_viewer.port = port
-        self.web_streamer.start()
+        self.web_viewer.start()
 
     def stop_web_viewer(self) -> None:
         """Stop the web viewer server."""
-        self.web_streamer.stop()
+        self.web_viewer.close()
 
     # ------------------------------------------------------------------
     # Main run loop

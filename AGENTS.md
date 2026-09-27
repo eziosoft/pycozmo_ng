@@ -93,7 +93,7 @@ pycozmo/           # Main library
 │   ├── floor_pipeline.py    # FloorPipeline — floor projection + occupancy
 │   ├── floor_projector.py   # FloorProjector — bird's-eye floor view
 │   ├── floor_pipeline.py    # OccupancyMap — world-frame occupancy grid
-│   ├── frame_handler.py     # FrameHandler — processes camera frames → FrameState
+│   ├── frame_stage.py     # FrameStage — per-frame vision sequence (detect → annotate → publish → world map)
 │   ├── frame_state.py       # FrameState — typed container for frame/detection state
 │   ├── interfaces.py        # Detector/tracker protocols (CubeDetector, etc.)
 │   ├── occupancy_map.py     # OccupancyMap — world-frame occupancy grid
@@ -132,14 +132,12 @@ pycozmo/           # Main library
 │   ├── cube_tracking_state.py # CubeTrackingState — factory mapping, BLE cycler, movement
 │   ├── manager.py     # CubeManager — mapping, connection state
 │   └── cube_imu.py    # CubeMoveDetector — accelerometer movement detection
-├── web/           # Web viewer bridge
-│   ├── __init__.py    # Exports: WebBridge, WebStreamer, WebViewerServer
+├── web/           # Web viewer display adapter
+│   ├── __init__.py    # Exports: WebViewerServer
 │   ├── file_server.py # FileServer — static file serving
 │   ├── mjpeg_streamer.py # MjpegEndpoint — MJPEG streaming
 │   ├── msg_router.py  # MsgRouter — browser WebSocket message dispatch
 │   ├── state_builder.py # build_state_json — world→scene serialization
-│   ├── streamer.py    # WebStreamer — MJPEG frames + WebSocket broadcasting
-│   ├── viewer.py      # WebBridge — feeds measurements into world map
 │   ├── viewer_server.py # WebViewerServer — thin composition root
 │   ├── ws_server.py   # WSServer — WebSocket + HTTP lifecycle
 │   └── static/        # Three.js browser viewer (index.html, style.css)

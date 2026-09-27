@@ -39,7 +39,7 @@ _Avoid_: camera height, `+40` hack
 The single source of truth holding Cozmo's pose, cube poses, and the path, all in
 world frame. Owned by the `WorldMap` class (`pycozmo/navigation/world_map.py`),
 constructed by `Brain` (the composition root) and injected into every reader and
-writer (`Navigator`, `WebBridge`, `MsgRouter`, `WebViewerServer`,
+writer (`Navigator`, `FrameStage`, `MsgRouter`, `WebViewerServer`,
 `Cozmo.WorldMapAPI`). The web server and viewer are thin adapters over it and
 expose no world-map writes.
 _Avoid_: scene state, viewer state; reaching the world map through the web viewer
@@ -61,6 +61,17 @@ web viewer commands the library. Registered in one call —
 unknown names raise at registration.
 _Avoid_: callback, handler (when naming the registered seam); per-action
 `set_*_listener` methods (deleted — they duplicated the router's interface).
+
+**Frame stage**:
+The per-frame vision sequence, owned by the `FrameStage` class
+(`pycozmo/vision/frame_stage.py`): convert → detect → annotate → publish →
+dispatch events → feed the world map (plus floor projection and face
+expression). One small interface — `configure(...)` (once per vision setup)
+and `on_camera_image(...)` (once per frame); `Brain` only constructs and
+wires it. Stable deps (state containers, world map, `WebViewerServer`) come
+from the constructor, detectors from `configure()`.
+_Avoid_: FrameHandler, WebStreamer, WebBridge (deleted); calling Brain the
+place where frames are processed.
 
 **Fusion**:
 The process of combining noisy, repeated cube measurements into one stable

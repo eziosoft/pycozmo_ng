@@ -5,6 +5,10 @@ from pycozmo.vision.calibration.camera_calibration import (
     CameraCalibration,
     CameraCalibrationRetriever,
 )
+from pycozmo.vision.calibration.robot_center import (
+    RobotCenterDetector,
+    RobotCenterResult,
+)
 from pycozmo.vision.cube_detector.detection_pipeline import (
     CubeDetection,
     DetectionPipeline,
@@ -12,14 +16,13 @@ from pycozmo.vision.cube_detector.detection_pipeline import (
     load_marker_templates,
 )
 from pycozmo.vision.events import DetectionEventDispatcher
-from pycozmo.vision.frame_handler import FrameHandler
+from pycozmo.vision.frame_stage import FrameStage
 from pycozmo.vision.frame_state import FrameState
 from pycozmo.vision.interfaces import (
     CubeDetector,
     CubeFusionTracker,
     FaceDetector,
 )
-from pycozmo.vision.calibration.robot_center import RobotCenterDetector, RobotCenterResult
 
 __all__ = [
     "AnnotationEngine",
@@ -31,7 +34,7 @@ __all__ = [
     "DetectionEventDispatcher",
     "DetectionPipeline",
     "FaceDetector",
-    "FrameHandler",
+    "FrameStage",
     "FrameState",
     "RobotCenterDetector",
     "RobotCenterResult",
