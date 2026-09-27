@@ -144,6 +144,20 @@ class TestWebViewerServerInit:
         server = WebViewerServer(world_map=wm)
         assert server.world_map is wm
 
+    def test_router_is_exposed_for_action_registration(self):
+        """Listeners are registered on the router in one call — no mirrored setters."""
+        from pycozmo.navigation.world_map import WorldMap
+
+        wm = WorldMap()
+        server = WebViewerServer(world_map=wm)
+        assert server.router._world_map is wm
+        cb = MagicMock()
+        server.router.set_actions(control=cb, dock=cb)
+        assert server.router.get_action("control") is cb
+        # The old per-action setters are gone.
+        assert not hasattr(server, "set_control_listener")
+        assert not hasattr(server, "update_camera_settings")
+
     def test_standalone_creates_own_world_map(self):
         server = WebViewerServer()
         assert server.world_map is not None

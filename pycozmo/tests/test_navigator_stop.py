@@ -116,7 +116,7 @@ class TestNavigateCancel:
         """
         nav, cli = _make_nav()
         router = MsgRouter(world_map=MagicMock())
-        router.set_navigate_listener(nav.navigate_to)
+        router.set_actions(navigate=nav.navigate_to)
 
         router.route(json.dumps({"type": "navigate_cancel"}))
 
@@ -125,7 +125,7 @@ class TestNavigateCancel:
     def test_router_navigate_reaches_navigator(self):
         nav, cli = _make_nav()
         router = MsgRouter(world_map=MagicMock())
-        router.set_navigate_listener(nav.navigate_to)
+        router.set_actions(navigate=nav.navigate_to)
 
         # Robot at origin; scene (x=200, z=0) maps to world (0, 200, 0),
         # 200 mm to the robot's left -> spawns the nav thread, which issues

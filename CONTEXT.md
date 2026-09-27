@@ -53,6 +53,15 @@ right turn.
 _Avoid_: negating the yaw, or using a reflection (det = -1) world→scene basis —
 either one mirrors every turn/circle (real right turn appears as a left turn).
 
+**Browser action**:
+A named listener on the message router (`MsgRouter.ACTIONS`: control, navigate,
+approach, dock, camera_settings, say, test_mode, astar_toggle) through which the
+web viewer commands the library. Registered in one call —
+`web_viewer.router.set_actions(...)` from `Brain.install_remote_control`;
+unknown names raise at registration.
+_Avoid_: callback, handler (when naming the registered seam); per-action
+`set_*_listener` methods (deleted — they duplicated the router's interface).
+
 **Fusion**:
 The process of combining noisy, repeated cube measurements into one stable
 world-frame estimate using confidence-gated, confidence-weighted exponential

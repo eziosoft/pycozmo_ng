@@ -97,7 +97,6 @@ class Brain:
         self.frame_handler.floor_pipeline = None  # Set after setup_vision
         self.navigator.cli = self.cli
         self.web.web_viewer = self.web_viewer
-        self.web_streamer.web_viewer = self.web_viewer  # For remote control listeners
 
         # A* pathfinding
         self.astar_planner: AStarPlanner | None = None
@@ -419,14 +418,16 @@ class Brain:
 
         self._remote_control = RemoteControl(cli)
         self._remote_control.start()
-        self.web_viewer.set_control_listener(self._remote_control.update_keys)
-        self.web_viewer.set_navigate_listener(self.navigator.navigate_to)
-        self.web_viewer.set_approach_listener(self.navigator.approach_cube_at)
-        self.web_viewer.set_dock_listener(self.navigator.dock)
-        self.web_viewer.set_camera_settings_listener(self._on_camera_settings)
-        self.web_viewer.set_say_listener(self._on_say)
-        self.web_viewer.set_test_mode_listener(self.navigator.set_test_mode)
-        self.web_viewer.set_astar_toggle_listener(self.navigator.set_astar_enabled)
+        self.web_viewer.router.set_actions(
+            control=self._remote_control.update_keys,
+            navigate=self.navigator.navigate_to,
+            approach=self.navigator.approach_cube_at,
+            dock=self.navigator.dock,
+            camera_settings=self._on_camera_settings,
+            say=self._on_say,
+            test_mode=self.navigator.set_test_mode,
+            astar_toggle=self.navigator.set_astar_enabled,
+        )
         if self.cli is not None:
             self.dock_state.dock_pose = self.cli.pose
         logger.info("Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
@@ -488,7 +489,7 @@ class Brain:
         self.frame_state.camera_resolution = resolution
 
         # Echo settings back so the broadcast includes the latest values
-        self.web_viewer.update_camera_settings(**settings)
+        self.web_viewer.router.set_camera_settings(settings)
 
         logger.info(
             "Camera settings updated: auto_exposure=%s, gain=%s, exposure=%sms, "

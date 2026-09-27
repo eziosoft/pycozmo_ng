@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from pycozmo.web.msg_router import MsgRouter
 
@@ -34,19 +35,19 @@ class TestMsgRouterDispatch:
 
     def test_control_message(self):
         cb = MagicMock()
-        self.router.set_control_listener(cb)
+        self.router.set_actions(control=cb)
         self.router.route(json.dumps({"type": "control", "keys": ["a", "b"]}))
         cb.assert_called_once_with({"a", "b"})
 
     def test_control_empty_keys(self):
         cb = MagicMock()
-        self.router.set_control_listener(cb)
+        self.router.set_actions(control=cb)
         self.router.route(json.dumps({"type": "control", "keys": []}))
         cb.assert_called_once_with(set())
 
     def test_control_no_keys(self):
         cb = MagicMock()
-        self.router.set_control_listener(cb)
+        self.router.set_actions(control=cb)
         self.router.route(json.dumps({"type": "control"}))
         cb.assert_called_once_with(set())
 
@@ -57,12 +58,12 @@ class TestMsgRouterDispatch:
         def bad_listener(keys):
             raise RuntimeError("boom")
 
-        self.router.set_control_listener(bad_listener)
+        self.router.set_actions(control=bad_listener)
         self.router.route(json.dumps({"type": "control", "keys": ["a"]}))
 
     def test_navigate_to(self):
         cb = MagicMock()
-        self.router.set_navigate_listener(cb)
+        self.router.set_actions(navigate=cb)
         self.router.route(json.dumps({"type": "navigate_to", "x": 1.0, "z": 2.0}))
         cb.assert_called_once()
         args = cb.call_args[0]
@@ -71,7 +72,7 @@ class TestMsgRouterDispatch:
 
     def test_navigate_cancel(self):
         cb = MagicMock()
-        self.router.set_navigate_listener(cb)
+        self.router.set_actions(navigate=cb)
         self.router.route(json.dumps({"type": "navigate_cancel"}))
         cb.assert_called_once_with(None)
 
@@ -80,26 +81,26 @@ class TestMsgRouterDispatch:
 
     def test_approach_cube_found(self):
         cb = MagicMock()
-        self.router.set_approach_listener(cb)
+        self.router.set_actions(approach=cb)
         self.router.route(json.dumps({"type": "approach_cube", "cube_id": "cube_1"}))
         cb.assert_called_once_with(0, 100.0, 200.0)
 
     def test_approach_cube_not_found(self):
         cb = MagicMock()
-        self.router.set_approach_listener(cb)
+        self.router.set_actions(approach=cb)
         self.router.route(json.dumps({"type": "approach_cube", "cube_id": "cube_99"}))
         cb.assert_not_called()
 
     def test_approach_cube_no_world_map(self):
         router = MsgRouter(world_map=None)
         cb = MagicMock()
-        router.set_approach_listener(cb)
+        router.set_actions(approach=cb)
         router.route(json.dumps({"type": "approach_cube", "cube_id": "cube_1"}))
         cb.assert_not_called()
 
     def test_dock(self):
         cb = MagicMock()
-        self.router.set_dock_listener(cb)
+        self.router.set_actions(dock=cb)
         self.router.route(json.dumps({"type": "dock"}))
         cb.assert_called_once()
 
@@ -108,7 +109,7 @@ class TestMsgRouterDispatch:
 
     def test_camera_settings(self):
         cb = MagicMock()
-        self.router.set_camera_settings_listener(cb)
+        self.router.set_actions(camera_settings=cb)
         self.router.route(
             json.dumps(
                 {
@@ -135,7 +136,7 @@ class TestMsgRouterDispatch:
 
     def test_camera_settings_defaults(self):
         cb = MagicMock()
-        self.router.set_camera_settings_listener(cb)
+        self.router.set_actions(camera_settings=cb)
         self.router.route(json.dumps({"type": "camera_settings"}))
         settings = cb.call_args[0][0]
         assert settings["auto_exposure_enabled"] is True
@@ -148,7 +149,7 @@ class TestMsgRouterDispatch:
 
     def test_camera_settings_stored(self):
         cb = MagicMock()
-        self.router.set_camera_settings_listener(cb)
+        self.router.set_actions(camera_settings=cb)
         self.router.route(
             json.dumps(
                 {
@@ -173,10 +174,10 @@ class TestMsgRouterListenerSwapping:
         router = MsgRouter()
         cb1 = MagicMock()
         cb2 = MagicMock()
-        router.set_control_listener(cb1)
+        router.set_actions(control=cb1)
         router.route(json.dumps({"type": "control", "keys": ["a"]}))
         cb1.assert_called_once()
-        router.set_control_listener(cb2)
+        router.set_actions(control=cb2)
         router.route(json.dumps({"type": "control", "keys": ["b"]}))
         cb2.assert_called_once()
         assert cb1.call_count == 1
@@ -184,7 +185,48 @@ class TestMsgRouterListenerSwapping:
     def test_unsubscribe_listener(self):
         router = MsgRouter()
         cb = MagicMock()
-        router.set_control_listener(cb)
-        router.set_control_listener(None)
+        router.set_actions(control=cb)
+        router.set_actions(control=None)
         router.route(json.dumps({"type": "control", "keys": ["a"]}))
         cb.assert_not_called()
+
+
+class TestSetActions:
+    def test_registers_multiple_actions_in_one_call(self):
+        router = MsgRouter()
+        control, navigate, dock = MagicMock(), MagicMock(), MagicMock()
+        router.set_actions(control=control, navigate=navigate, dock=dock)
+
+        router.route(json.dumps({"type": "control", "keys": ["w"]}))
+        router.route(json.dumps({"type": "navigate_cancel"}))
+        router.route(json.dumps({"type": "dock"}))
+
+        control.assert_called_once()
+        navigate.assert_called_once_with(None)
+        dock.assert_called_once()
+
+    def test_partial_registration_leaves_other_actions_unset(self):
+        router = MsgRouter()
+        router.set_actions(dock=MagicMock())
+        # No control listener registered — must not raise.
+        router.route(json.dumps({"type": "control", "keys": ["a"]}))
+
+    def test_unknown_action_rejected(self):
+        router = MsgRouter()
+        with pytest.raises(ValueError, match="bogus_action"):
+            router.set_actions(bogus_action=MagicMock())
+
+    def test_get_action_returns_registered_listener(self):
+        router = MsgRouter()
+        cb = MagicMock()
+        router.set_actions(say=cb)
+        assert router.get_action("say") is cb
+        assert router.get_action("dock") is None
+
+    def test_every_action_is_read_by_a_handler(self):
+        """A new ACTIONS member must be read somewhere (else it is dead wiring)."""
+        import inspect
+
+        source = inspect.getsource(MsgRouter)
+        for name in MsgRouter.ACTIONS:
+            assert f'self._actions["{name}"]' in source, name

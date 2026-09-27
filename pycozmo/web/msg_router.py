@@ -7,6 +7,8 @@ the listeners, no WebSocket required.
 """
 
 import json
+from collections.abc import Callable
+from typing import ClassVar
 
 import numpy as np
 
@@ -17,50 +19,49 @@ from pycozmo.logger import logger
 class MsgRouter:
     """Dispatch incoming browser messages to registered listeners.
 
-    Each ``set_*_listener`` method stores a single callback (or ``None``
-    to unsubscribe).  ``route`` is the hot path — called per incoming
-    WebSocket frame.
+    ``set_actions`` registers named listeners in one call — the single
+    seam for browser → library commands. ``route`` is the hot path —
+    called per incoming WebSocket frame; it parses, validates, converts
+    scene→world coordinates, and swallows listener exceptions.
     """
+
+    # Every browser action this router can dispatch, by name.
+    ACTIONS: ClassVar[tuple[str, ...]] = (
+        "control",
+        "navigate",
+        "approach",
+        "dock",
+        "camera_settings",
+        "say",
+        "test_mode",
+        "astar_toggle",
+    )
 
     def __init__(self, world_map=None):
         self._world_map = world_map
-        self._control_listener = None
-        self._navigate_listener = None
-        self._approach_listener = None
-        self._dock_listener = None
-        self._camera_settings_listener = None
-        self._say_listener = None
-        self._test_mode_listener = None
-        self._astar_toggle_listener = None
+        self._actions: dict[str, Callable[..., None] | None] = {
+            name: None for name in self.ACTIONS
+        }
         self._camera_settings: dict = {
             "head_light": False,
         }
 
     # -- listener registration -----------------------------------------------
 
-    def set_control_listener(self, callback) -> None:
-        self._control_listener = callback
+    def set_actions(self, **listeners: Callable[..., None] | None) -> None:
+        """Register (or replace, or unsubscribe with ``None``) listeners.
 
-    def set_navigate_listener(self, callback) -> None:
-        self._navigate_listener = callback
+        Keyword names must be :attr:`ACTIONS` members; unknown names raise
+        so a wiring typo fails at registration, not silently at dispatch.
+        """
+        unknown = [name for name in listeners if name not in self._actions]
+        if unknown:
+            raise ValueError(f"unknown browser action(s): {', '.join(sorted(unknown))}")
+        self._actions.update(listeners)
 
-    def set_approach_listener(self, callback) -> None:
-        self._approach_listener = callback
-
-    def set_dock_listener(self, callback) -> None:
-        self._dock_listener = callback
-
-    def set_camera_settings_listener(self, callback) -> None:
-        self._camera_settings_listener = callback
-
-    def set_say_listener(self, callback) -> None:
-        self._say_listener = callback
-
-    def set_test_mode_listener(self, callback) -> None:
-        self._test_mode_listener = callback
-
-    def set_astar_toggle_listener(self, callback) -> None:
-        self._astar_toggle_listener = callback
+    def get_action(self, name: str) -> Callable[..., None] | None:
+        """Return the listener registered for *name*, or None."""
+        return self._actions[name]
 
     def set_camera_settings(self, settings: dict) -> None:
         self._camera_settings.update(settings)
@@ -98,7 +99,7 @@ class MsgRouter:
     # -- handlers ------------------------------------------------------------
 
     def _on_control(self, msg: dict) -> None:
-        listener = self._control_listener
+        listener = self._actions["control"]
         if listener is not None:
             keys = msg.get("keys") or []
             try:
@@ -107,7 +108,7 @@ class MsgRouter:
                 logger.warning("control listener failed: %s", e)
 
     def _on_navigate_to(self, msg: dict) -> None:
-        listener = self._navigate_listener
+        listener = self._actions["navigate"]
         if listener is not None:
             try:
                 scene_x = msg.get("x", 0)
@@ -119,7 +120,7 @@ class MsgRouter:
 
     def _on_navigate_cancel(self, msg: dict) -> None:
         del msg
-        listener = self._navigate_listener
+        listener = self._actions["navigate"]
         if listener is not None:
             try:
                 listener(None)
@@ -127,7 +128,7 @@ class MsgRouter:
                 logger.warning("navigate cancel failed: %s", e)
 
     def _on_approach_cube(self, msg: dict) -> None:
-        listener = self._approach_listener
+        listener = self._actions["approach"]
         if listener is None:
             return
         try:
@@ -146,7 +147,7 @@ class MsgRouter:
 
     def _on_dock(self, msg: dict) -> None:
         del msg
-        listener = self._dock_listener
+        listener = self._actions["dock"]
         if listener is not None:
             try:
                 listener()
@@ -154,7 +155,7 @@ class MsgRouter:
                 logger.warning("dock listener failed: %s", e)
 
     def _on_camera_settings(self, msg: dict) -> None:
-        listener = self._camera_settings_listener
+        listener = self._actions["camera_settings"]
         if listener is not None:
             try:
                 settings = {
@@ -172,7 +173,7 @@ class MsgRouter:
                 logger.warning("camera_settings listener failed: %s", e)
 
     def _on_say(self, msg: dict) -> None:
-        listener = self._say_listener
+        listener = self._actions["say"]
         if listener is not None:
             try:
                 text = msg.get("text", "")
@@ -181,7 +182,7 @@ class MsgRouter:
                 logger.warning("say listener failed: %s", e)
 
     def _on_test_mode(self, msg: dict) -> None:
-        listener = self._test_mode_listener
+        listener = self._actions["test_mode"]
         if listener is not None:
             try:
                 enabled = msg.get("enabled", False)
@@ -190,7 +191,7 @@ class MsgRouter:
                 logger.warning("test_mode listener failed: %s", e)
 
     def _on_astar_toggle(self, msg: dict) -> None:
-        listener = self._astar_toggle_listener
+        listener = self._actions["astar_toggle"]
         if listener is not None:
             try:
                 enabled = msg.get("enabled", False)

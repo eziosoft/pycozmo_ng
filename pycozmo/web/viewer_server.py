@@ -46,7 +46,8 @@ class WebViewerServer:
     world-map write methods: callers write to the world map directly.
 
     Internally delegates to:
-    - :class:`MsgRouter` — browser message dispatch
+    - :class:`MsgRouter` — browser message dispatch (register listeners in
+      one call via ``server.router.set_actions(...)``)
     - :class:`WSServer` — WebSocket + HTTP lifecycle
     - :class:`FileServer` — static file serving
     - :class:`MjpegEndpoint` — annotated/floor MJPEG streams
@@ -103,7 +104,7 @@ class WebViewerServer:
         self._telemetry: dict = {}
 
         # Sub-modules
-        self._msg_router = MsgRouter(world_map=self.world_map)
+        self.router = MsgRouter(world_map=self.world_map)
         self._file_server = FileServer()
 
         # MJPEG endpoints — closures that return (image, frame_id)
@@ -218,42 +219,6 @@ class WebViewerServer:
         """Return the current number of connected WebSocket clients."""
         return self._last_active_count
 
-    def set_control_listener(self, callback) -> None:
-        """Subscribe to browser key updates for remote control."""
-        self._msg_router.set_control_listener(callback)
-
-    def set_navigate_listener(self, callback) -> None:
-        """Subscribe to browser click-to-navigate events."""
-        self._msg_router.set_navigate_listener(callback)
-
-    def set_approach_listener(self, callback) -> None:
-        """Subscribe to browser cube-click events."""
-        self._msg_router.set_approach_listener(callback)
-
-    def set_dock_listener(self, callback) -> None:
-        """Subscribe to browser dock requests."""
-        self._msg_router.set_dock_listener(callback)
-
-    def set_camera_settings_listener(self, callback) -> None:
-        """Subscribe to browser camera-settings changes."""
-        self._msg_router.set_camera_settings_listener(callback)
-
-    def set_say_listener(self, callback) -> None:
-        """Subscribe to browser TTS say events."""
-        self._msg_router.set_say_listener(callback)
-
-    def set_test_mode_listener(self, callback) -> None:
-        """Subscribe to browser test mode toggle events."""
-        self._msg_router.set_test_mode_listener(callback)
-
-    def set_astar_toggle_listener(self, callback) -> None:
-        """Subscribe to browser A* toggle events."""
-        self._msg_router.set_astar_toggle_listener(callback)
-
-    def update_camera_settings(self, **kwargs) -> None:
-        """Update the stored camera settings (called from the listener)."""
-        self._msg_router.set_camera_settings(kwargs)
-
     # -- internal -----------------------------------------------------------
 
     def _build_state_json(self, force_occupancy: bool = False) -> str:
@@ -268,7 +233,7 @@ class WebViewerServer:
             self._occupancy_seq_sent,
             self._start_time,
             force_occupancy,
-            camera_settings=self._msg_router.camera_settings,
+            camera_settings=self.router.camera_settings,
             face_png=self._latest_face_png,
         )
         if self._latest_occupancy_png is not None and (
@@ -313,12 +278,12 @@ class WebViewerServer:
         try:
             await websocket.send(self._build_state_json(force_occupancy=True))
             async for raw in websocket:
-                self._msg_router.route(raw)
+                self.router.route(raw)
         finally:
             self._clients.discard(websocket)
             self._fire_active_clients_change()
             if not self._clients:
-                listener = self._msg_router._control_listener
+                listener = self.router.get_action("control")
                 if listener is not None:
                     try:
                         listener(set())

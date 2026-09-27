@@ -56,7 +56,7 @@ def test_router_cancel_reaches_real_navigator(cozmo):
     """
     nav = cozmo._brain.navigator
     router = MsgRouter(world_map=cozmo._brain.world_map)
-    router.set_navigate_listener(nav.navigate_to)
+    router.set_actions(navigate=nav.navigate_to)
     nav._path_following = True  # pretend an A* path is running
 
     router.route(json.dumps({"type": "navigate_cancel"}))
