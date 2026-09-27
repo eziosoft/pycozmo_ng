@@ -136,9 +136,14 @@ class TestWebViewerServerInit:
             server._dirty = False
         assert server._dirty is False
 
-    def test_deprecated_methods_delegate_to_world_map(self):
+    def test_uses_injected_world_map(self):
+        """The composition root injects the world map; the server never creates the shared one."""
+        from pycozmo.navigation.world_map import WorldMap
+
+        wm = WorldMap()
+        server = WebViewerServer(world_map=wm)
+        assert server.world_map is wm
+
+    def test_standalone_creates_own_world_map(self):
         server = WebViewerServer()
-        server.update_cube("cube_1", [100, 200, 0], __import__("numpy").eye(3))
-        server.clear_cubes()
-        server.remove_cube("cube_1")
-        # Should not raise - delegates to world_map
+        assert server.world_map is not None

@@ -20,8 +20,8 @@ from pycozmo.web.msg_router import MsgRouter
 
 
 def _make_nav(x: float = 0.0, y: float = 0.0, yaw: float = 0.0):
-    """Navigator with a mock CLI (controllable pose) and mock web viewer."""
-    nav: Any = Navigator(DockState())  # cli/web_viewer are set to mocks below
+    """Navigator with a mock CLI (controllable pose) and mock world map."""
+    nav: Any = Navigator(DockState(), world_map=MagicMock())
     pose = SimpleNamespace(
         position=SimpleNamespace(x=x, y=y),
         rotation=SimpleNamespace(angle_z=SimpleNamespace(radians=yaw)),
@@ -29,7 +29,6 @@ def _make_nav(x: float = 0.0, y: float = 0.0, yaw: float = 0.0):
     cli = MagicMock()
     type(cli).pose = property(lambda self: pose)
     nav.cli = cli
-    nav.web_viewer = MagicMock()
     return nav, cli
 
 
@@ -43,10 +42,10 @@ class TestStop:
         assert nav._stop_requested.is_set()
         assert nav._path_following is False
         cli.stop_all_motors.assert_called()
-        nav.web_viewer.world_map.clear_astar_path.assert_called_once()
+        nav.world_map.clear_astar_path.assert_called_once()
 
-    def test_stop_without_web_viewer_or_cli_is_safe(self):
-        nav = Navigator(DockState())  # cli=None, web_viewer=None
+    def test_stop_without_world_map_or_cli_is_safe(self):
+        nav = Navigator(DockState())  # cli=None, world_map=None
         nav.stop()
         assert nav._stop_requested.is_set()
 
@@ -103,7 +102,7 @@ class TestNavigateCancel:
 
         cli.stop_all_motors.assert_called()
         assert nav._path_following is False
-        nav.web_viewer.world_map.clear_astar_path.assert_called_once()
+        nav.world_map.clear_astar_path.assert_called_once()
 
     def test_navigate_without_robot_warns_and_returns(self):
         nav = Navigator(DockState())  # no cli

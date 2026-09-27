@@ -3,6 +3,7 @@
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.logger import logger
 from pycozmo.navigation.dock_state import DockState
+from pycozmo.navigation.world_map import WorldMap
 from pycozmo.vision.cube_detector.detection_pipeline import DetectionPipeline
 from pycozmo.vision.frame_state import FrameState
 
@@ -12,7 +13,9 @@ class WebBridge:
 
     Uses typed state containers via DI: :class:`FrameState`,
     :class:`CubeTrackingState`, :class:`DockState`, and
-    :class:`DetectionPipeline`.
+    :class:`DetectionPipeline`. Measurements are written straight into the
+    injected :class:`WorldMap`; the web viewer is used only for display
+    concerns (face image, telemetry HUD, broadcast).
     """
 
     def __init__(
@@ -21,12 +24,14 @@ class WebBridge:
         cube_tracking: CubeTrackingState,
         dock_state: DockState,
         detection_pipeline: DetectionPipeline | None = None,
+        world_map: WorldMap | None = None,
     ):
         self.fs = frame_state
         self.ct = cube_tracking
         self.ds = dock_state
         self.detection_pipeline = detection_pipeline
-        # Set by Brain after construction
+        self.world_map = world_map
+        # Set by Brain after construction (display adapter)
         self.web_viewer = None
         self.cli = None
 
@@ -36,7 +41,7 @@ class WebBridge:
         Cubes that have been invalidated (moved, forget_cube) are
         suppressed until they are re-detected stably. (COZMO-34)
         """
-        if not self.detection_pipeline:
+        if not self.detection_pipeline or self.world_map is None:
             return
 
         cli = self.cli
@@ -64,7 +69,7 @@ class WebBridge:
                     "Cube %d re-settled - re-enabling measurements", cube_id + 1
                 )
 
-            self.web_viewer.update_cube_measurement(
+            self.world_map.update_cube_measurement(
                 cube_id,
                 m["position"],
                 m["rotation_matrix"],
@@ -81,7 +86,7 @@ class WebBridge:
 
         # Feed face measurements into world map
         for fm in self.detection_pipeline.get_face_measurements():
-            self.web_viewer.update_face_measurement(
+            self.world_map.update_face_measurement(
                 fm["face_id"],
                 fm["position"],
                 fm["confidence"],
@@ -105,9 +110,10 @@ class WebBridge:
             pose = c.pose
             pos = pose.position.x_y_z
             yaw = pose.rotation.angle_z.radians
-            self.web_viewer.update_robot_pose(
-                pos, yaw, origin_id=pose.origin_id, record_path=True
-            )
+            if self.world_map is not None:
+                self.world_map.update_robot_pose(
+                    pos, yaw, origin_id=pose.origin_id, record_path=True
+                )
         except (AttributeError, ValueError) as e:
             logger.debug(f"Failed to update robot pose: {e}")
 

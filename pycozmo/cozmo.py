@@ -182,7 +182,7 @@ class WorldMapAPI:
     """
 
     def __init__(self, brain: Brain):
-        self._world_map: WorldMap = brain.web_viewer.world_map
+        self._world_map: WorldMap = brain.world_map
 
     @property
     def robot_pose(self):

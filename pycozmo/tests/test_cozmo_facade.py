@@ -23,7 +23,7 @@ def cozmo() -> Cozmo:
 
 def _seed_cube(brain, cube_idx: int = 0) -> None:
     """Put one cube (0-indexed world-map key) straight ahead of the robot."""
-    wm = brain.web_viewer.world_map
+    wm = brain.world_map
     wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
     wm.update_cube_measurement(cube_idx, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
 
@@ -123,7 +123,7 @@ class TestWorldMapFacade:
         assert cozmo.world_map.get_cube(2) is None
 
     def test_path_trail(self, cozmo):
-        wm = cozmo._brain.web_viewer.world_map
+        wm = cozmo._brain.world_map
         wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=True)
         wm.update_robot_pose([5.0, 6.0, 0.0], 0.0, origin_id=1, record_path=True)
 

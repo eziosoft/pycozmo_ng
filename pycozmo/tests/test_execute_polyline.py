@@ -153,7 +153,7 @@ def _free_map(size_mm: float = 1000.0, cell_mm: float = 50.0) -> OccupancyMap:
 
 def _make_nav(x: float = 0.0, y: float = 0.0, yaw: float = 0.0):
     """Navigator with a mock CLI (controllable pose) and free occupancy map."""
-    nav = Navigator(DockState())
+    nav = Navigator(DockState(), world_map=MagicMock())
     pose = SimpleNamespace(
         position=SimpleNamespace(x=x, y=y),
         rotation=SimpleNamespace(angle_z=SimpleNamespace(radians=yaw)),
@@ -161,7 +161,6 @@ def _make_nav(x: float = 0.0, y: float = 0.0, yaw: float = 0.0):
     cli = MagicMock()
     type(cli).pose = property(lambda self: pose)
     nav.cli = cli
-    nav.web_viewer = MagicMock()
     nav.astar_planner = AStarPlanner(_free_map(), allow_unknown=False)
     return nav, cli, pose
 
@@ -185,7 +184,7 @@ class TestFollowAstarPath:
         assert "should_interrupt" in kwargs
         assert "final_heading_rad" in kwargs
         # Path was published to the world map, then cleared on completion.
-        wm = nav.web_viewer.world_map
+        wm = nav.world_map
         assert wm.set_astar_path.called
         assert wm.clear_astar_path.called
         assert nav._path_following is False
@@ -221,7 +220,7 @@ class TestFollowAstarPath:
         nav._follow_astar_path(400.0, 0.0)
         # Interrupted once, then the loop saw _path_following == False.
         assert cli.execute_polyline.call_count == 1
-        assert nav.web_viewer.world_map.clear_astar_path.called
+        assert nav.world_map.clear_astar_path.called
 
     def test_replans_when_execute_falls_short(self):
         nav, cli, pose = _make_nav()
@@ -239,7 +238,7 @@ class TestFollowAstarPath:
         cli.execute_polyline.side_effect = partial
         nav._follow_astar_path(400.0, 0.0)
         assert calls["n"] == 2
-        assert nav.web_viewer.world_map.set_astar_path.call_count == 2
+        assert nav.world_map.set_astar_path.call_count == 2
 
 
 class TestPathShouldInterrupt:

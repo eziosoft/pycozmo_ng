@@ -4,11 +4,8 @@ Verifies that _extract_patch uses bounding-box ROI instead of full-image
 warpPerspective, and that _match_marker efficiently handles template matching.
 """
 
-from unittest.mock import MagicMock
-
 import cv2
 import numpy as np
-import pytest
 
 from pycozmo.vision.cube_detector.cube_detector import (
     CozmoCubeDetector,
@@ -215,47 +212,3 @@ class TestCubeFusionTracker:
         tracker = CubeFusionTracker(cube_size_mm=44.0)
         fused = tracker.update([])
         assert fused == {}
-
-
-class TestViewerServerNoCubesAttribute:
-    def test_no_cubes_dict(self):
-        """WebViewerServer should not have deprecated cubes dict."""
-        from pycozmo.web.viewer_server import WebViewerServer
-
-        server = WebViewerServer()
-        assert not hasattr(server, "cubes")
-
-    def test_broadcast_interval_default(self):
-        from pycozmo.web.viewer_server import WebViewerServer
-
-        server = WebViewerServer()
-        assert server.broadcast_interval_s == pytest.approx(0.05)
-
-    def test_broadcast_interval_custom(self):
-        from pycozmo.web.viewer_server import WebViewerServer
-
-        server = WebViewerServer(broadcast_interval_s=0.1)
-        assert server.broadcast_interval_s == pytest.approx(0.1)
-
-    def test_broadcast_sets_dirty(self):
-        from pycozmo.web.viewer_server import WebViewerServer
-
-        server = WebViewerServer()
-        server._broadcast_queue = MagicMock()
-        server._broadcast_queue.qsize = lambda: 0
-        server.broadcast()
-        assert server._dirty is True
-
-    def test_deprecated_methods_delegate_to_world_map(self):
-        from pycozmo.web.viewer_server import WebViewerServer
-
-        server = WebViewerServer()
-        server.update_cube("cube_1", [100, 200, 0], __import__("numpy").eye(3))
-        # Should not raise - delegates to world_map
-
-    def test_clear_cubes_delegates(self):
-        from pycozmo.web.viewer_server import WebViewerServer
-
-        server = WebViewerServer()
-        server.clear_cubes()
-        # Should not raise - delegates to world_map.reset_map

@@ -22,6 +22,7 @@ from pycozmo.logger import logger, logger_cubes
 from pycozmo.navigation.astar import AStarPlanner
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
+from pycozmo.navigation.world_map import WorldMap
 from pycozmo.protocol import protocol_encoder
 from pycozmo.vision.annotation import AnnotationEngine
 from pycozmo.vision.cube_detector.detection_pipeline import (
@@ -53,8 +54,13 @@ class Brain:
         self.cube_tracking = CubeTrackingState()
         self.dock_state = DockState()
 
-        # Web viewer
-        self.web_viewer = WebViewerServer()
+        # World map — the single source of truth. Owned here (the
+        # composition root), not by the web adapter, and injected into
+        # every module that reads or writes it.
+        self.world_map = WorldMap()
+
+        # Web viewer (thin adapter over the world map)
+        self.web_viewer = WebViewerServer(world_map=self.world_map)
         self.web_streamer = WebStreamer(self.web_viewer, self.frame_state)
 
         # Vision components (composition root)
@@ -77,19 +83,19 @@ class Brain:
         self.frame_handler = FrameHandler(
             self.frame_state, self.cube_tracking, self.detection_pipeline
         )
-        self.navigator = Navigator(self.dock_state)
+        self.navigator = Navigator(self.dock_state, world_map=self.world_map)
         self.cubes = CubeManager(self.cube_tracking)
         self.web = WebBridge(
             self.frame_state,
             self.cube_tracking,
             self.dock_state,
             self.detection_pipeline,
+            world_map=self.world_map,
         )
 
         # Wire cross-domain references
         self.frame_handler.floor_pipeline = None  # Set after setup_vision
         self.navigator.cli = self.cli
-        self.navigator.web_viewer = self.web_viewer
         self.web.web_viewer = self.web_viewer
         self.web_streamer.web_viewer = self.web_viewer  # For remote control listeners
 
@@ -515,7 +521,7 @@ class Brain:
 
     def _on_picked_up(self, c, state):
         if state:
-            self.web_viewer.clear_path()
+            self.world_map.reset_path()
 
     # ------------------------------------------------------------------
     # Web streamer lifecycle

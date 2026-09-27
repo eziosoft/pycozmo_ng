@@ -3,6 +3,7 @@
 import math
 import threading
 import time
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -13,6 +14,9 @@ from pycozmo.navigation.cube_approach import CubeApproach
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.steering import steer_velocities, wrap_pi
 from pycozmo.util import Angle, Pose
+
+if TYPE_CHECKING:
+    from pycozmo.navigation.world_map import WorldMap
 
 # A* path following: considered arrived within this distance of the goal (mm).
 ASTAR_GOAL_TOL_MM = 30.0
@@ -26,15 +30,16 @@ ASTAR_MONITOR_SKIP_MM = 75.0
 class Navigator:
     """Robot navigation: point-to-point drive, cube approach, docking.
 
-    Uses :class:`DockState` for charger/dock data. Receives ``cli`` and
-    ``web_viewer`` via methods rather than holding a Brain reference.
+    Uses :class:`DockState` for charger/dock data. Receives the injected
+    ``world_map`` at construction and ``cli`` at wiring time, rather than
+    holding a Brain or web-viewer reference.
     """
 
-    def __init__(self, dock_state: DockState):
+    def __init__(self, dock_state: DockState, world_map: "WorldMap | None" = None):
         self.ds = dock_state
+        self.world_map = world_map
         # Set by Brain after construction (cross-domain references)
         self.cli = None
-        self.web_viewer = None
         self._test_mode = False
         self._test_mode_thread: threading.Thread | None = None
         self._test_mode_lock = threading.Lock()
@@ -117,9 +122,8 @@ class Navigator:
             if self.cli:
                 self.cli.stop_all_motors()
             self._path_following = False
-            wm = getattr(self.web_viewer, "world_map", None)
-            if wm is not None:
-                wm.clear_astar_path()
+            if self.world_map is not None:
+                self.world_map.clear_astar_path()
             logger.info("Navigation cancelled")
             return
 
@@ -193,14 +197,14 @@ class Navigator:
         start_y = robot_pose.position.y
 
         def _publish_path(waypoints: list) -> None:
-            wm = getattr(self.web_viewer, "world_map", None)
-            if wm is not None:
-                wm.set_astar_path([[float(w.x), float(w.y)] for w in waypoints])
+            if self.world_map is not None:
+                self.world_map.set_astar_path(
+                    [[float(w.x), float(w.y)] for w in waypoints]
+                )
 
         def _clear_path() -> None:
-            wm = getattr(self.web_viewer, "world_map", None)
-            if wm is not None:
-                wm.clear_astar_path()
+            if self.world_map is not None:
+                self.world_map.clear_astar_path()
 
         with self._path_follow_lock:
             self._path_following = True
@@ -494,10 +498,12 @@ class Navigator:
     def _get_cube_approach(self) -> CubeApproach:
         """Lazily create the CubeApproach instance with DI callbacks."""
         if not hasattr(self, "_cube_approach"):
-            world_map = self.web_viewer.world_map
+            world_map = self.world_map
             self._cube_approach = CubeApproach(
                 cli=self.cli,
-                get_cube_state=lambda idx: world_map.get_cubes().get(idx),
+                get_cube_state=lambda idx: (
+                    world_map.get_cubes().get(idx) if world_map is not None else None
+                ),
                 drive_to_point=self.drive_to_point,
                 move_forward=self._move_forward,
             )
@@ -528,7 +534,7 @@ class Navigator:
         if not self.cli:
             logger.warning("Approach: no robot connected")
             return False
-        wm = getattr(self.web_viewer, "world_map", None)
+        wm = self.world_map
         if wm is None:
             logger.warning("Approach: world map not available")
             return False
@@ -683,9 +689,8 @@ class Navigator:
         self.set_test_mode(False)
         with self._path_follow_lock:
             self._path_following = False
-        wm = getattr(self.web_viewer, "world_map", None)
-        if wm is not None:
-            wm.clear_astar_path()
+        if self.world_map is not None:
+            self.world_map.clear_astar_path()
         if self.cli is not None:
             self.cli.stop_all_motors()
         logger.info("Stopped")
@@ -716,10 +721,10 @@ class Navigator:
             with self._test_mode_lock:
                 if not self._test_mode:
                     return
-            if not self.cli or self.web_viewer is None:
+            if not self.cli or self.world_map is None:
                 time.sleep(1)
                 continue
-            cubes = self.web_viewer.world_map.get_cubes()
+            cubes = self.world_map.get_cubes()
             if not cubes:
                 time.sleep(1)
                 continue

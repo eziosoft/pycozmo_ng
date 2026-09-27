@@ -37,9 +37,12 @@ _Avoid_: camera height, `+40` hack
 
 **World map**:
 The single source of truth holding Cozmo's pose, cube poses, and the path, all in
-world frame. Owned by the `WorldMap` class (`pycozmo/navigation/world_map.py`);
-the web server and viewer are thin adapters over it.
-_Avoid_: scene state, viewer state
+world frame. Owned by the `WorldMap` class (`pycozmo/navigation/world_map.py`),
+constructed by `Brain` (the composition root) and injected into every reader and
+writer (`Navigator`, `WebBridge`, `MsgRouter`, `WebViewerServer`,
+`Cozmo.WorldMapAPI`). The web server and viewer are thin adapters over it and
+expose no world-map writes.
+_Avoid_: scene state, viewer state; reaching the world map through the web viewer
 
 **Scene yaw**:
 The world-frame yaw maps to scene `rotation.y` **unchanged** (`scene_yaw = world_yaw`).

@@ -3,16 +3,19 @@ WebSocket + HTTP server for the Three.js web viewer.
 
 Serves the browser-side Three.js scene and streams world state over WebSocket.
 The browser is a pure display: all localization math lives in ``WorldMap``
-(pycozmo/world_map.py), and this server converts the world frame to scene
-frame for rendering. Drop-in replacement for World3DViewer in main.py.
+(pycozmo/navigation/world_map.py), and this server converts the world frame to
+scene frame for rendering. Drop-in replacement for World3DViewer in main.py.
+
+The server never owns the world map: the composition root (``Brain``)
+constructs it and injects it here, and every other module writes to it
+directly instead of reaching through this adapter.
 
 Usage:
     # Standalone (serves HTML + WebSocket on port 8765):
     python -m pycozmo.web.viewer_server
 
-    # Integrated into main.py:
-    server = WebViewerServer(world_map)
-    server.update_cube_measurement(0, position, rotation, 0.9, head_angle)
+    # Integrated (Brain owns the world map):
+    server = WebViewerServer(world_map=world_map)
     server.broadcast()
 """
 
@@ -37,10 +40,10 @@ from pycozmo.web.ws_server import WSServer
 class WebViewerServer:
     """Headless replacement for World3DViewer — thin adapter over ``WorldMap``.
 
-    Owns a :class:`WorldMap` (created unless one is supplied) and exposes
-    pass-through methods that ``main.py`` calls from its event handlers. On
-    broadcast, it serializes the world map to **scene frame** for the browser,
-    which is a pure display and does no coordinate math.
+    Holds an injected :class:`WorldMap` (created only in standalone mode)
+    and serializes it to **scene frame** on broadcast for the browser,
+    which is a pure display and does no coordinate math. It exposes no
+    world-map write methods: callers write to the world map directly.
 
     Internally delegates to:
     - :class:`MsgRouter` — browser message dispatch
@@ -121,105 +124,7 @@ class WebViewerServer:
             register_routes=self._register_http_routes,
         )
 
-    # -- public interface (backwards compatible with World3DViewer) ---------
-
-    def update_cube(
-        self,
-        cube_id: str,
-        position,
-        rotation_matrix,
-        cube_size: float = 44,
-        marker_images=None,
-    ):
-        """Deprecated — position is expected in world frame now."""
-        del marker_images, cube_size
-        self.world_map.update_cube_measurement(
-            int(cube_id.replace("cube_", "")) - 1 if "_" in cube_id else 0,
-            position,
-            rotation_matrix,
-            0.9,
-            0.0,
-        )
-
-    def remove_cube(self, cube_id: str):
-        """Remove a cube (compat shim)."""
-        self.world_map.forget_cube(
-            int(cube_id.replace("cube_", "")) - 1 if "_" in cube_id else 0
-        )
-
-    def clear_cubes(self):
-        """Remove all cubes (compat shim)."""
-        self.world_map.reset_map()
-
-    # -- WorldMap pass-through (the real API) --------------------------------
-
-    def update_robot_pose(self, position, yaw_rad, origin_id=None, record_path=True):
-        """Update the robot's world pose (mm, Anki frame) from ``cli.pose``."""
-        self.world_map.update_robot_pose(
-            position, yaw_rad, origin_id=origin_id, record_path=record_path
-        )
-
-    def update_cube_measurement(
-        self,
-        cube_id,
-        position_cam,
-        rotation_cam,
-        confidence,
-        head_angle_rad,
-        num_faces=None,
-        camera_lateral_offset_mm=0.0,
-        rotation_source=None,
-    ):
-        """Fuse a camera-frame cube measurement into the world map."""
-        self.world_map.update_cube_measurement(
-            cube_id,
-            position_cam,
-            rotation_cam,
-            confidence,
-            head_angle_rad,
-            num_faces=num_faces,
-            camera_lateral_offset_mm=camera_lateral_offset_mm,
-            rotation_source=rotation_source,
-        )
-
-    def forget_cube(self, cube_id):
-        """Drop a cube from the world map (e.g. on IMU-move)."""
-        self.world_map.forget_cube(cube_id)
-
-    def update_face_measurement(
-        self,
-        face_id,
-        position_cam,
-        confidence,
-        head_angle_rad,
-        camera_lateral_offset_mm=0.0,
-        label="face",
-    ):
-        """Fuse a camera-frame face measurement into the world map."""
-        self.world_map.update_face_measurement(
-            face_id,
-            position_cam,
-            confidence,
-            head_angle_rad,
-            camera_lateral_offset_mm=camera_lateral_offset_mm,
-            label=label,
-        )
-
-    def forget_face(self, face_id):
-        """Remove a face from the world map."""
-        self.world_map.forget_face(face_id)
-
-    def add_path_point(self, position):
-        """Append a world-frame position (mm) to the path trail."""
-        self.world_map.add_path_point(position)
-
-    def clear_path(self):
-        """Clear the path trail."""
-        self.world_map.reset_path()
-
-    def reset_map(self):
-        """Reset the whole world map (entities + path)."""
-        self.world_map.reset_map()
+    # -- public interface (display concerns) --------------------------------
 
     def update_telemetry(self, **kwargs) -> None:
         """Store the latest robot telemetry for the browser HUD."""
