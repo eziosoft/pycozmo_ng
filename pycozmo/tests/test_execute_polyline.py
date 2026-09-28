@@ -1,8 +1,9 @@
 """Tests for firmware polyline path execution and the A* follower.
 
-``build_polyline_packets`` is pure (packet building), and the Navigator A*
-follower is exercised with a mock CLI whose ``execute_polyline`` side
-effect simulates arrival / interruption — no live robot needed.
+``build_polyline_packets`` is pure (packet building), and the A* follower
+(``Navigator.astar``) is exercised with a mock CLI whose
+``execute_polyline`` side effect simulates arrival / interruption — no
+live robot needed.
 
 Motivation: the Python-side closed loop (``drive_to_point``) was unreliable
 because wheel commands and pose updates travel over WiFi; the firmware path
@@ -161,7 +162,7 @@ def _make_nav(x: float = 0.0, y: float = 0.0, yaw: float = 0.0):
     cli = MagicMock()
     type(cli).pose = property(lambda self: pose)
     nav.cli = cli
-    nav.astar_planner = AStarPlanner(_free_map(), allow_unknown=False)
+    nav.astar.planner = AStarPlanner(_free_map(), allow_unknown=False)
     return nav, cli, pose
 
 
@@ -176,7 +177,7 @@ class TestFollowAstarPath:
 
         cli.execute_polyline.side_effect = arrive
         with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
-            nav._follow_astar_path(400.0, 0.0, job)
+            nav.astar.follow(400.0, 0.0, job)
 
         assert cli.execute_polyline.call_count == 1
         args, kwargs = cli.execute_polyline.call_args
@@ -192,20 +193,20 @@ class TestFollowAstarPath:
     def test_no_path_falls_back_to_go_to_pose(self):
         nav, cli, _pose = _make_nav()
         # Occupy the goal cell so find_path fails (goal not traversable).
-        col, row = nav.astar_planner._world_to_grid(400.0, 0.0)
-        nav.astar_planner._grid[row, col] = OCCUPIED
+        col, row = nav.astar.planner._world_to_grid(400.0, 0.0)
+        nav.astar.planner._grid[row, col] = OCCUPIED
 
         with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
-            nav._follow_astar_path(400.0, 0.0, job)
+            nav.astar.follow(400.0, 0.0, job)
 
         cli.go_to_pose.assert_called_once()
         cli.execute_polyline.assert_not_called()
 
     def test_no_planner_falls_back(self):
         nav, cli, _pose = _make_nav()
-        nav.astar_planner = None
+        nav.astar.planner = None
         with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
-            nav._follow_astar_path(400.0, 0.0, job)
+            nav.astar.follow(400.0, 0.0, job)
         cli.go_to_pose.assert_called_once()
         cli.execute_polyline.assert_not_called()
 
@@ -219,7 +220,7 @@ class TestFollowAstarPath:
 
         cli.execute_polyline.side_effect = cancel
         with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
-            nav._follow_astar_path(400.0, 0.0, job)
+            nav.astar.follow(400.0, 0.0, job)
         # Interrupted once, then the loop saw the cancelled job.
         assert cli.execute_polyline.call_count == 1
         assert nav.world_map.clear_astar_path.called
@@ -239,7 +240,7 @@ class TestFollowAstarPath:
 
         cli.execute_polyline.side_effect = partial
         with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
-            nav._follow_astar_path(400.0, 0.0, job)
+            nav.astar.follow(400.0, 0.0, job)
         assert calls["n"] == 2
         assert nav.world_map.set_astar_path.call_count == 2
 
@@ -249,27 +250,27 @@ class TestPathShouldInterrupt:
         nav, _cli, _pose = _make_nav()
         with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
             nav.navigate_to(None)  # browser navigate-cancel
-            assert nav._path_should_interrupt(job) is True
+            assert nav.astar.should_interrupt(job) is True
 
     def test_false_when_path_clear(self):
         nav, _cli, _pose = _make_nav()
         with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
-            nav._path_waypoints = [PathPoint(400.0, 0.0)]
-            assert nav._path_should_interrupt(job) is False
+            nav.astar.waypoints = [PathPoint(400.0, 0.0)]
+            assert nav.astar.should_interrupt(job) is False
 
     def test_true_when_waypoint_becomes_occupied(self):
         nav, _cli, _pose = _make_nav()
         with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
-            nav._path_waypoints = [PathPoint(400.0, 0.0)]
-            col, row = nav.astar_planner._world_to_grid(400.0, 0.0)
-            nav.astar_planner._grid[row, col] = OCCUPIED
-            assert nav._path_should_interrupt(job) is True
+            nav.astar.waypoints = [PathPoint(400.0, 0.0)]
+            col, row = nav.astar.planner._world_to_grid(400.0, 0.0)
+            nav.astar.planner._grid[row, col] = OCCUPIED
+            assert nav.astar.should_interrupt(job) is True
 
     def test_skips_waypoints_near_robot(self):
         nav, _cli, _pose = _make_nav(x=380.0, y=0.0)
         with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
-            # Occupied but within ASTAR_MONITOR_SKIP_MM of the robot — trusted.
-            nav._path_waypoints = [PathPoint(400.0, 0.0)]
-            col, row = nav.astar_planner._world_to_grid(400.0, 0.0)
-            nav.astar_planner._grid[row, col] = OCCUPIED
-            assert nav._path_should_interrupt(job) is False
+            # Occupied but within AStarFollower.MONITOR_SKIP_MM of the robot — trusted.
+            nav.astar.waypoints = [PathPoint(400.0, 0.0)]
+            col, row = nav.astar.planner._world_to_grid(400.0, 0.0)
+            nav.astar.planner._grid[row, col] = OCCUPIED
+            assert nav.astar.should_interrupt(job) is False

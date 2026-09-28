@@ -104,8 +104,10 @@ pycozmo/           # Main library
 │   └── robot_center.py      # RobotCenterResult dataclass
 ├── navigation/    # Navigation subsystem
 │   ├── astar.py            # AStarPlanner, PathPoint — A* pathfinding
+│   ├── astar_follower.py    # AStarFollower — plan, publish, follow A* path
 │   ├── cube_approach.py     # CubeApproach — two-step standoff approach
 │   ├── dock_state.py        # DockState — charger/dock pose tracking
+│   ├── docking.py           # Docking — dock approach, contact, retries
 │   ├── motion_controller.py # MotionController — registry of running motion jobs
 │   ├── motion_token.py      # MotionToken — per-job cancellation handle
 │   ├── navigator.py         # Navigator — navigate, approach, dock, stop

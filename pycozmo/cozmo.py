@@ -164,7 +164,7 @@ class NavigatorAPI:
 
     def is_astar_enabled(self) -> bool:
         """Return whether A* pathfinding is currently enabled."""
-        return self._navigator.astar_enabled
+        return self._navigator.astar.enabled
 
 
 class WorldMapAPI:

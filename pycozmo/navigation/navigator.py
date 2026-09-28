@@ -1,17 +1,25 @@
-"""Navigation — navigate, approach cube, dock, reset origin, charger handlers."""
+"""Navigation — navigate, approach cube, dock, reset origin, charger handlers.
+
+The A* follow loop lives in :class:`~pycozmo.navigation.astar_follower.AStarFollower`
+and the dock sequence in :class:`~pycozmo.navigation.docking.Docking`; this
+class keeps the entry points (and the shared motion controller) so callers
+still address navigation as one thing.
+"""
 
 import math
 import threading
 import time
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 
 import pycozmo
 from pycozmo.logger import logger
-from pycozmo.navigation.astar import AStarPlanner, PathPoint
+from pycozmo.navigation.astar import AStarPlanner
+from pycozmo.navigation.astar_follower import AStarFollower
 from pycozmo.navigation.cube_approach import CubeApproach
 from pycozmo.navigation.dock_state import DockState
+from pycozmo.navigation.docking import Docking
 from pycozmo.navigation.motion_controller import MotionController
 from pycozmo.navigation.motion_token import MotionToken
 from pycozmo.navigation.steering import steer_velocities, wrap_pi
@@ -20,21 +28,14 @@ from pycozmo.util import Angle, Pose
 if TYPE_CHECKING:
     from pycozmo.navigation.world_map import WorldMap
 
-# A* path following: considered arrived within this distance of the goal (mm).
-ASTAR_GOAL_TOL_MM = 30.0
-# Maximum consecutive replans before giving up on an A* goal.
-ASTAR_MAX_REPLAN_ATTEMPTS = 10
-# Waypoints closer to the robot than this are skipped by the occupancy
-# monitor — localization noise near the body must not trigger replans.
-ASTAR_MONITOR_SKIP_MM = 75.0
-
 
 class Navigator:
     """Robot navigation: point-to-point drive, cube approach, docking.
 
     Uses :class:`DockState` for charger/dock data. Receives the injected
-    ``world_map`` at construction and ``cli`` at wiring time, rather than
-    holding a Brain or web-viewer reference.
+    ``world_map`` at construction and ``cli`` at wiring time (a property
+    that propagates the client to the A* follower, docking, and cube
+    approach), rather than holding a Brain or web-viewer reference.
 
     All motion runs as *jobs* registered on :class:`MotionController`
     (:attr:`motion`), which owns cancellation: :meth:`stop` cancels every
@@ -43,24 +44,41 @@ class Navigator:
     """
 
     #: Job names registered on ``self.motion`` (see :attr:`active_names`).
+    #: Docking's job name lives on :attr:`Docking.JOB_DOCK`.
     JOB_NAVIGATE: ClassVar[str] = "navigate"
     JOB_DRIVE: ClassVar[str] = "drive"
     JOB_ALIGN: ClassVar[str] = "align"
-    JOB_DOCK: ClassVar[str] = "dock"
     JOB_TEST_MODE: ClassVar[str] = "test_mode"
 
     def __init__(self, dock_state: DockState, world_map: "WorldMap | None" = None):
         self.ds = dock_state
         self.world_map = world_map
-        # Set by Brain after construction (cross-domain references)
-        self.cli = None
+        self._cli: Any = None
         # Cancellation for every motion this class starts.
         self.motion = MotionController()
-        # A* pathfinding
-        self.astar_enabled = False
-        self.astar_planner: AStarPlanner | None = None
-        # Owned by the navigation job's thread; read by its interrupt poll.
-        self._path_waypoints: list[PathPoint] = []
+        # A* path following (planner + enabled flag + follow loop)
+        self.astar = AStarFollower(world_map=world_map)
+        # Dock sequence — shares the motion controller so stop() reaches it
+        self.docking = Docking(
+            dock_state=dock_state,
+            motion=self.motion,
+            reset_origin=self._reset_pose_origin,
+        )
+        # Cube approach (lazily created with DI callbacks)
+        self._cube_approach: CubeApproach | None = None
+
+    @property
+    def cli(self) -> Any:
+        return self._cli
+
+    @cli.setter
+    def cli(self, value: Any) -> None:
+        """Inject the client — and keep every sub-sequence in step with it."""
+        self._cli = value
+        self.astar.cli = value
+        self.docking.cli = value
+        if self._cube_approach is not None:
+            self._cube_approach.cli = value
 
     # ------------------------------------------------------------------
     # Charger / origin handlers (COZMO-28)
@@ -140,6 +158,10 @@ class Navigator:
             logger.info("Navigation cancelled")
             return
 
+        if world_left is None:
+            logger.warning("Navigation: no target Y coordinate")
+            return
+
         if not self.cli:
             logger.warning("Navigation: no robot connected")
             return
@@ -158,8 +180,8 @@ class Navigator:
 
         def _navigate(job: MotionToken) -> None:
             try:
-                if self.astar_enabled and self.astar_planner is not None:
-                    self._follow_astar_path(world_forward, world_left, job)
+                if self.astar.enabled and self.astar.planner is not None:
+                    self.astar.follow(world_forward, world_left, job)
                 elif dist < 10.0:
                     logger.info("Already at target")
                 else:
@@ -184,175 +206,13 @@ class Navigator:
         self.motion.cancel(self.JOB_NAVIGATE)
         self.motion.spawn(self.JOB_NAVIGATE, _navigate)
 
-    def _follow_astar_path(
-        self, goal_x: float, goal_y: float, job: MotionToken
-    ) -> None:
-        """Compute an A* path and follow it with the firmware path follower.
-
-        The remaining path is sent as a single built-in Cozmo path
-        (``Client.execute_polyline``), so the robot runs its own
-        high-rate trajectory generator instead of the Python closed loop
-        (WiFi latency made ``drive_to_point`` unreliable). The occupancy
-        map is monitored while the path executes — if a remaining
-        waypoint becomes occupied the path is interrupted and a new A*
-        search is issued from the current pose. The active path is
-        published to WorldMap for 3D visualization and cleared when
-        navigation ends. Cancelling ``job`` ends the loop and clears the
-        published path.
-        """
-        cli = self.cli
-        if cli is None:
-            return
-
-        if self.astar_planner is None:
-            logger.warning("A*: no planner — falling back to built-in navigation")
-            self._go_to_pose_goal(goal_x, goal_y)
-            return
-
-        robot_pose = cli.pose
-        start_x = robot_pose.position.x
-        start_y = robot_pose.position.y
-
-        def _publish_path(waypoints: list) -> None:
-            if self.world_map is not None:
-                self.world_map.set_astar_path(
-                    [[float(w.x), float(w.y)] for w in waypoints]
-                )
-
-        def _clear_path() -> None:
-            if self.world_map is not None:
-                self.world_map.clear_astar_path()
-
-        self._path_waypoints = (
-            self.astar_planner.find_path(start_x, start_y, goal_x, goal_y) or []
-        )
-        _publish_path(self._path_waypoints)
-        logger.info("A*: computed %d waypoints", len(self._path_waypoints))
-
-        if not self._path_waypoints:
-            logger.warning("A*: no path found — falling back to built-in navigation")
-            _clear_path()
-            self._go_to_pose_goal(goal_x, goal_y)
-            return
-
-        try:
-            attempts = 0
-            while not job.cancelled:
-                pose = cli.pose
-                if (
-                    math.hypot(goal_x - pose.position.x, goal_y - pose.position.y)
-                    <= ASTAR_GOAL_TOL_MM
-                ):
-                    logger.info("A*: reached goal")
-                    break
-
-                attempts += 1
-                if attempts > ASTAR_MAX_REPLAN_ATTEMPTS:
-                    logger.warning("A*: giving up after max replan attempts")
-                    break
-
-                pts = [(w.x, w.y) for w in self._path_waypoints]
-                arrived = cli.execute_polyline(
-                    pts,
-                    final_heading_rad=self._final_heading(
-                        pts, start_x, start_y, goal_x, goal_y
-                    ),
-                    should_interrupt=lambda: self._path_should_interrupt(job),
-                )
-
-                if job.cancelled:
-                    logger.info("A*: path following cancelled")
-                    break
-
-                pose = cli.pose
-                if arrived and (
-                    math.hypot(goal_x - pose.position.x, goal_y - pose.position.y)
-                    <= ASTAR_GOAL_TOL_MM
-                ):
-                    logger.info("A*: reached goal")
-                    break
-
-                # Interrupted (new obstacle) or fell short — replan from here.
-                new_path = self.astar_planner.find_path(
-                    pose.position.x, pose.position.y, goal_x, goal_y
-                )
-                if not new_path:
-                    logger.warning("A*: replan failed — no path to goal")
-                    break
-                self._path_waypoints = new_path
-                _publish_path(new_path)
-                logger.info("A*: replanned — %d waypoints", len(new_path))
-        finally:
-            _clear_path()
-
-    @staticmethod
-    def _final_heading(
-        pts: list[tuple[float, float]],
-        start_x: float,
-        start_y: float,
-        goal_x: float,
-        goal_y: float,
-    ) -> float:
-        """World heading facing the final approach into the goal."""
-        if len(pts) >= 2:
-            hx = goal_x - pts[-2][0]
-            hy = goal_y - pts[-2][1]
-            if math.hypot(hx, hy) >= 1.0:
-                return math.atan2(hy, hx)
-        return math.atan2(goal_y - start_y, goal_x - start_x)
-
-    def _path_should_interrupt(self, job: MotionToken) -> bool:
-        """Poll callback for ``Client.execute_polyline``.
-
-        Returns True when path execution must stop: the navigate job was
-        cancelled, or a remaining waypoint has become occupied in the
-        updated occupancy map (a replan follows). Waypoints close to the
-        robot are skipped — localization noise near the body must not
-        trigger spurious replans.
-        """
-        if job.cancelled:
-            return True
-        planner = self.astar_planner
-        cli = self.cli
-        if planner is None or cli is None:
-            return False
-        pose = cli.pose
-        for w in self._path_waypoints:
-            if (
-                math.hypot(w.x - pose.position.x, w.y - pose.position.y)
-                < ASTAR_MONITOR_SKIP_MM
-            ):
-                continue
-            if not planner.is_traversable(w.x, w.y):
-                logger.warning(
-                    "A*: waypoint (%.0f, %.0f) now blocked — replanning", w.x, w.y
-                )
-                return True
-        return False
-
-    def _go_to_pose_goal(self, goal_x: float, goal_y: float) -> None:
-        """Drive straight to the goal with the robot's built-in path follower."""
-        cli = self.cli
-        if cli is None:
-            return
-        pose = cli.pose
-        heading = math.atan2(goal_y - pose.position.y, goal_x - pose.position.x)
-        ok = cli.go_to_pose(
-            Pose(goal_x, goal_y, 0, angle_z=Angle(radians=heading)),
-            relative_to_robot=False,
-        )
-        if ok:
-            logger.info("Arrived at target")
-        else:
-            logger.warning("Navigation failed — path rejected or timed out")
-
     def set_astar_planner(self, planner: AStarPlanner | None) -> None:
-        """Inject or remove the A* planner."""
-        self.astar_planner = planner
+        """Inject or remove the A* planner (state lives on the follower)."""
+        self.astar.planner = planner
 
     def set_astar_enabled(self, enabled: bool) -> None:
-        """Enable or disable A* pathfinding."""
-        self.astar_enabled = enabled
+        """Enable or disable A* pathfinding for navigate requests."""
+        self.astar.enabled = enabled
         if not enabled:
             self.motion.cancel(self.JOB_NAVIGATE)
         logger.info("A* %s", "enabled" if enabled else "disabled")
@@ -508,7 +368,7 @@ class Navigator:
 
     def _get_cube_approach(self) -> CubeApproach:
         """Lazily create the CubeApproach instance with DI callbacks."""
-        if not hasattr(self, "_cube_approach"):
+        if self._cube_approach is None:
             world_map = self.world_map
             self._cube_approach = CubeApproach(
                 cli=self.cli,
@@ -519,8 +379,6 @@ class Navigator:
                 move_forward=self._move_forward,
                 spawn=self.motion.spawn,
             )
-        # Refresh cli reference (may reconnect)
-        self._cube_approach.cli = self.cli
         return self._cube_approach
 
     @staticmethod
@@ -576,123 +434,13 @@ class Navigator:
     # ------------------------------------------------------------------
 
     def dock(self) -> None:
-        """Drive robot back into the dock (in the background)."""
-        if not self.cli:
-            logger.warning("Dock: no robot connected")
-            return
-        if self.ds.dock_pose is None:
-            logger.warning("Dock: no start pose recorded")
-            return
+        """Drive robot back into the dock (in the background).
 
-        DOCK_DRIVE_DIST = 150.0
-        DOCK_REVERSE_SPEED = 80.0
-        DOCK_AIM_BEHIND = 40.0
-        DOCK_CONTACT_DIST = 15.0
-        DOCK_MAX_RETRIES = 3
-        DOCK_RETRY_SPEED = 60.0
-        DOCK_RETRY_DRIVE = 40.0
-        DOCK_STALL_ITERS = 20
-
-        dock = self.ds.dock_pose
-        dock_x = dock.position.x
-        dock_y = dock.position.y
-        dock_heading = dock.rotation.angle_z.radians
-
-        turn_x = dock_x + DOCK_DRIVE_DIST * math.cos(dock_heading)
-        turn_y = dock_y + DOCK_DRIVE_DIST * math.sin(dock_heading)
-
-        aim_x = dock_x - DOCK_AIM_BEHIND * math.cos(dock_heading)
-        aim_y = dock_y - DOCK_AIM_BEHIND * math.sin(dock_heading)
-
-        def _is_charging() -> bool:
-            with self.ds.lock:
-                return self.ds.on_charger or self.ds.charging
-
-        def _dist_to_dock() -> float:
-            rp = self.cli.pose
-            dx = aim_x - rp.position.x
-            dy = aim_y - rp.position.y
-            return math.sqrt(dx * dx + dy * dy)
-
-        def _reverse_until_contact(job: MotionToken) -> bool:
-            prev_dist = None
-            stall = 0
-            while True:
-                if job.cancelled:
-                    return False
-                if _is_charging():
-                    return True
-
-                dist = _dist_to_dock()
-
-                if dist < DOCK_CONTACT_DIST:
-                    return False
-
-                if prev_dist is not None and dist >= prev_dist - 1.0:
-                    stall += 1
-                    if stall >= DOCK_STALL_ITERS:
-                        return False
-                else:
-                    stall = 0
-                prev_dist = dist
-
-                self.cli.drive_wheels(
-                    lwheel_speed=-DOCK_REVERSE_SPEED,
-                    rwheel_speed=-DOCK_REVERSE_SPEED,
-                )
-                time.sleep(0.05)
-
-        def _dock_job(job: MotionToken) -> None:
-            try:
-                turn_pose = Pose(turn_x, turn_y, 0, angle_z=Angle(radians=dock_heading))
-                logger.info("Driving to 150mm in front of dock")
-                self.cli.go_to_pose(turn_pose, relative_to_robot=False)
-                time.sleep(0.3)
-
-                docked = False
-                for attempt in range(1, DOCK_MAX_RETRIES + 1):
-                    if job.cancelled:
-                        logger.info("Docking cancelled")
-                        break
-                    logger.info("Docking attempt %d/%d", attempt, DOCK_MAX_RETRIES)
-                    if _reverse_until_contact(job):
-                        docked = True
-                        break
-
-                    if _is_charging():
-                        docked = True
-                        break
-
-                    if attempt < DOCK_MAX_RETRIES:
-                        logger.warning("No charge at contact - backing away to retry")
-                        self.cli.drive_wheels(
-                            lwheel_speed=DOCK_RETRY_SPEED,
-                            rwheel_speed=DOCK_RETRY_SPEED,
-                            duration=DOCK_RETRY_DRIVE / DOCK_RETRY_SPEED,
-                        )
-                        time.sleep(0.3)
-                    else:
-                        logger.warning(
-                            "Docking failed after %d attempts (dist=%.0fmm, no charge)",
-                            DOCK_MAX_RETRIES,
-                            _dist_to_dock(),
-                        )
-
-                self.cli.stop_all_motors()
-                if job.cancelled:
-                    return
-
-                if docked or _is_charging():
-                    self._reset_pose_origin()
-                    logger.info("Docked and pose reset - dock is now origin")
-                elif not docked:
-                    logger.warning("Docking did not complete - no pose reset")
-            except Exception as e:  # noqa: BLE001
-                logger.exception("Dock error: %s", e)
-
-        # One dock job at a time: a new request supersedes the old one.
-        self.motion.cancel(self.JOB_DOCK)
-        self.motion.spawn(self.JOB_DOCK, _dock_job)
+        Delegates to :class:`Docking`, which owns the sequence (approach,
+        reverse into contact, retries) and registers the shared ``dock``
+        job that :meth:`stop` cancels.
+        """
+        self.docking.dock()
 
     # ------------------------------------------------------------------
     # Stop (public motion control)

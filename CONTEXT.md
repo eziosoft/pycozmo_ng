@@ -137,7 +137,8 @@ dock, cube approach, test mode). Started either as a scope on the current
 thread (`with motion.begin(...)`) or on a daemon thread
 (`motion.spawn(name, fn)`), and polled by the job through its token
 (`job.cancelled`). Job names are constants on the owning class
-(`Navigator.JOB_NAVIGATE`, `CubeApproach.JOB_APPROACH`, …). Jobs nest: a job
+(`Navigator.JOB_NAVIGATE`, `Docking.JOB_DOCK`, `CubeApproach.JOB_APPROACH`, …).
+Jobs nest: a job
 started inside another is its child and dies with it.
 _Avoid_: an ad-hoc `bool` flag (`_path_following`, `_stop_requested`,
 `_test_mode`) for "should this keep running".
@@ -148,8 +149,9 @@ The single registry that knows which motion jobs are running
 jobs by name, `cancel_all()` bumps a generation counter so *everything live*
 stops — and anything begun afterwards starts un-cancelled, which is what
 re-arms the robot after `Navigator.stop()` (replacing
-`_stop_requested.clear()`). `Navigator` owns one instance (`.motion`);
-`CubeApproach` receives its `spawn` callable by injection.
+`_stop_requested.clear()`). `Navigator` owns one instance (`.motion`) and hands
+the same object to `Docking`; `CubeApproach` receives its `spawn` callable by
+injection.
 _Avoid_: per-feature cancellation flags/locks, spawning bare
 `threading.Thread`s for motion work.
 
@@ -159,6 +161,19 @@ The cancellation handle a single job polls — `token.cancelled`,
 flag, a generation comparison, and its parent's answer; nesting outranks the
 generation, so a dying parent takes children begun after a `cancel_all()`.
 _Avoid_: reading the controller's internals from a job.
+
+**Navigator** (`pycozmo/navigation/navigator.py`):
+The navigation subsystem's one entry point — `navigate_to`, `drive_to_point`,
+`approach_cube*`, `dock`, `stop`, and the A* toggle — so callers address
+navigation as a single thing. It owns the shared `MotionController` and the
+`DockState`, and composes three sequences that hold their own tuning and job
+names: `AStarFollower` (`.astar` — plan, publish, and follow an A* path),
+`Docking` (`.docking` — dock approach, reverse into contact, retries), and the
+lazily built `CubeApproach` (`_cube_approach`). `Navigator.cli` is a property:
+assigning it (Brain wiring, or a reconnect) propagates the client to all three.
+_False friend_: "delegate" here does not mean callers reach past Navigator —
+they keep using `navigator.dock()` / `navigator.set_astar_enabled()`;
+sub-classes are reached only through `navigator.astar` and `navigator.docking`.
 
 ## Example dialogue
 

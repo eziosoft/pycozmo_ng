@@ -17,6 +17,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from pycozmo.navigation.dock_state import DockState
+from pycozmo.navigation.docking import Docking
 from pycozmo.navigation.navigator import Navigator
 from pycozmo.web.msg_router import MsgRouter
 
@@ -115,13 +116,13 @@ class TestStop:
         nav.ds.dock_pose = cli.pose
 
         nav.dock()
-        assert _wait_until(lambda: Navigator.JOB_DOCK in nav.motion.active_names), (
+        assert _wait_until(lambda: Docking.JOB_DOCK in nav.motion.active_names), (
             "dock job never registered"
         )
 
         nav.stop()
 
-        assert _wait_until(lambda: Navigator.JOB_DOCK not in nav.motion.active_names), (
+        assert _wait_until(lambda: Docking.JOB_DOCK not in nav.motion.active_names), (
             "dock job kept running after stop()"
         )
 
