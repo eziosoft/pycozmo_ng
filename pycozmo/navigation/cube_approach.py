@@ -13,6 +13,7 @@ import numpy as np
 
 import pycozmo
 from pycozmo.logger import logger
+from pycozmo.navigation.motion_token import MotionToken
 from pycozmo.navigation.steering import wrap_pi
 from pycozmo.util import Angle, Pose
 
@@ -29,7 +30,14 @@ class CubeApproach:
                         Closed-loop drive to a point (Navigator.drive_to_point).
         move_forward    ``Callable[[dist_mm], bool]`` Straight-ahead creep
                         (Navigator._move_forward).
+        spawn           ``Callable[[str, Callable[[MotionToken], None]],
+                        MotionToken]`` Starts the approach on a background
+                        motion job (``MotionController.spawn``), which is
+                        what lets ``Navigator.stop`` cancel it.
     """
+
+    #: Motion job name this class registers while an approach runs.
+    JOB_APPROACH: str = "approach"
 
     # ------------------------------------------------------------------
     # Tuning constants
@@ -59,11 +67,12 @@ class CubeApproach:
     ARRIVE_POS_MM = 8.0
     ARRIVE_ANG_RAD = math.radians(2.0)
 
-    def __init__(self, cli, get_cube_state, drive_to_point, move_forward):
+    def __init__(self, cli, get_cube_state, drive_to_point, move_forward, spawn):
         self.cli = cli
         self._get_cube_state = get_cube_state
         self._drive_to_point = drive_to_point
         self._move_forward = move_forward
+        self._spawn = spawn
         # Serializes approaches: multiple in-flight runs would race each other
         # with conflicting go_to_pose / drive_wheels commands.
         self._approach_lock = threading.Lock()
@@ -158,7 +167,7 @@ class CubeApproach:
             heading,
         )
 
-    def _dwell_for_smoothing(self, cube_idx: int) -> bool:
+    def _dwell_for_smoothing(self, cube_idx: int, job: MotionToken) -> bool:
         """Dwell at the standoff so the world-map filters converge.
 
         The fused cube pose is updated once per camera frame; a single fresh
@@ -169,13 +178,14 @@ class CubeApproach:
 
         Returns True if the cube was re-detected during the dwell (a fresh
         measurement was fused), False otherwise — the caller should cancel
-        the approach when the cube is not visible at the standoff.
+        the approach when the cube is not visible at the standoff. The dwell
+        also ends early when ``job`` is cancelled.
         """
         before = self._get_cube_state(cube_idx)
         base_ts = before.updated_at if before is not None else None
         saw_fresh = False
         t0 = time.monotonic()
-        while time.monotonic() - t0 < self.STANDOFF_DWELL_S:
+        while not job.cancelled and time.monotonic() - t0 < self.STANDOFF_DWELL_S:
             time.sleep(0.05)
             s = self._get_cube_state(cube_idx)
             ts = s.updated_at if s is not None else None
@@ -183,9 +193,9 @@ class CubeApproach:
                 saw_fresh = True
         return saw_fresh
 
-    def _watch_near_tilt(self, cube_idx: int) -> None:
+    def _watch_near_tilt(self, cube_idx: int, job: MotionToken) -> None:
         """Drop head to ``NEAR_TILT_DEG`` once within proximity."""
-        while True:
+        while not job.cancelled:
             s = self._get_cube_state(cube_idx)
             if s is not None:
                 rp = self.cli.pose
@@ -274,25 +284,32 @@ class CubeApproach:
     def approach(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
         """Two-step approach & grab for the given cube.
 
-        Spawns a daemon thread so the caller (WebSocket handler) returns
-        immediately. Only one approach runs at a time: if one is already in
+        Runs as one background ``approach`` motion job so the caller
+        (WebSocket handler) returns immediately and ``Navigator.stop``
+        cancels the whole sequence — including the drives nested inside
+        it. Only one approach runs at a time: if one is already in
         progress, the request is ignored.
         """
         if not self._approach_lock.acquire(blocking=False):
             logger.warning("Approach busy - ignoring request for cube %d", cube_idx + 1)
             return
 
-        def _run_guarded():
+        def _run_guarded(job: MotionToken) -> None:
             try:
-                self._run(cube_idx, cube_x, cube_y)
+                self._run(job, cube_idx, cube_x, cube_y)
             finally:
                 self._approach_lock.release()
 
-        t = threading.Thread(target=_run_guarded, daemon=True)
-        t.start()
+        try:
+            self._spawn(self.JOB_APPROACH, _run_guarded)
+        except Exception:
+            self._approach_lock.release()
+            raise
 
-    def _run(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
-        """Blocking implementation — runs in a daemon thread."""
+    def _run(
+        self, job: MotionToken, cube_idx: int, cube_x: float, cube_y: float
+    ) -> None:
+        """Blocking implementation — runs inside the ``approach`` job."""
         try:
             state = self._get_cube_state(cube_idx)
             if state is None:
@@ -342,9 +359,15 @@ class CubeApproach:
                 self._drive_to_point(bx, by, timeout_s=8.0)
 
             time.sleep(0.3)
+            if job.cancelled:
+                logger.info("Approach cancelled")
+                self.cli.stop_all_motors()
+                return
 
             threading.Thread(
-                target=self._watch_near_tilt, args=(cube_idx,), daemon=True
+                target=self._watch_near_tilt,
+                args=(cube_idx, job),
+                daemon=True,
             ).start()
 
             # Step 1: view standoff
@@ -355,7 +378,11 @@ class CubeApproach:
                 relative_to_robot=False,
             )
 
-            if not self._dwell_for_smoothing(cube_idx):
+            if job.cancelled:
+                logger.info("Approach cancelled")
+                self.cli.stop_all_motors()
+                return
+            if not self._dwell_for_smoothing(cube_idx, job):
                 self.cli.stop_all_motors()
                 logger.warning("Cube not re-detected at standoff - cancelling approach")
                 return
@@ -380,7 +407,7 @@ class CubeApproach:
 
             # Wait for arrival
             t_arrive = time.monotonic()
-            while time.monotonic() - t_arrive < 10.0:
+            while not job.cancelled and time.monotonic() - t_arrive < 10.0:
                 rp = self.cli.pose
                 pos_err = math.hypot(s2x - rp.position.x, s2y - rp.position.y)
                 ang_err = abs(wrap_pi(heading2 - rp.rotation.angle_z.radians))
@@ -388,11 +415,16 @@ class CubeApproach:
                     break
                 time.sleep(0.05)
 
+            if job.cancelled:
+                logger.info("Approach cancelled")
+                self.cli.stop_all_motors()
+                return
+
             logger.info("Aligned with cube %d", cube_idx + 1)
 
             # Alignment verification with retry
             attempts = 0
-            while True:
+            while not job.cancelled:
                 (aligned, checks, facing_err_rad, forward, lateral, _, fresh) = (
                     self._verify_grab_alignment(cube_idx)
                 )
@@ -422,6 +454,10 @@ class CubeApproach:
                 self._move_forward(self.GRAB_RECHECK_MM)
                 time.sleep(0.3)
 
+            if job.cancelled:
+                logger.info("Approach cancelled - not grabbing")
+                self.cli.stop_all_motors()
+                return
             if not aligned:
                 logger.warning("Alignment check FAILED - not grabbing")
                 return

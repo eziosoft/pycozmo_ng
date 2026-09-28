@@ -5,6 +5,7 @@ hardware needed.
 """
 
 import math
+import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -13,6 +14,10 @@ import numpy as np
 import pytest
 
 from pycozmo.navigation.cube_approach import CubeApproach
+from pycozmo.navigation.motion_controller import MotionController
+
+# Shared controller so spawned approaches are visible to assertions.
+_MOTION = MotionController()
 
 
 def _make_cube_state(
@@ -77,6 +82,7 @@ class TestStandoff:
             get_cube_state=lambda i: None,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
         )
         state = _make_cube_state(x=100.0, y=200.0)
         sx, sy = ca._standoff(state, 90.0, (0.0, 1.0))
@@ -94,6 +100,7 @@ class TestVerifyGrabAlignment:
             get_cube_state=lambda i: _make_cube_state(x=0.0, y=80.0, confidence=0.95),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
         )
         (passed, msgs, _facing_err, _forward, _lateral, centered, fresh) = (
             ca._verify_grab_alignment(0)
@@ -110,6 +117,7 @@ class TestVerifyGrabAlignment:
             get_cube_state=lambda i: None,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
         )
         (passed, msgs, _, _, _, _, _) = ca._verify_grab_alignment(0)
         assert passed is False
@@ -124,6 +132,7 @@ class TestVerifyGrabAlignment:
             ),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
         )
         (passed, _, _, _, _, _, fresh) = ca._verify_grab_alignment(0)
         assert fresh is False
@@ -136,6 +145,7 @@ class TestVerifyGrabAlignment:
             get_cube_state=lambda i: _make_cube_state(x=50.0, y=80.0, confidence=0.95),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
         )
         (_passed, _, _, _, lateral, centered, _) = ca._verify_grab_alignment(0)
         assert not centered
@@ -150,6 +160,7 @@ class TestCorrectedTarget:
             get_cube_state=lambda i: None,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
         )
         assert ca._corrected_target(0, 90.0) is None
 
@@ -160,6 +171,7 @@ class TestCorrectedTarget:
             get_cube_state=lambda i: _make_cube_state(x=0.0, y=300.0),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
         )
         result = ca._corrected_target(0, 90.0)
         assert result is not None
@@ -177,8 +189,10 @@ class TestApproachThread:
             get_cube_state=lambda i: None,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
         )
-        ca._run(0, 0.0, 300.0)  # should not raise
+        with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
+            ca._run(job, 0, 0.0, 300.0)  # should not raise
 
     def test_full_approach_calls_cli(self):
         cli, _pose = _make_mock_cli(x=0.0, y=0.0, yaw=0.0)
@@ -204,8 +218,10 @@ class TestApproachThread:
             get_cube_state=get_state,
             drive_to_point=mock_drive,
             move_forward=mock_fwd,
+            spawn=_MOTION.spawn,
         )
-        ca._run(0, 0.0, 300.0)
+        with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
+            ca._run(job, 0, 0.0, 300.0)
 
         # Lift and head were set
         cli.set_lift_height.assert_called()
@@ -229,8 +245,10 @@ class TestApproachThread:
             get_cube_state=lambda i: cube_state,  # updated_at never advances
             drive_to_point=lambda *a, **k: True,
             move_forward=mock_fwd,
+            spawn=_MOTION.spawn,
         )
-        ca._run(0, 0.0, 300.0)
+        with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
+            ca._run(job, 0, 0.0, 300.0)
 
         # Step 1 only — no step 2, no grab.
         assert cli.go_to_pose.call_count == 1
@@ -246,6 +264,7 @@ class TestApproachThread:
             get_cube_state=lambda i: _make_cube_state(x=0.0, y=300.0),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
         )
         # Hold the approach lock to simulate an in-flight run.
         ca._approach_lock.acquire(blocking=False)
@@ -258,5 +277,42 @@ class TestApproachThread:
         # The second approach was refused — no run started, no go_to_pose.
         assert cli.go_to_pose.call_count == 0
         # And the lock is free again for the next real approach.
+        assert ca._approach_lock.acquire(blocking=False)
+        ca._approach_lock.release()
+
+    def test_approach_runs_as_a_cancellable_job(self):
+        """The approach is registered on the motion controller, so
+        ``Navigator.stop`` can cancel it (and see it as active)."""
+        cli, _pose = _make_mock_cli(x=0.0, y=0.0, yaw=0.0)
+        in_lookup = threading.Event()
+        release_lookup = threading.Event()
+
+        def blocking_state(idx):
+            del idx
+            in_lookup.set()
+            release_lookup.wait(2.0)
+            # no return value -> get_cube_state reports "no cube" and the approach bails out
+
+        ca = CubeApproach(
+            cli,
+            get_cube_state=blocking_state,
+            drive_to_point=lambda *a, **k: True,
+            move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
+        )
+        ca.approach(0, 0.0, 300.0)
+        assert in_lookup.wait(2.0), "approach never started"
+
+        assert CubeApproach.JOB_APPROACH in _MOTION.active_names
+        assert _MOTION.cancel(CubeApproach.JOB_APPROACH)
+
+        release_lookup.set()
+        deadline = time.monotonic() + 2.0
+        while (
+            CubeApproach.JOB_APPROACH in _MOTION.active_names
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.01)
+        assert CubeApproach.JOB_APPROACH not in _MOTION.active_names
         assert ca._approach_lock.acquire(blocking=False)
         ca._approach_lock.release()

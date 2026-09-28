@@ -104,6 +104,8 @@ pycozmo/           # Main library
 │   ├── astar.py            # AStarPlanner, PathPoint — A* pathfinding
 │   ├── cube_approach.py     # CubeApproach — two-step standoff approach
 │   ├── dock_state.py        # DockState — charger/dock pose tracking
+│   ├── motion_controller.py # MotionController — registry of running motion jobs
+│   ├── motion_token.py      # MotionToken — per-job cancellation handle
 │   ├── navigator.py         # Navigator — navigate, approach, dock, stop
 │   ├── remote_control.py    # RemoteControl — browser keyboard driving
 │   ├── steering.py          # steer_velocities, wrap_pi — differential drive

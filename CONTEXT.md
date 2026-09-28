@@ -114,6 +114,35 @@ Two-ring marker detection on the robot chassis. Head tilted to max-down
 between ring centres gives the lateral offset of the camera from robot centre.
 Measured once during startup calibration and frozen for the session.
 
+**Motion job**:
+One cancellable unit of background motion (navigate/A* follow, drive, align,
+dock, cube approach, test mode). Started either as a scope on the current
+thread (`with motion.begin(...)`) or on a daemon thread
+(`motion.spawn(name, fn)`), and polled by the job through its token
+(`job.cancelled`). Job names are constants on the owning class
+(`Navigator.JOB_NAVIGATE`, `CubeApproach.JOB_APPROACH`, …). Jobs nest: a job
+started inside another is its child and dies with it.
+_Avoid_: an ad-hoc `bool` flag (`_path_following`, `_stop_requested`,
+`_test_mode`) for "should this keep running".
+
+**Motion controller** (`pycozmo/navigation/motion_controller.py`):
+The single registry that knows which motion jobs are running
+(`active_names`), and the only cancellation authority: `cancel(name)` kills
+jobs by name, `cancel_all()` bumps a generation counter so *everything live*
+stops — and anything begun afterwards starts un-cancelled, which is what
+re-arms the robot after `Navigator.stop()` (replacing
+`_stop_requested.clear()`). `Navigator` owns one instance (`.motion`);
+`CubeApproach` receives its `spawn` callable by injection.
+_Avoid_: per-feature cancellation flags/locks, spawning bare
+`threading.Thread`s for motion work.
+
+**Motion token** (`pycozmo/navigation/motion_token.py`):
+The cancellation handle a single job polls — `token.cancelled`,
+`token.cancel()`, usable as a `with` scope. Cancellation is the token's own
+flag, a generation comparison, and its parent's answer; nesting outranks the
+generation, so a dying parent takes children begun after a `cancel_all()`.
+_Avoid_: reading the controller's internals from a job.
+
 ## Example dialogue
 
 **Dev**: The cube drifts when Cozmo turns. Why?

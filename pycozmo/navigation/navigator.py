@@ -3,7 +3,7 @@
 import math
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 
@@ -12,6 +12,8 @@ from pycozmo.logger import logger
 from pycozmo.navigation.astar import AStarPlanner, PathPoint
 from pycozmo.navigation.cube_approach import CubeApproach
 from pycozmo.navigation.dock_state import DockState
+from pycozmo.navigation.motion_controller import MotionController
+from pycozmo.navigation.motion_token import MotionToken
 from pycozmo.navigation.steering import steer_velocities, wrap_pi
 from pycozmo.util import Angle, Pose
 
@@ -33,25 +35,32 @@ class Navigator:
     Uses :class:`DockState` for charger/dock data. Receives the injected
     ``world_map`` at construction and ``cli`` at wiring time, rather than
     holding a Brain or web-viewer reference.
+
+    All motion runs as *jobs* registered on :class:`MotionController`
+    (:attr:`motion`), which owns cancellation: :meth:`stop` cancels every
+    job in one call, and a job begun after that is not cancelled, so the
+    next motion command re-arms the robot.
     """
+
+    #: Job names registered on ``self.motion`` (see :attr:`active_names`).
+    JOB_NAVIGATE: ClassVar[str] = "navigate"
+    JOB_DRIVE: ClassVar[str] = "drive"
+    JOB_ALIGN: ClassVar[str] = "align"
+    JOB_DOCK: ClassVar[str] = "dock"
+    JOB_TEST_MODE: ClassVar[str] = "test_mode"
 
     def __init__(self, dock_state: DockState, world_map: "WorldMap | None" = None):
         self.ds = dock_state
         self.world_map = world_map
         # Set by Brain after construction (cross-domain references)
         self.cli = None
-        self._test_mode = False
-        self._test_mode_thread: threading.Thread | None = None
-        self._test_mode_lock = threading.Lock()
+        # Cancellation for every motion this class starts.
+        self.motion = MotionController()
         # A* pathfinding
         self.astar_enabled = False
         self.astar_planner: AStarPlanner | None = None
+        # Owned by the navigation job's thread; read by its interrupt poll.
         self._path_waypoints: list[PathPoint] = []
-        self._current_waypoint_idx = 0
-        self._path_following = False
-        self._path_follow_lock = threading.Lock()
-        # Set by stop(), cleared at the next closed-loop drive entry.
-        self._stop_requested = threading.Event()
 
     # ------------------------------------------------------------------
     # Charger / origin handlers (COZMO-28)
@@ -117,11 +126,15 @@ class Navigator:
         avoiding path through the occupancy grid and follows it with the
         robot's built-in path follower. Otherwise drives straight to the
         target via ``go_to_pose`` (also firmware-side).
+
+        Both variants run as one live ``navigate`` job on :attr:`motion`;
+        cancel stops that job (and every job nested inside it) without
+        touching unrelated motions.
         """
         if world_forward is None:
+            self.motion.cancel(self.JOB_NAVIGATE)
             if self.cli:
                 self.cli.stop_all_motors()
-            self._path_following = False
             if self.world_map is not None:
                 self.world_map.clear_astar_path()
             logger.info("Navigation cancelled")
@@ -143,10 +156,10 @@ class Navigator:
             "Navigating to (%.0f, %.0f) - dist=%.0fmm", world_forward, world_left, dist
         )
 
-        def _nav_thread():
+        def _navigate(job: MotionToken) -> None:
             try:
                 if self.astar_enabled and self.astar_planner is not None:
-                    self._follow_astar_path(world_forward, world_left)
+                    self._follow_astar_path(world_forward, world_left, job)
                 elif dist < 10.0:
                     logger.info("Already at target")
                 else:
@@ -158,19 +171,22 @@ class Navigator:
                         angle_z=Angle(radians=heading),
                     )
                     ok = self.cli.go_to_pose(target_pose, relative_to_robot=False)
-                    if ok:
+                    if job.cancelled:
+                        logger.info("Navigation cancelled")
+                    elif ok:
                         logger.info("Arrived at target")
                     else:
                         logger.warning("Navigation failed — path rejected or timed out")
             except Exception as e:  # noqa: BLE001
                 logger.exception("Navigation error: %s", e)
-            finally:
-                self._path_following = False
 
-        t = threading.Thread(target=_nav_thread, daemon=True)
-        t.start()
+        # One navigate job at a time: a new request supersedes the old one.
+        self.motion.cancel(self.JOB_NAVIGATE)
+        self.motion.spawn(self.JOB_NAVIGATE, _navigate)
 
-    def _follow_astar_path(self, goal_x: float, goal_y: float) -> None:
+    def _follow_astar_path(
+        self, goal_x: float, goal_y: float, job: MotionToken
+    ) -> None:
         """Compute an A* path and follow it with the firmware path follower.
 
         The remaining path is sent as a single built-in Cozmo path
@@ -181,7 +197,8 @@ class Navigator:
         waypoint becomes occupied the path is interrupted and a new A*
         search is issued from the current pose. The active path is
         published to WorldMap for 3D visualization and cleared when
-        navigation ends.
+        navigation ends. Cancelling ``job`` ends the loop and clears the
+        published path.
         """
         cli = self.cli
         if cli is None:
@@ -206,26 +223,21 @@ class Navigator:
             if self.world_map is not None:
                 self.world_map.clear_astar_path()
 
-        with self._path_follow_lock:
-            self._path_following = True
-            self._current_waypoint_idx = 0
-            self._path_waypoints = (
-                self.astar_planner.find_path(start_x, start_y, goal_x, goal_y) or []
-            )
-            _publish_path(self._path_waypoints)
-            logger.info("A*: computed %d waypoints", len(self._path_waypoints))
+        self._path_waypoints = (
+            self.astar_planner.find_path(start_x, start_y, goal_x, goal_y) or []
+        )
+        _publish_path(self._path_waypoints)
+        logger.info("A*: computed %d waypoints", len(self._path_waypoints))
 
         if not self._path_waypoints:
             logger.warning("A*: no path found — falling back to built-in navigation")
-            with self._path_follow_lock:
-                self._path_following = False
             _clear_path()
             self._go_to_pose_goal(goal_x, goal_y)
             return
 
         try:
             attempts = 0
-            while self._path_following:
+            while not job.cancelled:
                 pose = cli.pose
                 if (
                     math.hypot(goal_x - pose.position.x, goal_y - pose.position.y)
@@ -245,10 +257,10 @@ class Navigator:
                     final_heading_rad=self._final_heading(
                         pts, start_x, start_y, goal_x, goal_y
                     ),
-                    should_interrupt=self._path_should_interrupt,
+                    should_interrupt=lambda: self._path_should_interrupt(job),
                 )
 
-                if not self._path_following:
+                if job.cancelled:
                     logger.info("A*: path following cancelled")
                     break
 
@@ -267,12 +279,10 @@ class Navigator:
                 if not new_path:
                     logger.warning("A*: replan failed — no path to goal")
                     break
-                with self._path_follow_lock:
-                    self._path_waypoints = new_path
+                self._path_waypoints = new_path
                 _publish_path(new_path)
                 logger.info("A*: replanned — %d waypoints", len(new_path))
         finally:
-            self._path_following = False
             _clear_path()
 
     @staticmethod
@@ -291,16 +301,16 @@ class Navigator:
                 return math.atan2(hy, hx)
         return math.atan2(goal_y - start_y, goal_x - start_x)
 
-    def _path_should_interrupt(self) -> bool:
+    def _path_should_interrupt(self, job: MotionToken) -> bool:
         """Poll callback for ``Client.execute_polyline``.
 
-        Returns True when path execution must stop: navigation was
+        Returns True when path execution must stop: the navigate job was
         cancelled, or a remaining waypoint has become occupied in the
         updated occupancy map (a replan follows). Waypoints close to the
         robot are skipped — localization noise near the body must not
         trigger spurious replans.
         """
-        if not self._path_following:
+        if job.cancelled:
             return True
         planner = self.astar_planner
         cli = self.cli
@@ -344,8 +354,8 @@ class Navigator:
         """Enable or disable A* pathfinding."""
         self.astar_enabled = enabled
         if not enabled:
-            self._path_following = False
-            logger.info("A* %s", "disabled" if not enabled else "enabled")
+            self.motion.cancel(self.JOB_NAVIGATE)
+        logger.info("A* %s", "enabled" if enabled else "disabled")
 
     # ------------------------------------------------------------------
     # Closed-loop drive (COZMO-35)
@@ -370,9 +380,9 @@ class Navigator:
         missing any target not exactly on that ray). Ends by turning in place
         to ``final_heading`` (if given) once close.
 
-        Entry clears the stop latch set by :meth:`stop`, so a new drive
-        re-arms movement; the loop exits early if ``stop()`` is called
-        while it runs.
+        Each call runs as its own ``drive`` job on :attr:`motion`, so a
+        :meth:`stop` that happened before the call cannot block it, while a
+        :meth:`stop` during the loop ends it at the next tick.
 
         Args:
             tx, ty: Target position (mm, world frame).
@@ -392,36 +402,36 @@ class Navigator:
             logger.warning("Drive: no robot connected")
             return False
 
-        self._stop_requested.clear()
         t0 = time.monotonic()
         reached = False
-        try:
-            while time.monotonic() - t0 <= timeout_s:
-                if self._stop_requested.is_set():
-                    logger.info("Drive interrupted by stop()")
-                    break
-                pose = cli.pose
-                ex, ey = tx - pose.position.x, ty - pose.position.y
-                if math.hypot(ex, ey) <= stop_mm:
-                    reached = True
-                    break
-                vl, vr = steer_velocities(
-                    pose.position.x,
-                    pose.position.y,
-                    pose.rotation.angle_z.radians,
-                    tx,
-                    ty,
-                    speed_mmps=speed_mmps,
-                )
-                cli.drive_wheels(lwheel_speed=vl, rwheel_speed=vr)
-                time.sleep(0.05)
+        with self.motion.begin(self.JOB_DRIVE) as job:
+            try:
+                while time.monotonic() - t0 <= timeout_s:
+                    if job.cancelled:
+                        logger.info("Drive interrupted by stop()")
+                        break
+                    pose = cli.pose
+                    ex, ey = tx - pose.position.x, ty - pose.position.y
+                    if math.hypot(ex, ey) <= stop_mm:
+                        reached = True
+                        break
+                    vl, vr = steer_velocities(
+                        pose.position.x,
+                        pose.position.y,
+                        pose.rotation.angle_z.radians,
+                        tx,
+                        ty,
+                        speed_mmps=speed_mmps,
+                    )
+                    cli.drive_wheels(lwheel_speed=vl, rwheel_speed=vr)
+                    time.sleep(0.05)
 
-            if not reached and time.monotonic() - t0 > timeout_s:
-                logger.warning("Nav timeout")
-            if reached and final_heading is not None:
-                self._align_heading(final_heading, align_tol_rad)
-        finally:
-            cli.stop_all_motors()
+                if not reached and time.monotonic() - t0 > timeout_s:
+                    logger.warning("Nav timeout")
+                if reached and final_heading is not None:
+                    self._align_heading(final_heading, align_tol_rad)
+            finally:
+                cli.stop_all_motors()
 
         if reached:
             logger.info("Arrived at (%.0f, %.0f)", tx, ty)
@@ -441,19 +451,20 @@ class Navigator:
             return
 
         t0 = time.monotonic()
-        try:
-            while time.monotonic() - t0 <= timeout_s:
-                if self._stop_requested.is_set():
-                    break
-                yaw = cli.pose.rotation.angle_z.radians
-                err = wrap_pi(target_heading - yaw)
-                if abs(err) < tol_rad:
-                    break
-                omega = max(-1.0, min(1.0, err * 2.2)) * turn_speed_mmps
-                cli.drive_wheels(lwheel_speed=-omega, rwheel_speed=omega)
-                time.sleep(0.03)
-        finally:
-            cli.stop_all_motors()
+        with self.motion.begin(self.JOB_ALIGN) as job:
+            try:
+                while time.monotonic() - t0 <= timeout_s:
+                    if job.cancelled:
+                        break
+                    yaw = cli.pose.rotation.angle_z.radians
+                    err = wrap_pi(target_heading - yaw)
+                    if abs(err) < tol_rad:
+                        break
+                    omega = max(-1.0, min(1.0, err * 2.2)) * turn_speed_mmps
+                    cli.drive_wheels(lwheel_speed=-omega, rwheel_speed=omega)
+                    time.sleep(0.03)
+            finally:
+                cli.stop_all_motors()
 
     def _move_forward(self, dist_mm: float, timeout_s: float = 6.0) -> bool:
         """Drive straight ahead ``dist_mm`` using the onboard planner.
@@ -506,6 +517,7 @@ class Navigator:
                 ),
                 drive_to_point=self.drive_to_point,
                 move_forward=self._move_forward,
+                spawn=self.motion.spawn,
             )
         # Refresh cli reference (may reconnect)
         self._cube_approach.cli = self.cli
@@ -602,10 +614,12 @@ class Navigator:
             dy = aim_y - rp.position.y
             return math.sqrt(dx * dx + dy * dy)
 
-        def _reverse_until_contact() -> bool:
+        def _reverse_until_contact(job: MotionToken) -> bool:
             prev_dist = None
             stall = 0
             while True:
+                if job.cancelled:
+                    return False
                 if _is_charging():
                     return True
 
@@ -628,7 +642,7 @@ class Navigator:
                 )
                 time.sleep(0.05)
 
-        def _dock_thread():
+        def _dock_job(job: MotionToken) -> None:
             try:
                 turn_pose = Pose(turn_x, turn_y, 0, angle_z=Angle(radians=dock_heading))
                 logger.info("Driving to 150mm in front of dock")
@@ -637,8 +651,11 @@ class Navigator:
 
                 docked = False
                 for attempt in range(1, DOCK_MAX_RETRIES + 1):
+                    if job.cancelled:
+                        logger.info("Docking cancelled")
+                        break
                     logger.info("Docking attempt %d/%d", attempt, DOCK_MAX_RETRIES)
-                    if _reverse_until_contact():
+                    if _reverse_until_contact(job):
                         docked = True
                         break
 
@@ -662,6 +679,8 @@ class Navigator:
                         )
 
                 self.cli.stop_all_motors()
+                if job.cancelled:
+                    return
 
                 if docked or _is_charging():
                     self._reset_pose_origin()
@@ -671,8 +690,9 @@ class Navigator:
             except Exception as e:  # noqa: BLE001
                 logger.exception("Dock error: %s", e)
 
-        t = threading.Thread(target=_dock_thread, daemon=True)
-        t.start()
+        # One dock job at a time: a new request supersedes the old one.
+        self.motion.cancel(self.JOB_DOCK)
+        self.motion.spawn(self.JOB_DOCK, _dock_job)
 
     # ------------------------------------------------------------------
     # Stop (public motion control)
@@ -681,14 +701,14 @@ class Navigator:
     def stop(self) -> None:
         """Stop all movement.
 
-        Cancels A* path following and test mode, interrupts any active
-        closed-loop drive, clears the published A* path, and stops the
-        motors. A subsequent motion command re-arms movement.
+        Cancels every motion job (navigate, dock, approach, test mode,
+        closed-loop drive) in one call, clears the published A* path, and
+        stops the motors. Jobs begun after the stop are not cancelled, so
+        the next motion command re-arms movement.
         """
-        self._stop_requested.set()
-        self.set_test_mode(False)
-        with self._path_follow_lock:
-            self._path_following = False
+        cancelled = self.motion.cancel_all()
+        if cancelled:
+            logger.info("Cancelled motion jobs: %s", ", ".join(sorted(set(cancelled))))
         if self.world_map is not None:
             self.world_map.clear_astar_path()
         if self.cli is not None:
@@ -701,36 +721,35 @@ class Navigator:
 
     def set_test_mode(self, enabled: bool) -> None:
         """Start or stop the test mode loop."""
-        with self._test_mode_lock:
-            if self._test_mode == enabled:
-                return
-            self._test_mode = enabled
-
-        if enabled:
-            self._test_mode_thread = threading.Thread(
-                target=self._test_mode_loop, daemon=True
-            )
-            self._test_mode_thread.start()
-            logger.info("Test mode ON")
-        else:
+        if not enabled:
+            self.motion.cancel(self.JOB_TEST_MODE)
             logger.info("Test mode OFF")
+            return
+        if self.JOB_TEST_MODE in self.motion.active_names:
+            return
+        self.motion.spawn(self.JOB_TEST_MODE, self._test_mode_loop)
+        logger.info("Test mode ON")
 
-    def _test_mode_loop(self) -> None:
+    def _test_mode_loop(self, job: MotionToken) -> None:
         """Continuously approach cubes with 3 second waits."""
-        while True:
-            with self._test_mode_lock:
-                if not self._test_mode:
-                    return
+        while not job.cancelled:
             if not self.cli or self.world_map is None:
-                time.sleep(1)
+                self._sleep_while_running(job, 1.0)
                 continue
             cubes = self.world_map.get_cubes()
             if not cubes:
-                time.sleep(1)
+                self._sleep_while_running(job, 1.0)
                 continue
             cube_idx = next(iter(cubes))
             cube = cubes[cube_idx]
             cx, cy, _ = cube.position
             logger.info("Test mode: approaching cube %d", cube_idx + 1)
             self.approach_cube_at(cube_idx, float(cx), float(cy))
-            time.sleep(3.0)
+            self._sleep_while_running(job, 3.0)
+
+    @staticmethod
+    def _sleep_while_running(job: MotionToken, seconds: float) -> None:
+        """Sleep in short slices so a cancelled job notices within ~100ms."""
+        deadline = time.monotonic() + seconds
+        while not job.cancelled and time.monotonic() < deadline:
+            time.sleep(0.1)

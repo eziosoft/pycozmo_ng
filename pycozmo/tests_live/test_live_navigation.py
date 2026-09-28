@@ -9,6 +9,7 @@ real world-map data) and ``drive_to`` aims at the robot's own pose
 import json
 import math
 
+from pycozmo.navigation.navigator import Navigator
 from pycozmo.web.msg_router import MsgRouter
 
 
@@ -51,17 +52,16 @@ def test_drive_to_current_pose_no_motion(cozmo):
 def test_router_cancel_reaches_real_navigator(cozmo):
     """End-to-end: navigate_cancel message reaches the real Navigator.
 
-    Would fail if the router still swallowed a signature TypeError —
-    ``_path_following`` would stay True.
+    Would fail if the router still swallowed a signature TypeError — the
+    navigate job would stay live.
     """
     nav = cozmo._brain.navigator
     router = MsgRouter(world_map=cozmo._brain.world_map)
     router.set_actions(navigate=nav.navigate_to)
-    nav._path_following = True  # pretend an A* path is running
 
-    router.route(json.dumps({"type": "navigate_cancel"}))
-
-    assert nav._path_following is False
+    with nav.motion.begin(Navigator.JOB_NAVIGATE) as job:
+        router.route(json.dumps({"type": "navigate_cancel"}))
+        assert job.cancelled
 
 
 def test_drive_short_roundtrip(cozmo, motion_ok):
