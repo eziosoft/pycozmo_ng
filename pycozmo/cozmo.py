@@ -55,21 +55,14 @@ class VisionAPI:
         if brain.cli is None:
             raise RuntimeError("Not connected - call Cozmo.connect() first")
         brain.setup_vision(**kwargs)
-        if resolution is None:
-            resolution = protocol_encoder.ImageResolution.QVGA
-        brain.enable_camera_persistent(brain.cli, resolution)
+        brain.camera.enable(resolution)
 
     def stop(self) -> None:
         """Stop the camera stream (no-op when not connected)."""
         brain = self._brain
-        cli = brain.cli
-        if cli is None:
+        if brain.cli is None:
             return
-        fs = brain.frame_state
-        resolution = fs.camera_resolution or protocol_encoder.ImageResolution.QVGA
-        cli.enable_camera(enable=False, color=False, resolution=resolution)
-        fs.camera_active = False
-        logger.info("Camera stopped")
+        brain.camera.disable()
 
     @property
     def annotation(self):
@@ -407,14 +400,10 @@ class Cozmo:
         """Enable the camera with optional resolution.
 
         Args:
-            resolution: ImageResolution enum (default: QVGA)
-            **kwargs: Additional camera parameters (gain, exposure, etc.)
+            resolution: ImageResolution enum or name (default: QVGA)
+            **kwargs: Camera settings overrides (gain, exposure_ms, ...)
         """
-        if resolution is None:
-            resolution = pycozmo.protocol_encoder.ImageResolution.QVGA
-        self._brain.enable_camera_persistent(self._cli, resolution)
-        if kwargs:
-            self._cli.set_camera_params(**kwargs)
+        self._brain.camera.enable(resolution, **kwargs)
 
     def set_head_angle(self, angle_deg: float, **kwargs):
         """Set head angle in degrees."""
@@ -524,15 +513,11 @@ class Cozmo:
 
         Returns the lateral offset in mm, or None if detection failed.
         """
-        if resolution is None:
-            resolution = protocol_encoder.ImageResolution.QVGA
-
         logger.info("Calibrating robot center (head to max-down)...")
 
-        # Temporarily enable camera with manual exposure for calibration
-        self._cli.enable_camera(enable=True, color=False, resolution=resolution)
-        self._cli.set_camera_params(
-            gain=8.0, exposure_ms=300, auto_exposure_enabled=False
+        # Temporarily switch to manual exposure for calibration
+        self._brain.camera.apply_settings(
+            {"gain": 8.0, "exposure_ms": 300, "auto_exposure_enabled": False}
         )
         time.sleep(2.0)
 
@@ -553,10 +538,10 @@ class Cozmo:
                 if len(offsets) >= 10:
                     break
 
-        # Return head to normal and restore auto-exposure
+        # Return head to normal and restore the standard auto-exposure config
         self._cli.set_head_angle(0.0, accel=30.0, max_speed=30.0)
         time.sleep(1.0)
-        self._brain.post_calibration(self._cli, resolution)
+        self._brain.camera.enable(resolution)
 
         if offsets:
             avg_offset = sum(offsets) / len(offsets)

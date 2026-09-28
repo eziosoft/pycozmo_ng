@@ -5,12 +5,12 @@ import time
 
 
 class FrameState:
-    """Mutable container for frame lifecycle, detections, and camera state.
+    """Mutable container for frame lifecycle and detection state.
 
     Written by :class:`~pycozmo.vision.frame_stage.FrameStage` (frames,
-    detections) and by ``Brain`` (camera lifecycle); read by
-    ``Brain.run()`` for staleness checks and by the ``Cozmo`` facade
-    for frame access.
+    detections); read by ``Brain.run()`` for staleness checks and by the
+    ``Cozmo`` facade for frame access. Camera lifecycle state lives in
+    :class:`~pycozmo.camera.service.CameraService`.
 
     :attr:`frame_lock` protects the scalar lifecycle state;
     :attr:`detections_lock` protects :attr:`latest_detections` only.
@@ -24,11 +24,6 @@ class FrameState:
         self.start_time = time.time()
         self.fps = 0.0
         self.last_frame_time = time.time()
-
-        # Camera lifecycle (COZMO-22) — protected by frame_lock
-        self.camera_active = False
-        self.camera_enabled_at: float | None = None
-        self.camera_resolution = None
 
         # Detections lock (COZMO-3) — protects latest_detections only
         self.detections_lock = threading.Lock()
@@ -85,23 +80,3 @@ class FrameState:
     def last_frame_time(self, value: float) -> None:
         with self.frame_lock:
             self._last_frame_time = value
-
-    @property
-    def camera_active(self) -> bool:
-        with self.frame_lock:
-            return self._camera_active
-
-    @camera_active.setter
-    def camera_active(self, value: bool) -> None:
-        with self.frame_lock:
-            self._camera_active = value
-
-    @property
-    def camera_enabled_at(self) -> float | None:
-        with self.frame_lock:
-            return self._camera_enabled_at
-
-    @camera_enabled_at.setter
-    def camera_enabled_at(self, value: float | None) -> None:
-        with self.frame_lock:
-            self._camera_enabled_at = value

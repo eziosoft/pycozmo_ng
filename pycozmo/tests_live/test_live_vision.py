@@ -42,4 +42,4 @@ def test_vision_stop_turns_camera_off(vision, cozmo):
     The ``vision`` fixture teardown stops again (idempotent).
     """
     vision.stop()
-    assert cozmo._brain.frame_state.camera_active is False
+    assert cozmo._brain.camera.active is False

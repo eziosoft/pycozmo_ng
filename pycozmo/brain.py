@@ -7,10 +7,10 @@ as the public API.
 """
 
 import time
-from typing import ClassVar
 
 import pycozmo
 from pycozmo import event
+from pycozmo.camera.service import CameraService
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.cubes.manager import CubeManager
 from pycozmo.logger import logger, logger_cubes
@@ -52,8 +52,12 @@ class Brain:
         # every module that reads or writes it.
         self.world_map = WorldMap()
 
-        # Web viewer (thin adapter over the world map)
-        self.web_viewer = WebViewerServer(world_map=self.world_map)
+        # Camera lifecycle — single owner of enable/disable, the settings
+        # vocabulary, and what is actually in force (COZMO-22, COZMO-30).
+        self.camera = CameraService()
+
+        # Web viewer (thin adapter over the world map + camera service)
+        self.web_viewer = WebViewerServer(world_map=self.world_map, camera=self.camera)
 
         # Vision components (composition root)
         self.detection_pipeline: DetectionPipeline | None = None
@@ -93,6 +97,7 @@ class Brain:
         self._cli = value
         self.navigator.cli = value
         self.frame_stage.cli = value
+        self.camera.cli = value
 
     def setup_vision(
         self,
@@ -225,55 +230,6 @@ class Brain:
         )
 
     # ------------------------------------------------------------------
-    # Camera lifecycle (COZMO-22)
-    # ------------------------------------------------------------------
-
-    def enable_camera_persistent(self, cli, resolution):
-        """Enable the Cozmo camera at startup and keep it on regardless of viewers.
-
-        Uses Stream mode (Cozmo's native ~30 fps). The camera stays on for
-        the whole session; this is the always-on counterpart to the lazy
-        camera lifecycle (COZMO-22), which toggles a second stream on/off
-        based on browser-tab activity.
-        """
-        fs = self.frame_state
-        fs.camera_resolution = resolution
-        cli.enable_camera(
-            enable=True,
-            color=False,
-            resolution=resolution,
-        )
-        cli.set_camera_params(
-            gain=0.0,
-            exposure_ms=20,
-            auto_exposure_enabled=True,
-        )
-        fs.camera_active = True
-        fs.camera_enabled_at = time.time()
-        logger.info("Cozmo camera enabled at startup")
-
-    def post_calibration(self, cli, resolution) -> None:
-        """Return the camera to live auto-exposure after a manual calibration.
-
-        The camera stays enabled (always-on by default); only the temporary
-        manual-exposure settings used during calibration are undone.
-        """
-        fs = self.frame_state
-        fs.camera_resolution = resolution
-        cli.enable_camera(
-            enable=True,
-            color=False,
-            resolution=resolution,
-        )
-        cli.set_camera_params(
-            gain=0.0,
-            exposure_ms=20,
-            auto_exposure_enabled=True,
-        )
-        fs.camera_active = True
-        fs.camera_enabled_at = time.time()
-
-    # ------------------------------------------------------------------
     # Remote control (COZMO-25)
     # ------------------------------------------------------------------
 
@@ -288,7 +244,7 @@ class Brain:
             navigate=self.navigator.navigate_to,
             approach=self.navigator.approach_cube_at,
             dock=self.navigator.dock,
-            camera_settings=self._on_camera_settings,
+            camera_settings=self.camera.apply_settings,
             say=self._on_say,
             test_mode=self.navigator.set_test_mode,
             astar_toggle=self.navigator.set_astar_enabled,
@@ -302,70 +258,8 @@ class Brain:
         logger.info("A* pathfinding: toggle in the web viewer")
 
     # ------------------------------------------------------------------
-    # Camera settings from browser (COZMO-30)
+    # TTS say (browser)
     # ------------------------------------------------------------------
-
-    # Map resolution name strings to protocol enum values.
-    _RESOLUTION_MAP: ClassVar[dict[str, int]] = {
-        "QQQQVGA": protocol_encoder.ImageResolution.QQQQVGA,
-        "QQQVGA": protocol_encoder.ImageResolution.QQQVGA,
-        "QQVGA": protocol_encoder.ImageResolution.QQVGA,
-        "QVGA": protocol_encoder.ImageResolution.QVGA,
-        "CVGA": protocol_encoder.ImageResolution.CVGA,
-        "VGA": protocol_encoder.ImageResolution.VGA,
-        "SVGA": protocol_encoder.ImageResolution.SVGA,
-        "XGA": protocol_encoder.ImageResolution.XGA,
-        "SXGA": protocol_encoder.ImageResolution.SXGA,
-        "UXGA": protocol_encoder.ImageResolution.UXGA,
-        "QXGA": protocol_encoder.ImageResolution.QXGA,
-        "QUXGA": protocol_encoder.ImageResolution.QUXGA,
-    }
-
-    def _on_camera_settings(self, settings: dict) -> None:
-        """Apply camera settings received from the browser."""
-        cli = self.cli
-        if cli is None:
-            return
-
-        # Apply sensor parameters (gain, exposure, auto-exposure)
-        cli.set_camera_params(
-            gain=settings.get("gain", 0.0),
-            exposure_ms=settings.get("exposure_ms", 100),
-            auto_exposure_enabled=settings.get("auto_exposure_enabled", True),
-        )
-
-        # Apply head light (IR illuminator)
-        cli.set_head_light(settings.get("head_light", False))
-
-        # Apply color mode and resolution (requires re-enabling camera)
-        color = settings.get("color", False)
-        res_name = settings.get("resolution", "QVGA")
-        resolution = self._RESOLUTION_MAP.get(res_name)
-        if resolution is None:
-            resolution = protocol_encoder.ImageResolution.QVGA
-
-        cli.enable_camera(
-            enable=True,
-            color=color,
-            resolution=resolution,
-        )
-
-        # Store resolution in frame state
-        self.frame_state.camera_resolution = resolution
-
-        # Echo settings back so the broadcast includes the latest values
-        self.web_viewer.router.set_camera_settings(settings)
-
-        logger.info(
-            "Camera settings updated: auto_exposure=%s, gain=%s, exposure=%sms, "
-            "color=%s, resolution=%s, head_light=%s",
-            settings.get("auto_exposure_enabled"),
-            settings.get("gain"),
-            settings.get("exposure_ms"),
-            "color" if color else "gray",
-            res_name,
-            "on" if settings.get("head_light") else "off",
-        )
 
     def _on_say(self, text: str) -> None:
         """Handle TTS say request from the browser."""
@@ -457,9 +351,9 @@ class Brain:
                 break
 
             if (
-                fs.camera_active
-                and fs.camera_enabled_at is not None
-                and time.time() - fs.camera_enabled_at > 5.0
+                self.camera.active
+                and self.camera.enabled_at is not None
+                and time.time() - self.camera.enabled_at > 5.0
             ):
                 stale_for = time.time() - fs.last_frame_time
                 if stale_for > 5.0:

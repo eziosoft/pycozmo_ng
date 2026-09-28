@@ -18,8 +18,6 @@ class TestFrameState:
         assert fs.running is True
         assert fs.frame_count == 0
         assert fs.fps == 0.0
-        assert fs.camera_active is False
-        assert fs.camera_enabled_at is None
         assert fs.latest_raw_frame is None
         assert fs.latest_annotated_frame is None
         assert fs.latest_detections == []
@@ -29,11 +27,9 @@ class TestFrameState:
         fs = FrameState()
         fs.frame_count = 42
         fs.fps = 15.5
-        fs.camera_active = True
         fs.latest_detections = [MagicMock()]
         assert fs.frame_count == 42
         assert fs.fps == 15.5
-        assert fs.camera_active is True
         assert len(fs.latest_detections) == 1
 
 

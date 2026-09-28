@@ -126,6 +126,8 @@ class TestMsgRouterDispatch:
         )
         cb.assert_called_once()
         settings = cb.call_args[0][0]
+        # Raw values pass through untouched — normalization and defaults
+        # belong to the settings owner (CameraService), not the router.
         assert settings["auto_exposure_enabled"] is False
         assert settings["gain"] == 0.5
         assert settings["exposure_ms"] == 50
@@ -133,40 +135,23 @@ class TestMsgRouterDispatch:
         assert settings["resolution"] == "VGA"
         assert settings["jpeg_quality"] == 90
         assert settings["head_light"] is False
+        assert "type" not in settings
 
-    def test_camera_settings_defaults(self):
+    def test_camera_settings_ignores_message_type_field(self):
         cb = MagicMock()
         self.router.set_actions(camera_settings=cb)
-        self.router.route(json.dumps({"type": "camera_settings"}))
-        settings = cb.call_args[0][0]
-        assert settings["auto_exposure_enabled"] is True
-        assert settings["gain"] == 0.0
-        assert settings["exposure_ms"] == 100
-        assert settings["color"] is False
-        assert settings["resolution"] == "QVGA"
-        assert settings["jpeg_quality"] == 70
-        assert settings["head_light"] is False
+        self.router.route(json.dumps({"type": "camera_settings", "gain": 1.0}))
+        assert "type" not in cb.call_args[0][0]
 
-    def test_camera_settings_stored(self):
-        cb = MagicMock()
-        self.router.set_actions(camera_settings=cb)
-        self.router.route(
-            json.dumps(
-                {
-                    "type": "camera_settings",
-                    "gain": 1.0,
-                }
-            )
-        )
-        assert self.router.camera_settings["gain"] == 1.0
+    def test_camera_settings_no_listener(self):
+        self.router.route(json.dumps({"type": "camera_settings", "gain": 1.0}))
 
-    def test_set_camera_settings_merges(self):
-        self.router.set_camera_settings({"gain": 0.5, "color": True})
-        assert self.router.camera_settings["gain"] == 0.5
-        assert self.router.camera_settings["color"] is True
-        self.router.set_camera_settings({"color": False})
-        assert self.router.camera_settings["color"] is False
-        assert self.router.camera_settings["gain"] == 0.5
+    def test_camera_settings_listener_exception_swallowed(self):
+        def bad_listener(settings):
+            raise RuntimeError("boom")
+
+        self.router.set_actions(camera_settings=bad_listener)
+        self.router.route(json.dumps({"type": "camera_settings", "gain": 1.0}))
 
 
 class TestMsgRouterListenerSwapping:

@@ -42,9 +42,6 @@ class MsgRouter:
         self._actions: dict[str, Callable[..., None] | None] = {
             name: None for name in self.ACTIONS
         }
-        self._camera_settings: dict = {
-            "head_light": False,
-        }
 
     # -- listener registration -----------------------------------------------
 
@@ -62,13 +59,6 @@ class MsgRouter:
     def get_action(self, name: str) -> Callable[..., None] | None:
         """Return the listener registered for *name*, or None."""
         return self._actions[name]
-
-    def set_camera_settings(self, settings: dict) -> None:
-        self._camera_settings.update(settings)
-
-    @property
-    def camera_settings(self) -> dict:
-        return self._camera_settings
 
     # -- dispatch ------------------------------------------------------------
 
@@ -158,17 +148,9 @@ class MsgRouter:
         listener = self._actions["camera_settings"]
         if listener is not None:
             try:
-                settings = {
-                    "auto_exposure_enabled": msg.get("auto_exposure_enabled", True),
-                    "gain": float(msg.get("gain", 0.0)),
-                    "exposure_ms": int(msg.get("exposure_ms", 100)),
-                    "color": msg.get("color", False),
-                    "resolution": msg.get("resolution", "QVGA"),
-                    "jpeg_quality": int(msg.get("jpeg_quality", 70)),
-                    "head_light": msg.get("head_light", False),
-                }
-                self._camera_settings.update(settings)
-                listener(settings)
+                # Field normalization and defaults live with the settings
+                # owner (CameraService), not here — pass the message on.
+                listener({key: value for key, value in msg.items() if key != "type"})
             except Exception as e:  # noqa: BLE001
                 logger.warning("camera_settings listener failed: %s", e)
 

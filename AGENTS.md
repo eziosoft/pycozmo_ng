@@ -80,6 +80,8 @@ pycozmo/           # Main library
 │   ├── procedural_face.py  # Procedural face rendering
 │   ├── emotions.py         # Emotion definitions
 │   └── expressions/        # Facial expression definitions
+├── camera/        # Camera lifecycle
+│   └── service.py # CameraService — enable/disable, settings vocabulary, state in force
 ├── vision/        # Vision subsystem
 │   ├── annotation.py        # AnnotationEngine — drawing/detection overlays
 │   ├── camera.py            # Camera image decoding

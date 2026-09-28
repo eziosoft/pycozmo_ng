@@ -73,6 +73,23 @@ from the constructor, detectors from `configure()`.
 _Avoid_: FrameHandler, WebStreamer, WebBridge (deleted); calling Brain the
 place where frames are processed.
 
+**Camera service**:
+The single owner of the camera lifecycle, in the `CameraService` class
+(`pycozmo/camera/service.py`): enable/disable, the settings vocabulary
+(`DEFAULTS` — the one defaults table), the resolution name↔enum map, and
+the one packet sequence (`enable_camera` → `set_camera_params` →
+`set_head_light`) behind `enable(...)`, `disable()`, `apply_settings(...)`.
+It records what is actually in force (`settings`, `active`,
+`enabled_at`, `resolution`), so the browser `camera_settings` action is
+registered as `camera.apply_settings` directly and the echo the viewer
+broadcasts is the applied state by construction. `Brain` constructs it
+and injects it into `WebViewerServer`; the `cli` setter propagates the
+client to it.
+_Avoid_: calling `cli.enable_camera` / `cli.set_camera_params` /
+`cli.set_head_light` from anywhere else (facade, demo, Brain);
+storing camera state in `FrameState` or `MsgRouter` (deleted); a second
+settings defaults table.
+
 **Fusion**:
 The process of combining noisy, repeated cube measurements into one stable
 world-frame estimate using confidence-gated, confidence-weighted exponential

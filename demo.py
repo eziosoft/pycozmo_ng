@@ -173,8 +173,7 @@ def main():
                 )
 
             _step(7, "Enabling camera (grayscale, 30 ms exposure)...")
-            cozmo.enable_camera()
-            cozmo.cli.set_camera_params(exposure_ms=30)
+            cozmo.enable_camera(exposure_ms=30)
 
             _step(8, "Measuring camera lateral offset via robot-center markers...")
             cozmo.calibrate_robot_center(timeout_s=30.0)

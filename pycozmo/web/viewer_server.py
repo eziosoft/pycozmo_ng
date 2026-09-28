@@ -22,6 +22,7 @@ Usage:
 import asyncio
 import time
 
+from pycozmo.camera.service import CameraService
 from pycozmo.logger import logger
 from pycozmo.navigation.world_map import WorldMap
 from pycozmo.web.file_server import FileServer
@@ -44,6 +45,8 @@ class WebViewerServer:
     and serializes it to **scene frame** on broadcast for the browser,
     which is a pure display and does no coordinate math. It exposes no
     world-map write methods: callers write to the world map directly.
+    The injected :class:`CameraService` is read-only here — the broadcast
+    reports the camera settings actually in force.
 
     Internally delegates to:
     - :class:`MsgRouter` — browser message dispatch (register listeners in
@@ -58,12 +61,14 @@ class WebViewerServer:
         self,
         host: str = "0.0.0.0",
         port: int = 8765,
-        world_map: WorldMap = None,
+        world_map: WorldMap | None = None,
+        camera: CameraService | None = None,
         broadcast_interval_s: float = 0.05,
     ):
         self.host = host
         self.port = port
         self.world_map = world_map if world_map is not None else WorldMap()
+        self.camera = camera
         self.broadcast_interval_s = broadcast_interval_s
         self._clients: set = set()
         self._start_time = time.time()
@@ -233,7 +238,7 @@ class WebViewerServer:
             self._occupancy_seq_sent,
             self._start_time,
             force_occupancy,
-            camera_settings=self.router.camera_settings,
+            camera_settings=self.camera.settings if self.camera is not None else None,
             face_png=self._latest_face_png,
         )
         if self._latest_occupancy_png is not None and (
