@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 import pycozmo
 from pycozmo.brain import Brain
+from pycozmo.cubes.identity import to_cube_id, to_world_index
 from pycozmo.logger import logger, setup_basic_logging
 from pycozmo.navigation.world_map import CubeState, WorldMap
 from pycozmo.protocol import protocol_encoder
@@ -171,7 +172,8 @@ class WorldMapAPI:
     """Read-only access to the world map (world frame, mm).
 
     Cube-facing members use cube IDs 1-3 like the rest of the public
-    API; the world map itself keys cubes 0-2.
+    API; conversion to the world-map index (0-2) happens here, through
+    ``pycozmo.cubes.identity``.
     """
 
     def __init__(self, brain: Brain):
@@ -186,8 +188,8 @@ class WorldMapAPI:
     def cubes(self) -> dict[int, CubeState]:
         """Get all known cube poses, keyed by cube ID (1-3)."""
         return {
-            cube_idx + 1: state
-            for cube_idx, state in self._world_map.get_cubes().items()
+            to_cube_id(cube_index): state
+            for cube_index, state in self._world_map.get_cubes().items()
         }
 
     @property
@@ -196,8 +198,12 @@ class WorldMapAPI:
         return self._world_map.get_path_points()
 
     def get_cube(self, cube_id: int) -> CubeState | None:
-        """Get one cube's world state by cube ID (1-3), or None if unknown."""
-        return self._world_map.get_cube(cube_id - 1)
+        """Get one cube's world state by cube ID (1-3), or None if unknown.
+
+        Raises:
+            ValueError: If ``cube_id`` is outside 1-3.
+        """
+        return self._world_map.get_cube(to_world_index(cube_id))
 
 
 class SensorsAPI:

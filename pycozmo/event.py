@@ -219,7 +219,8 @@ class EvtCubeDetected(Event):
     Triggered when a cube is first detected in the camera image.
 
     Attributes:
-        detections: List of CubeDetection objects
+        detections: List of CubeDetection objects (each carries
+            ``cube_index``, the world-map index 0-2)
     """
 
 
@@ -228,7 +229,8 @@ class EvtCubeObserved(Event):
     Triggered periodically while one or more cubes are visible.
 
     Attributes:
-        detections: List of CubeDetection objects
+        detections: List of CubeDetection objects (each carries
+            ``cube_index``, the world-map index 0-2)
     """
 
 
@@ -237,7 +239,7 @@ class EvtCubeLost(Event):
     Triggered when a tracked cube is no longer visible.
 
     Attributes:
-        cube_id: ID of the lost cube
+        cube_id: Public ID of the lost cube (1-3)
     """
 
 
@@ -246,7 +248,8 @@ class EvtFaceDetected(Event):
     Triggered when one or more faces are first detected.
 
     Attributes:
-        faces: List of FaceDetection objects
+        faces: List of FaceDetection objects (each carries the ``face_id``
+            assigned for this presence run, 1+)
     """
 
 
@@ -264,7 +267,7 @@ class EvtFaceLost(Event):
     Triggered when a tracked face is no longer visible.
 
     Attributes:
-        face_id: ID of the lost face
+        face_id: ID of the lost face presence run (1+; never reused)
     """
 
 

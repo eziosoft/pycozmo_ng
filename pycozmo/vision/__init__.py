@@ -16,6 +16,7 @@ from pycozmo.vision.cube_detector.detection_pipeline import (
     load_marker_templates,
 )
 from pycozmo.vision.events import DetectionEventDispatcher
+from pycozmo.vision.face_identity import FaceFrame, FaceIdentity
 from pycozmo.vision.frame_stage import FrameStage
 from pycozmo.vision.frame_state import FrameState
 from pycozmo.vision.interfaces import (
@@ -34,6 +35,8 @@ __all__ = [
     "DetectionEventDispatcher",
     "DetectionPipeline",
     "FaceDetector",
+    "FaceFrame",
+    "FaceIdentity",
     "FrameStage",
     "FrameState",
     "RobotCenterDetector",

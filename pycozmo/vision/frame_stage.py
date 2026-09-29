@@ -2,7 +2,8 @@
 
 Owns everything that happens to a camera frame, end to end:
 
-    convert → detect → annotate → publish → dispatch events → feed world map
+    convert → detect → identify → annotate → publish → dispatch events →
+    feed world map
 
 ``Brain`` (the composition root) only constructs and wires the stage; the
 stable dependencies (state containers, world map, web sink) arrive via the
@@ -21,12 +22,14 @@ from PIL import Image
 
 from pycozmo import event
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
+from pycozmo.cubes.identity import to_cube_id
 from pycozmo.display.expressions import Happiness
 from pycozmo.logger import logger, logger_cubes
 from pycozmo.navigation.world_map import WorldMap
 from pycozmo.vision.annotation import AnnotationEngine
 from pycozmo.vision.cube_detector.detection_pipeline import DetectionPipeline
 from pycozmo.vision.events import DetectionEventDispatcher
+from pycozmo.vision.face_identity import FaceFrame, FaceIdentity
 from pycozmo.vision.frame_state import FrameState
 from pycozmo.vision.occupancy_map.floor_pipeline import FloorPipeline
 from pycozmo.web.viewer_server import WebViewerServer
@@ -60,6 +63,9 @@ class FrameStage:
         self.annotation_engine: AnnotationEngine | None = None
         self.event_dispatcher: DetectionEventDispatcher | None = None
         self.floor_pipeline: FloorPipeline | None = None
+        # Face presence identity; replaced by the composition root's
+        # instance on configure() (fresh ID numbering per vision session).
+        self.face_identity = FaceIdentity()
 
         # Frame gating — configure() overrides
         self.process_every_n_frames = 1
@@ -74,6 +80,7 @@ class FrameStage:
         detection_pipeline: DetectionPipeline,
         annotation_engine: AnnotationEngine,
         event_dispatcher: DetectionEventDispatcher,
+        face_identity: FaceIdentity,
         floor_pipeline: FloorPipeline | None = None,
         process_every_n_frames: int = 1,
         undistort: bool = False,
@@ -86,6 +93,7 @@ class FrameStage:
         self.detection_pipeline = detection_pipeline
         self.annotation_engine = annotation_engine
         self.event_dispatcher = event_dispatcher
+        self.face_identity = face_identity
         self.floor_pipeline = floor_pipeline
         self.process_every_n_frames = process_every_n_frames
         self.undistort = undistort
@@ -148,6 +156,10 @@ class FrameStage:
             else:
                 face_detections = []
 
+            # Assign face identity BEFORE annotation reads it. A skipped
+            # frame (face_due False) is "not measured", not "face gone".
+            face_frame = self.face_identity.update(face_detections, measured=face_due)
+
             # Annotate image (single copy inside)
             annotated_image = self.annotation_engine.detect_and_annotate(
                 undistorted_image,
@@ -162,13 +174,15 @@ class FrameStage:
             # Dispatch cube/face events
             if self.event_dispatcher is not None:
                 self.event_dispatcher.dispatch_cube_events(cli, cube_detections)
-                self.event_dispatcher.dispatch_face_events(cli, face_detections)
+                self.event_dispatcher.dispatch_face_events(
+                    cli, face_detections, face_frame
+                )
 
             # Set face expression based on detection
             self._update_face_expression(cli, face_detections, face_due)
 
             # Feed measurements into the world map, then wake the browser
-            self._feed_world_map(cli)
+            self._feed_world_map(cli, face_detections, face_frame)
 
             # Floor projection + occupancy (optional)
             self._process_floor(cli, img_bgr, head_angle_rad)
@@ -200,11 +214,6 @@ class FrameStage:
         with self.fs.detections_lock:
             self.fs.latest_detections = cube_detections
 
-        # Record the current frame index for every detected cube
-        detected_cube_ids = {det.cube_id for det in cube_detections}
-        for cube_id in detected_cube_ids:
-            self.ct.last_seen_frame[cube_id] = self.fs.frame_count
-
         if annotated_image is not None:
             self.web_viewer.push_annotated_frame(annotated_image)
 
@@ -219,11 +228,12 @@ class FrameStage:
             # Only clear when we actually ran detection and found nothing
             anim_ctrl.clear_face_expression()
 
-    def _feed_world_map(self, cli) -> None:
+    def _feed_world_map(self, cli, face_detections, face_frame: FaceFrame) -> None:
         """Feed cube, face, and procedural-face measurements into the world map.
 
         Cubes that have been invalidated (moved, forget_cube) are
         suppressed until they are re-detected stably. (COZMO-34)
+        Face identities that ended this frame are dropped from the map.
         """
         if not self.detection_pipeline or self.world_map is None:
             return
@@ -233,7 +243,7 @@ class FrameStage:
         # Read persistent lateral offset
         lateral_offset = self.detection_pipeline.camera_lateral_offset_mm
 
-        # Synchronized access to suppress state
+        # Synchronized access to suppress state (keys are cube indices 0-2)
         with self.ct.suppress_lock:
             suppressed = set(self.ct.suppress.get("ids", set()))
             fresh_frames = dict(self.ct.suppress.get("fresh_frames", {}))
@@ -241,19 +251,20 @@ class FrameStage:
             new_fresh_frames = {}
 
         for m in self.detection_pipeline.get_cube_measurements():
-            cube_id = m["cube_id"]
-            if cube_id in suppressed:
-                n = fresh_frames.get(cube_id, 0) + 1
-                new_fresh_frames[cube_id] = n
+            cube_index = m["cube_index"]
+            if cube_index in suppressed:
+                n = fresh_frames.get(cube_index, 0) + 1
+                new_fresh_frames[cube_index] = n
                 if n < fresh_frames_needed:
                     continue
-                suppressed.discard(cube_id)
+                suppressed.discard(cube_index)
                 logger.info(
-                    "Cube %d re-settled - re-enabling measurements", cube_id + 1
+                    "Cube %d re-settled - re-enabling measurements",
+                    to_cube_id(cube_index),
                 )
 
             self.world_map.update_cube_measurement(
-                cube_id,
+                cube_index,
                 m["position"],
                 m["rotation_matrix"],
                 m["confidence"],
@@ -267,16 +278,19 @@ class FrameStage:
             self.ct.suppress["ids"] = suppressed
             self.ct.suppress["fresh_frames"] = new_fresh_frames
 
-        # Feed face measurements into world map
-        for fm in self.detection_pipeline.get_face_measurements():
+        # Feed face measurements (identity assigned earlier this frame),
+        # then drop presence epochs that ended.
+        for det in face_detections:
             self.world_map.update_face_measurement(
-                fm["face_id"],
-                fm["position"],
-                fm["confidence"],
+                det.face_id,
+                det.position_mm,
+                det.confidence,
                 head_angle,
                 camera_lateral_offset_mm=lateral_offset,
-                label=f"Face {fm['face_id']}",
+                label=f"Face {det.face_id}",
             )
+        if face_frame.ended is not None:
+            self.world_map.forget_face(face_frame.ended)
 
         # Push procedural face image to the browser
         anim_ctrl = getattr(cli, "anim_controller", None)

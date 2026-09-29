@@ -92,6 +92,7 @@ pycozmo/           # Main library
 │   ├── detection_pipeline.py # Core detection logic (DetectionPipeline, CubeDetection)
 │   ├── events.py            # DetectionEventDispatcher — cube/face events
 │   ├── face_detector.py     # FaceDetector (Haar cascade)
+│   ├── face_identity.py   # FaceIdentity/FaceFrame — face presence epochs (ID per run)
 │   ├── floor_pipeline.py    # FloorPipeline — floor projection + occupancy
 │   ├── floor_projector.py   # FloorProjector — bird's-eye floor view
 │   ├── floor_pipeline.py    # OccupancyMap — world-frame occupancy grid
@@ -136,6 +137,7 @@ pycozmo/           # Main library
 ├── cubes/         # Cube BLE management
 │   ├── cycler.py      # CubeCycler — rapid BLE cycling
 │   ├── cube_tracking_state.py # CubeTrackingState — factory mapping, BLE cycler, movement
+│   ├── identity.py     # Cube ID 1-3 ↔ cube index 0-2 conversion (the only ±1)
 │   ├── manager.py     # CubeManager — mapping, connection state
 │   └── cube_imu.py    # CubeMoveDetector — accelerometer movement detection
 ├── web/           # Web viewer display adapter

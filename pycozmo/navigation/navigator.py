@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import numpy as np
 
 import pycozmo
+from pycozmo.cubes.identity import to_cube_id, to_world_index
 from pycozmo.logger import logger
 from pycozmo.navigation.astar import AStarPlanner
 from pycozmo.navigation.astar_follower import AStarFollower
@@ -408,12 +409,13 @@ class Navigator:
         if wm is None:
             logger.warning("Approach: world map not available")
             return False
-        cube = wm.get_cube(cube_id - 1)
+        cube_index = to_world_index(cube_id)
+        cube = wm.get_cube(cube_index)
         if cube is None:
             logger.warning("Approach: cube %d not in world map", cube_id)
             return False
         position = cube.position
-        self.approach_cube_at(cube_id - 1, float(position[0]), float(position[1]))
+        self.approach_cube_at(cube_index, float(position[0]), float(position[1]))
         return True
 
     def approach_cube_at(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
@@ -488,11 +490,11 @@ class Navigator:
             if not cubes:
                 self._sleep_while_running(job, 1.0)
                 continue
-            cube_idx = next(iter(cubes))
-            cube = cubes[cube_idx]
+            cube_index = next(iter(cubes))
+            cube = cubes[cube_index]
             cx, cy, _ = cube.position
-            logger.info("Test mode: approaching cube %d", cube_idx + 1)
-            self.approach_cube_at(cube_idx, float(cx), float(cy))
+            logger.info("Test mode: approaching cube %d", to_cube_id(cube_index))
+            self.approach_cube_at(cube_index, float(cx), float(cy))
             self._sleep_while_running(job, 3.0)
 
     @staticmethod

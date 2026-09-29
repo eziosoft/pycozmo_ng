@@ -9,6 +9,7 @@ import math
 import time
 
 from pycozmo import coords
+from pycozmo.cubes.identity import cube_label
 
 # How far (mm) to lift the rendered path trail above the scene ground plane
 # (scene +Y). The trail is a zero-thickness line at ground level, so without a
@@ -83,14 +84,14 @@ def build_state_json(
     robot_pos = coords.world_to_scene_point(world["robot"]["position"])
     robot_heading = coords.world_yaw_to_scene(world["robot"]["yaw"])
 
-    # Cubes: world frame -> scene frame.
+    # Cubes: world frame -> scene frame (identity at the wire boundary).
     cube_list = []
-    for cube_id, cube_state in world["cubes"].items():
+    for cube_index, cube_state in world["cubes"].items():
         pos_gl = coords.world_to_scene_point(cube_state["position"])
         rot_gl = coords.world_to_scene_rotation(cube_state["rotation"])
         cube_list.append(
             {
-                "id": f"cube_{cube_id + 1}",
+                "id": cube_label(cube_index),
                 "position": [float(v) for v in pos_gl],
                 "rotation": [row.tolist() for row in rot_gl],
                 "size": 44,

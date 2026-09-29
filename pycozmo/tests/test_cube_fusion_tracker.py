@@ -11,7 +11,7 @@ from pycozmo.vision.cube_detector.cube_detector import CubeFusionTracker
 
 
 def _make_detection(
-    cube_id: int,
+    cube_index: int,
     face_type: str = "wall",
     rotation_deg: int = 0,
     score: float = 0.9,
@@ -24,7 +24,7 @@ def _make_detection(
     if rotation_matrix is None:
         rotation_matrix = np.eye(3, dtype=np.float64)
     return {
-        "cube_id": cube_id,
+        "cube_index": cube_index,
         "face_type": face_type,
         "rotation": rotation_deg,
         "score": score,
@@ -58,7 +58,7 @@ class TestCubeFusionTrackerAPI:
 class TestCubeFusionTrackerFusion:
     def test_single_detection_fused(self):
         tracker = CubeFusionTracker()
-        det = _make_detection(cube_id=0, score=0.85)
+        det = _make_detection(cube_index=0, score=0.85)
         fused = tracker.update([det])
         assert 0 in fused
         assert fused[0]["confidence"] == pytest.approx(0.85)
@@ -66,8 +66,12 @@ class TestCubeFusionTrackerFusion:
 
     def test_multiple_detections_same_cube(self):
         tracker = CubeFusionTracker()
-        d1 = _make_detection(cube_id=0, score=0.9, position=np.array([10.0, 0.0, 300.0]))
-        d2 = _make_detection(cube_id=0, score=0.7, position=np.array([-10.0, 0.0, 300.0]))
+        d1 = _make_detection(
+            cube_index=0, score=0.9, position=np.array([10.0, 0.0, 300.0])
+        )
+        d2 = _make_detection(
+            cube_index=0, score=0.7, position=np.array([-10.0, 0.0, 300.0])
+        )
         fused = tracker.update([d1, d2])
         assert 0 in fused
         assert fused[0]["num_faces"] == 2
@@ -77,8 +81,8 @@ class TestCubeFusionTrackerFusion:
 
     def test_different_cubes_separated(self):
         tracker = CubeFusionTracker()
-        d0 = _make_detection(cube_id=0)
-        d1 = _make_detection(cube_id=1)
+        d0 = _make_detection(cube_index=0)
+        d1 = _make_detection(cube_index=1)
         fused = tracker.update([d0, d1])
         assert 0 in fused
         assert 1 in fused
@@ -91,7 +95,7 @@ class TestCubeFusionTrackerFusion:
     def test_stateless_between_frames(self):
         """Each update() call is independent — no state leaks."""
         tracker = CubeFusionTracker()
-        d = _make_detection(cube_id=0, score=0.9)
+        d = _make_detection(cube_index=0, score=0.9)
         fused1 = tracker.update([d])
         fused2 = tracker.update([d])
         # Both frames produce independent results with the same confidence
@@ -102,7 +106,7 @@ class TestCubeFusionTrackerFusion:
         tracker = CubeFusionTracker(cube_size_mm=44.0)
         # Face at z=300, normal toward camera (+Z), so center at z=300-22=278
         det = _make_detection(
-            cube_id=0,
+            cube_index=0,
             position=np.array([0.0, 0.0, 300.0]),
             rotation_matrix=np.eye(3),
         )
@@ -117,5 +121,6 @@ class TestCubeFusionTrackerCleanup:
         import inspect
 
         import pycozmo.vision.cube_detector.cube_detector as mod
+
         source = inspect.getsource(mod)
         assert "sys.path.append" not in source

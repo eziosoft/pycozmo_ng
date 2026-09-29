@@ -7,6 +7,7 @@ in headless contexts.
 
 from PIL import Image, ImageDraw, ImageFont
 
+from pycozmo.cubes.identity import to_cube_id
 from pycozmo.vision.cube_detector.detection_pipeline import CubeDetection
 from pycozmo.vision.face_detector import FaceDetection
 from pycozmo.vision.calibration.robot_center import RobotCenterResult
@@ -71,13 +72,8 @@ class AnnotationEngine:
 
         font = self._get_font(12)
 
-        for i, det in enumerate(detections):
-            if det.cube_id is not None:
-                color = self.annotation_colors[
-                    det.cube_id % len(self.annotation_colors)
-                ]
-            else:
-                color = self.annotation_colors[i % len(self.annotation_colors)]
+        for det in detections:
+            color = self.annotation_colors[det.cube_index % len(self.annotation_colors)]
 
             x1, y1 = det.x, det.y
             x2, y2 = det.x + det.width, det.y + det.height
@@ -89,8 +85,8 @@ class AnnotationEngine:
             )
 
             label_parts = []
-            if self.show_cube_id and det.cube_id is not None:
-                label_parts.append(f"ID:{det.cube_id}")
+            if self.show_cube_id:
+                label_parts.append(f"ID:{to_cube_id(det.cube_index)}")
             if self.show_confidence:
                 label_parts.append(f"{det.confidence:.2f}")
             if self.show_distance and det.distance is not None:
@@ -137,7 +133,7 @@ class AnnotationEngine:
             x2, y2 = det.x + det.width, det.y + det.height
             draw.rectangle([(x1, y1), (x2, y2)], outline=color, width=2)
 
-            face_id = getattr(det, "_face_id", "?")
+            face_id = det.face_id
             z_mm = det.position_mm[2]
             label = f"Face {face_id} | {z_mm:.0f}mm"
             draw.text((x1, y1 - 13), label, fill=color, font=font)

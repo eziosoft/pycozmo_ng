@@ -174,7 +174,7 @@ class WorldMap:
         self._robot_yaw: float = 0.0
         self._robot_origin_id: int | None = None
 
-        # Cubes: cube_id (0-indexed) -> fused world-frame state.
+        # Cubes: cube_index (world index 0-2) -> fused world-frame state.
         self._cubes: dict[int, CubeState] = {}
 
         # Faces: face_id -> fused world-frame state.
@@ -265,7 +265,7 @@ class WorldMap:
 
     def update_cube_measurement(
         self,
-        cube_id: int,
+        cube_index: int,
         position_cam: np.ndarray,
         rotation_cam: np.ndarray,
         confidence: float,
@@ -281,7 +281,8 @@ class WorldMap:
         position, SLERP on rotation) against the previous world-frame state.
 
         Args:
-            cube_id: 0-indexed cube id (0..2).
+            cube_index: World-map index (0-2; public cube ID = index + 1,
+                see ``pycozmo.cubes.identity``).
             position_cam: Cube center position in camera frame (mm).
             rotation_cam: 3x3 cube rotation matrix in camera frame.
             confidence: Detection confidence (0..1).
@@ -311,10 +312,10 @@ class WorldMap:
                 self._robot_yaw,
                 camera_lateral_offset_mm,
             )
-            prev = self._cubes.get(cube_id)
+            prev = self._cubes.get(cube_index)
             now = time.monotonic()
             if prev is None:
-                self._cubes[cube_id] = CubeState(
+                self._cubes[cube_index] = CubeState(
                     position=pos_world,
                     rotation_matrix=rot_world,
                     confidence=confidence,
@@ -343,7 +344,7 @@ class WorldMap:
             slerp = Slerp([0, 1], key_rots)
             rotation = slerp(rot_blend).as_matrix()
 
-            self._cubes[cube_id] = CubeState(
+            self._cubes[cube_index] = CubeState(
                 position=position,
                 rotation_matrix=rotation,
                 confidence=confidence,
@@ -354,14 +355,14 @@ class WorldMap:
                 updated_at=now,
             )
 
-    def forget_cube(self, cube_id: int) -> None:
+    def forget_cube(self, cube_index: int) -> None:
         """Drop a cube from the map.
 
         Called when the cube's IMU detects movement — the old position is stale
         and the cube will be re-placed on the next camera frame.
         """
         with self._lock:
-            self._cubes.pop(cube_id, None)
+            self._cubes.pop(cube_index, None)
 
     # -- faces --------------------------------------------------------------
 
@@ -380,12 +381,12 @@ class WorldMap:
         against the previous world-frame state.
 
         Args:
-            face_id: Unique face id (assigned by the caller).
+            face_id: Face presence ID assigned by ``FaceIdentity`` (1+).
             position_cam: Face centre in camera frame (mm).
             confidence: Detection confidence (0..1).
             head_angle_rad: Head pitch at measurement time (radians).
             camera_lateral_offset_mm: Lateral offset of camera from robot centre.
-            label: Human-readable label (e.g. "Face 0").
+            label: Human-readable label (e.g. "Face 1").
         """
         with self._lock:
             pos_world, _rot_world = camera_to_world(
@@ -419,7 +420,11 @@ class WorldMap:
             )
 
     def forget_face(self, face_id: int) -> None:
-        """Remove a tracked face from the map."""
+        """Remove a tracked face from the map.
+
+        Called by ``FrameStage`` when ``FaceIdentity`` reports that a
+        presence ended (``FaceFrame.ended``).
+        """
         with self._lock:
             self._faces.pop(face_id, None)
 
@@ -459,22 +464,22 @@ class WorldMap:
             return self._robot_position.copy(), self._robot_yaw
 
     def get_cubes(self) -> dict[int, CubeState]:
-        """Return a copy of the fused cube states (world frame)."""
+        """Return a copy of the fused cube states, keyed by cube index (0-2)."""
         with self._lock:
             return {
-                cube_id: self._copy_cube_state(cube_state)
-                for cube_id, cube_state in self._cubes.items()
+                cube_index: self._copy_cube_state(cube_state)
+                for cube_index, cube_state in self._cubes.items()
             }
 
-    def get_cube(self, cube_id: int) -> CubeState | None:
+    def get_cube(self, cube_index: int) -> CubeState | None:
         """Return a copy of one fused cube state, or None if unknown.
 
-        ``cube_id`` is the 0-indexed world-map key (``cube_id = physical
-        cube ID - 1``). Single locked lookup — cheaper than
+        ``cube_index`` is the world-map key (0-2; ``cube_index = cube ID - 1``,
+        see ``pycozmo.cubes.identity``). Single locked lookup — cheaper than
         :meth:`get_cubes` when only one cube is needed.
         """
         with self._lock:
-            cube_state = self._cubes.get(cube_id)
+            cube_state = self._cubes.get(cube_index)
             return self._copy_cube_state(cube_state) if cube_state else None
 
     def get_path_points(self) -> list:
@@ -485,21 +490,21 @@ class WorldMap:
     def get_world_state(self) -> dict:
         """Return the full world state as plain data (world frame).
 
-        Keys: ``robot`` (position, yaw, origin_id), ``cubes`` (cube_id ->
+        Keys: ``robot`` (position, yaw, origin_id), ``cubes`` (cube_index ->
         position/rotation/confidence), ``faces`` (face_id ->
         position/confidence/label), ``path_points``.
         """
         with self._lock:
             robot_pos = self._robot_position.tolist()
             cubes = {
-                cube_id: {
+                cube_index: {
                     "position": cube_state.position.tolist(),
                     "rotation": cube_state.rotation_matrix.tolist(),
                     "confidence": cube_state.confidence,
                     "face_idx": cube_state.face_idx,
                     "face_rotation": cube_state.face_rotation,
                 }
-                for cube_id, cube_state in self._cubes.items()
+                for cube_index, cube_state in self._cubes.items()
             }
             faces = {
                 face_id: {

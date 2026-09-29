@@ -38,8 +38,9 @@ class CubeDetection:
     # Estimated distance from robot (in meters)
     distance: float
 
-    # Cube ID (1-indexed for display)
-    cube_id: int
+    # Cube index (world-map index 0-2; public cube IDs are 1-3 — see
+    # pycozmo.cubes.identity). Same key as WorldMap and fused_cubes.
+    cube_index: int
 
     # Timestamp of detection
     timestamp: float = 0.0
@@ -82,7 +83,6 @@ class DetectionPipeline:
 
         # Face detection
         self.face_detector = face_detector
-        self._face_measurements: list[dict] = []
         self.enable_face_detection = True
 
         # Robot center detection
@@ -98,7 +98,7 @@ class DetectionPipeline:
         Get the fused per-cube states from the current frame.
 
         Returns:
-            Dict of {cube_id: cube_state} containing position, rotation_matrix,
+            Dict of {cube_index: cube_state} containing position, rotation_matrix,
             confidence, etc. Poses are in **camera frame** — the temporal
             fusion and world-frame transform live in ``WorldMap``.
         """
@@ -113,15 +113,15 @@ class DetectionPipeline:
         world frame and fuses them there.
 
         Returns:
-            List of dicts with keys: ``cube_id`` (0-indexed), ``position``
+            List of dicts with keys: ``cube_index`` (0-2), ``position``
             (camera frame mm), ``rotation_matrix`` (camera frame),
             ``confidence``, ``rotation_source``.
         """
         measurements = []
-        for cube_id, cube_state in self.fused_cubes.items():
+        for cube_index, cube_state in self.fused_cubes.items():
             measurements.append(
                 {
-                    "cube_id": cube_id,
+                    "cube_index": cube_index,
                     "position": cube_state["position"],
                     "rotation_matrix": cube_state["rotation_matrix"],
                     "confidence": cube_state["confidence"],
@@ -136,7 +136,9 @@ class DetectionPipeline:
 
         Always returns at most one detection.  No multi-face tracking —
         we cannot re-identify faces across frames, so we just report the
-        single best (largest / closest) face each frame.
+        single best (largest / closest) face each frame.  Identity across
+        frames is assigned downstream by ``FaceIdentity`` (presence
+        epochs); this method only detects.
 
         Args:
             img_bgr: Image as BGR numpy array (already converted by caller).
@@ -150,24 +152,9 @@ class DetectionPipeline:
         if not self.enable_face_detection:
             return []
 
-        detections = self.face_detector.detect(img_bgr)
+        return self.face_detector.detect(img_bgr)
 
-        # Store measurements for downstream (WorldMap, events)
-        self._face_measurements = [
-            {
-                "face_id": 0,
-                "position": det.position_mm,
-                "confidence": det.confidence,
-            }
-            for det in detections
-        ]
-        return detections
-
-    def get_face_measurements(self) -> list[dict]:
-        """Return the latest face measurements for feeding into WorldMap."""
-        return list(self._face_measurements)
-
-    def forget_cube(self, cube_id):
+    def forget_cube(self, cube_index):
         """Remove a cube from the fusion tracker.
 
         Called when the cube's IMU detects movement — the old position is
@@ -245,12 +232,12 @@ class DetectionPipeline:
 
             # Convert to CubeDetection format
             detections = []
-            for cube_id, cube_state in self.fused_cubes.items():
+            for cube_index, cube_state in self.fused_cubes.items():
                 pos = cube_state["position"]
                 distance = np.linalg.norm(pos) / 1000.0  # Convert mm to meters
 
                 # Get bounding box from detections
-                cube_results = [r for r in results if r["cube_id"] == cube_id]
+                cube_results = [r for r in results if r["cube_index"] == cube_index]
                 if cube_results:
                     corner_list = []
                     for r in cube_results:
@@ -273,7 +260,7 @@ class DetectionPipeline:
                             height=max(1, y_max - y_min),
                             confidence=cube_state["confidence"],
                             distance=distance,
-                            cube_id=cube_id + 1,  # 1-indexed for display
+                            cube_index=cube_index,
                         )
                         detections.append(det)
 
@@ -316,9 +303,7 @@ def load_marker_templates(marker_dir: str | None = None) -> list[np.ndarray]:
     import os
 
     if marker_dir is None:
-        marker_dir = os.path.join(
-            os.path.dirname(__file__), "", "cube_faces"
-        )
+        marker_dir = os.path.join(os.path.dirname(__file__), "", "cube_faces")
 
     if not os.path.exists(marker_dir):
         raise FileNotFoundError(f"Marker directory not found: {marker_dir}")

@@ -12,6 +12,7 @@ import time
 import numpy as np
 
 import pycozmo
+from pycozmo.cubes.identity import to_cube_id
 from pycozmo.logger import logger
 from pycozmo.navigation.motion_token import MotionToken
 from pycozmo.navigation.steering import wrap_pi
@@ -291,7 +292,9 @@ class CubeApproach:
         progress, the request is ignored.
         """
         if not self._approach_lock.acquire(blocking=False):
-            logger.warning("Approach busy - ignoring request for cube %d", cube_idx + 1)
+            logger.warning(
+                "Approach busy - ignoring request for cube %d", to_cube_id(cube_idx)
+            )
             return
 
         def _run_guarded(job: MotionToken) -> None:
@@ -313,7 +316,7 @@ class CubeApproach:
         try:
             state = self._get_cube_state(cube_idx)
             if state is None:
-                logger.warning("Cube %d not in world map", cube_idx + 1)
+                logger.warning("Cube %d not in world map", to_cube_id(cube_idx))
                 return
 
             robot_pose = self.cli.pose
@@ -330,7 +333,7 @@ class CubeApproach:
 
             logger.info(
                 "Approaching cube %d at (%.0f, %.0f) face normal=(%.2f, %.2f)",
-                cube_idx + 1,
+                to_cube_id(cube_idx),
                 cube_x,
                 cube_y,
                 nx,
@@ -420,7 +423,7 @@ class CubeApproach:
                 self.cli.stop_all_motors()
                 return
 
-            logger.info("Aligned with cube %d", cube_idx + 1)
+            logger.info("Aligned with cube %d", to_cube_id(cube_idx))
 
             # Alignment verification with retry
             attempts = 0
@@ -464,7 +467,7 @@ class CubeApproach:
 
             logger.info(
                 "Aligned - grabbing cube %d: +%.0fmm, lift to %.0fmm",
-                cube_idx + 1,
+                to_cube_id(cube_idx),
                 self.GRAB_FORWARD_MM,
                 pycozmo.MAX_LIFT_HEIGHT.mm,
             )
@@ -474,6 +477,6 @@ class CubeApproach:
                 accel=self.LIFT_UP_ACCEL,
                 max_speed=self.LIFT_UP_SPEED,
             )
-            logger.info("Cube %d grabbed (lift up)", cube_idx + 1)
+            logger.info("Cube %d grabbed (lift up)", to_cube_id(cube_idx))
         except Exception as e:  # noqa: BLE001
             logger.exception("Approach error: %s", e)

@@ -38,7 +38,6 @@ class TestCubeTrackingState:
         ct = CubeTrackingState()
         assert ct.cube_factory_id_map == {}
         assert ct.object_id_map == {}
-        assert ct.last_seen_frame == {}
         assert ct.cycler is None
         assert ct.move_detectors == {}
         assert ct.suppress["fresh_frames_needed"] == 5
@@ -47,10 +46,8 @@ class TestCubeTrackingState:
         ct = CubeTrackingState()
         ct.cube_factory_id_map[1] = 0x12345678
         ct.object_id_map[1] = 42
-        ct.last_seen_frame[1] = 100
         assert ct.cube_factory_id_map[1] == 0x12345678
         assert ct.object_id_map[1] == 42
-        assert ct.last_seen_frame[1] == 100
 
 
 class TestDockState:

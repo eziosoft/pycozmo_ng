@@ -22,7 +22,8 @@ class CubeDetector(Protocol):
         """Detect marker faces in an image.
 
         Returns:
-            List of dicts with keys: cube_id, corners, pose, confidence, etc.
+            List of dicts with keys: cube_index (world index 0-2),
+            corners, pose, confidence, etc.
         """
         ...
 
@@ -36,8 +37,8 @@ class CubeFusionTracker(Protocol):
         """Fuse detections into coherent cube poses.
 
         Returns:
-            Dict mapping cube_id -> fused state with position, rotation_matrix,
-            confidence, num_faces, rotation_source.
+            Dict mapping cube_index (world index 0-2) -> fused state with
+            position, rotation_matrix, confidence, num_faces, rotation_source.
         """
         ...
 

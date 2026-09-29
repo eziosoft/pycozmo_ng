@@ -61,7 +61,12 @@ def _ensure_cascade() -> str:
 
 @dataclass
 class FaceDetection:
-    """A detected face with 2D bounding box and estimated 3D position."""
+    """A detected face with 2D bounding box and estimated 3D position.
+
+    ``face_id`` is assigned per frame by ``FaceIdentity`` (presence
+    epoch, 1-based) before annotation and event dispatch read it; it is
+    ``None`` before that assignment.
+    """
 
     x: int
     y: int
@@ -69,6 +74,7 @@ class FaceDetection:
     height: int
     confidence: float
     position_mm: np.ndarray  # (3,) camera frame, mm
+    face_id: int | None = None
 
 
 class FaceDetector:

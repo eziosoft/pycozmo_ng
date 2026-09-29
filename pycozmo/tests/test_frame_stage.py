@@ -14,12 +14,26 @@ from PIL import Image
 from pycozmo import event
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.display.expressions import Happiness
+from pycozmo.vision.face_identity import FaceIdentity
 from pycozmo.vision.frame_stage import FrameStage
 from pycozmo.vision.frame_state import FrameState
 
 
 def make_image() -> Image.Image:
     return Image.new("RGB", (8, 6), (255, 0, 0))
+
+
+def make_face(face_id=None) -> SimpleNamespace:
+    """Minimal face detection stand-in (identity is assigned by FaceIdentity)."""
+    return SimpleNamespace(
+        x=1,
+        y=1,
+        width=4,
+        height=4,
+        confidence=0.9,
+        position_mm=(100.0, 0.0, 500.0),
+        face_id=face_id,
+    )
 
 
 def make_cli(**overrides):
@@ -49,11 +63,11 @@ def make_stage(**configure_overrides):
     detection_pipeline = Mock()
     detection_pipeline.camera_lateral_offset_mm = 0.0
     detection_pipeline.robot_center_result = None
-    detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_id=0)]
+    detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=0)]
     detection_pipeline.detect_faces.return_value = []
     detection_pipeline.get_cube_measurements.return_value = [
         {
-            "cube_id": 0,
+            "cube_index": 0,
             "position": (100.0, 0.0, 15.0),
             "rotation_matrix": [[1.0, 0.0, 0.0]] * 3,
             "confidence": 0.9,
@@ -61,12 +75,12 @@ def make_stage(**configure_overrides):
             "rotation_source": "pnp",
         }
     ]
-    detection_pipeline.get_face_measurements.return_value = []
 
     annotation_engine = Mock()
     annotation_engine.detect_and_annotate.return_value = make_image()
 
     event_dispatcher = Mock()
+    face_identity = FaceIdentity()
 
     floor_pipeline = Mock()
     floor_img = object()
@@ -83,6 +97,7 @@ def make_stage(**configure_overrides):
         detection_pipeline=detection_pipeline,
         annotation_engine=annotation_engine,
         event_dispatcher=event_dispatcher,
+        face_identity=face_identity,
         floor_pipeline=floor_pipeline,
         **configure_overrides,
     )
@@ -95,6 +110,7 @@ def make_stage(**configure_overrides):
         detection_pipeline=detection_pipeline,
         annotation_engine=annotation_engine,
         event_dispatcher=event_dispatcher,
+        face_identity=face_identity,
         floor_pipeline=floor_pipeline,
         floor_img=floor_img,
         occ_grid=occ_grid,
@@ -117,17 +133,17 @@ def test_full_sequence_updates_every_sink():
     h.detection_pipeline.detect_cubes.assert_called_once()
     assert h.detection_pipeline.detect_cubes.call_args.args[1] == 0.5
 
-    # Annotated frame + detections stored, cube stamped as seen
+    # Annotated frame + detections stored
     assert h.fs.latest_annotated_frame is not None
     assert h.fs.latest_detections == h.detection_pipeline.detect_cubes.return_value
-    assert h.ct.last_seen_frame[0] == h.fs.frame_count
 
     # Published to the browser sink
     h.web_viewer.push_annotated_frame.assert_called_once()
 
-    # Events dispatched
+    # Events dispatched (face dispatch carries the identity's FaceFrame)
     h.event_dispatcher.dispatch_cube_events.assert_called_once()
     h.event_dispatcher.dispatch_face_events.assert_called_once()
+    assert len(h.event_dispatcher.dispatch_face_events.call_args.args) == 3
 
     # World map fed with the cube measurement (head angle passed through)
     h.world_map.update_cube_measurement.assert_called_once()
@@ -138,9 +154,7 @@ def test_full_sequence_updates_every_sink():
     cli.dispatch.assert_called_once()
     assert cli.dispatch.call_args.args[0] is event.EvtFloorProjectedImage
     h.web_viewer.push_floor_frame.assert_called_once_with(h.floor_img)
-    h.web_viewer.push_occupancy_grid.assert_called_once_with(
-        h.occ_map_image, 10, 20
-    )
+    h.web_viewer.push_occupancy_grid.assert_called_once_with(h.occ_map_image, 10, 20)
     h.web_viewer.set_floor_size.assert_called_once_with(600.0, 600.0)
     h.web_viewer.set_floor_center.assert_called_once_with(200.0, 0.0)
 
@@ -206,7 +220,7 @@ def test_face_detection_sets_happiness_and_clears_when_gone():
     h = make_stage()
     cli = make_cli()
 
-    h.detection_pipeline.detect_faces.return_value = [object()]
+    h.detection_pipeline.detect_faces.return_value = [make_face()]
     h.stage.on_camera_image(cli, make_image())
     (expr,) = cli.anim_controller.set_face_expression.call_args.args
     assert isinstance(expr, Happiness)
@@ -215,6 +229,48 @@ def test_face_detection_sets_happiness_and_clears_when_gone():
     h.detection_pipeline.detect_faces.return_value = []
     h.stage.on_camera_image(cli, make_image())
     cli.anim_controller.clear_face_expression.assert_called_once()
+
+
+def test_face_identity_feeds_world_map_and_forgets_on_loss():
+    h = make_stage()
+    cli = make_cli()
+
+    h.detection_pipeline.detect_faces.return_value = [make_face()]
+    h.stage.on_camera_image(cli, make_image())
+
+    # The world map gets the identity-assigned epoch ID, not a hardcoded 0
+    args = h.world_map.update_face_measurement.call_args
+    assert args.args[0] == 1
+    assert args.kwargs["label"] == "Face 1"
+
+    h.detection_pipeline.detect_faces.return_value = []
+    h.stage.on_camera_image(cli, make_image())
+
+    h.world_map.forget_face.assert_called_once_with(1)
+    assert h.face_identity.current_id is None
+
+
+def test_face_identity_survives_skipped_face_frames():
+    """A frame skip is 'not measured' — presence must not flap."""
+    h = make_stage(face_detect_every_n_frames=2)
+    cli = make_cli()
+    face = make_face()
+    h.detection_pipeline.detect_faces.return_value = [face]
+
+    h.stage.on_camera_image(cli, make_image())  # frame 1 — detection skipped
+    assert h.face_identity.current_id is None
+
+    h.stage.on_camera_image(cli, make_image())  # frame 2 — face seen
+    first_id = h.face_identity.current_id
+    assert first_id == 1
+    assert face.face_id == first_id
+
+    h.stage.on_camera_image(cli, make_image())  # frame 3 — skipped: hold
+    assert h.face_identity.current_id == first_id
+    h.world_map.forget_face.assert_not_called()
+
+    h.stage.on_camera_image(cli, make_image())  # frame 4 — same epoch continues
+    assert h.face_identity.current_id == first_id
 
 
 def test_suppressed_cube_reenters_after_fresh_frames():

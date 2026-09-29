@@ -25,6 +25,7 @@ from pycozmo.vision.cube_detector.detection_pipeline import (
     create_default_detection_pipeline,
 )
 from pycozmo.vision.events import DetectionEventDispatcher
+from pycozmo.vision.face_identity import FaceIdentity
 from pycozmo.vision.frame_stage import FrameStage
 from pycozmo.vision.frame_state import FrameState
 from pycozmo.vision.occupancy_map.floor_pipeline import FloorPipeline
@@ -63,6 +64,7 @@ class Brain:
         self.detection_pipeline: DetectionPipeline | None = None
         self.annotation_engine: AnnotationEngine | None = None
         self.event_dispatcher: DetectionEventDispatcher | None = None
+        self.face_identity: FaceIdentity | None = None
         self.floor_pipeline: FloorPipeline | None = None
         self.camera_calibration = None  # Set by setup_vision()
 
@@ -167,6 +169,9 @@ class Brain:
         # Event dispatcher (cube/face events)
         self.event_dispatcher = DetectionEventDispatcher()
 
+        # Face identity (presence epochs) — fresh ID numbering per session
+        self.face_identity = FaceIdentity()
+
         # Floor pipeline (optional)
         if enable_floor_projection:
             self.floor_pipeline = FloorPipeline(
@@ -191,6 +196,7 @@ class Brain:
             detection_pipeline=self.detection_pipeline,
             annotation_engine=self.annotation_engine,
             event_dispatcher=self.event_dispatcher,
+            face_identity=self.face_identity,
             floor_pipeline=self.floor_pipeline,
             process_every_n_frames=process_every_n_frames,
             undistort=undistort,

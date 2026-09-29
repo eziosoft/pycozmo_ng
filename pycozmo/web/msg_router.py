@@ -13,6 +13,7 @@ from typing import ClassVar
 import numpy as np
 
 from pycozmo import coords
+from pycozmo.cubes.identity import parse_cube_label
 from pycozmo.logger import logger
 
 
@@ -122,16 +123,17 @@ class MsgRouter:
         if listener is None:
             return
         try:
-            cube_id_str = msg.get("cube_id", "")
-            cube_idx = int(cube_id_str.replace("cube_", "")) - 1
+            cube_index = parse_cube_label(msg.get("cube_id", ""))
             if self._world_map is None:
                 return
-            cube = self._world_map.get_cube(cube_idx)
+            cube = self._world_map.get_cube(cube_index)
             if cube is not None:
                 pos = cube.position
-                listener(cube_idx, float(pos[0]), float(pos[1]))
+                listener(cube_index, float(pos[0]), float(pos[1]))
             else:
-                logger.warning("approach_cube: %s not in world map", cube_id_str)
+                logger.warning(
+                    "approach_cube: %s not in world map", msg.get("cube_id", "")
+                )
         except Exception as e:  # noqa: BLE001
             logger.warning("approach listener failed: %s", e)
 

@@ -169,7 +169,7 @@ class TestCubeFusionTracker:
         tracker = CubeFusionTracker(cube_size_mm=44.0)
         detections = [
             {
-                "cube_id": 0,
+                "cube_index": 0,
                 "face_type": "wall",
                 "position": np.array([0.0, 0.0, 200.0]),
                 "rotation_matrix": np.eye(3),
@@ -186,7 +186,7 @@ class TestCubeFusionTracker:
         tracker = CubeFusionTracker(cube_size_mm=44.0)
         detections = [
             {
-                "cube_id": 0,
+                "cube_index": 0,
                 "face_type": "wall",
                 "position": np.array([0.0, 0.0, 200.0]),
                 "rotation_matrix": np.eye(3),
@@ -195,7 +195,7 @@ class TestCubeFusionTracker:
                 "rotation": 0,
             },
             {
-                "cube_id": 0,
+                "cube_index": 0,
                 "face_type": "top",
                 "position": np.array([0.0, 0.0, 200.0]),
                 "rotation_matrix": np.eye(3),

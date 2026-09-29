@@ -29,26 +29,27 @@ class CubeFusionTracker:
         """
         Fuse all face detections from one frame into per-cube camera-frame poses.
 
-        :param detections: List of detection dicts with 'cube_id', 'face_type',
-            'position', 'rotation_matrix', etc. (camera frame).
-        :return: Dict of {cube_id: fused_cube_state} in camera frame.
+        :param detections: List of detection dicts with 'cube_index'
+            (world index 0-2), 'face_type', 'position', 'rotation_matrix',
+            etc. (camera frame).
+        :return: Dict of {cube_index: fused_cube_state} in camera frame.
         """
 
-        # Group detections by cube_id
+        # Group detections by cube index (world index 0-2)
         detections_by_cube = defaultdict(list)
         for det in detections:
-            detections_by_cube[det["cube_id"]].append(det)
+            detections_by_cube[det["cube_index"]].append(det)
 
         fused = {}
-        for cube_id, cube_detections in detections_by_cube.items():
-            fused[cube_id] = self._fuse_detections(cube_detections)
+        for cube_index, cube_detections in detections_by_cube.items():
+            fused[cube_index] = self._fuse_detections(cube_detections)
 
         return fused
 
     def _fuse_detections(self, detections):
         """
         Fuse multiple face detections of the same cube into a single cube pose
-        :param detections: List of detections for the same cube_id
+        :param detections: List of detections for the same cube_index
         :return: Fused cube state dict
         """
         if len(detections) == 1:
@@ -64,7 +65,7 @@ class CubeFusionTracker:
             return {
                 "position": cube_center,
                 "rotation_matrix": cube_rotation,
-                "cube_id": det["cube_id"],
+                "cube_index": det["cube_index"],
                 "confidence": det["score"],
                 "num_faces": 1,
                 "rotation_source": rotation_source,
@@ -108,7 +109,7 @@ class CubeFusionTracker:
             return {
                 "position": fused_center,
                 "rotation_matrix": fused_rotation,
-                "cube_id": detections[0]["cube_id"],
+                "cube_index": detections[0]["cube_index"],
                 "confidence": avg_confidence,
                 "num_faces": len(detections),
                 "rotation_source": best_face_info,  # Which face determined the rotation
@@ -417,8 +418,8 @@ class CozmoCubeDetector:
                     success, rvec, tvec = self._solve_pose(ordered_pts)
                     if success:
                         # Get cube orientation info
-                        cube_id, face_type, rotation_deg = self._get_cube_orientation(
-                            marker_id
+                        cube_index, face_type, rotation_deg = (
+                            self._get_cube_orientation(marker_id)
                         )
 
                         # Convert to position and rotation matrix
@@ -434,7 +435,7 @@ class CozmoCubeDetector:
                                 "corners": approx,
                                 "ordered_corners": ordered_pts_int,
                                 "marker_rotation": marker_rotation,
-                                "cube_id": cube_id,
+                                "cube_index": cube_index,
                                 "face_type": face_type,
                                 "rotation": rotation_deg,
                                 "position": position,
@@ -531,7 +532,9 @@ class CozmoCubeDetector:
         # Scale ROI to a larger size to preserve quality after warp
         scale = 4
         roi_h, roi_w = roi.shape[:2]
-        scaled_roi = cv2.resize(roi, (roi_w * scale, roi_h * scale), interpolation=cv2.INTER_LINEAR)
+        scaled_roi = cv2.resize(
+            roi, (roi_w * scale, roi_h * scale), interpolation=cv2.INTER_LINEAR
+        )
         scaled_pts = offset_pts * scale
         M = cv2.getPerspectiveTransform(scaled_pts.astype(np.float32), self.dst_pts)
         patch = cv2.warpPerspective(scaled_roi, M, (32, 32), flags=cv2.INTER_LINEAR)
@@ -577,12 +580,12 @@ class CozmoCubeDetector:
         """
         Determine cube orientation from marker ID
         :param marker_id: Index of detected marker (0-17)
-        :return: (cube_id, face_type, rotation_degrees)
+        :return: (cube_index, face_type, rotation_degrees)
         """
-        cube_id = marker_id // 6  # 0, 1, or 2 for cubes 1, 2, 3
+        cube_index = marker_id // 6  # world index 0-2 (public cube IDs 1-3)
         face_idx = marker_id % 6  # 0-5 for the 6 faces
 
         face_type = self.face_type_lookup[face_idx]
         rotation = self.rotation_lookup[face_idx]
 
-        return cube_id, face_type, rotation
+        return cube_index, face_type, rotation

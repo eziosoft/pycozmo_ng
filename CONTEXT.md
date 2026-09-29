@@ -105,15 +105,24 @@ _Avoid_: averaging, filtering (when it erases world-frame stability)
 - `world_yaw_to_scene()` — yaw passes through unchanged (det = +1)
 - `scene_to_world_point()` — inverse of `world_to_scene_point`
 
-**Cube ID vs world-map index**:
-Two numbering conventions exist and must not be mixed inside one call. **Cube
-IDs 1-3** are user-facing: the physical cubes, the `CubeManager` factory/
-connection maps, browser labels (`cube_1`), and the whole `Cozmo` facade
+**Cube ID vs cube index**:
+Two numbering conventions exist for the same three cubes and must not be
+mixed inside one call. **Cube ID 1-3** (`cube_id`) is user-facing: the
+physical cubes, the `CubeManager` factory/connection maps, browser wire
+labels (`cube_1`), public navigation (`Navigator.approach_cube`), detection
+events (`EvtCubeLost`), and the whole `Cozmo` facade
 (`cozmo.world_map.cubes`, `cozmo.navigator.approach_cube`, `cozmo.cubes.*`).
-The **world-map index 0-2** is internal: detection output (`marker_id // 6`)
-and `WorldMap` keys, always `world_index = cube_id - 1`. The facade converts
-at its boundary; `MsgRouter` converts browser strings the same way.
-_Avoid_: calling the world-map index "cube ID" in public API.
+The **cube index 0-2** (`cube_index` / `cube_idx`) is internal: detection
+output (`marker_id // 6`), `WorldMap` keys, `CubeTrackingState`
+suppression, and navigation's `cube_idx`, always `index = cube_id - 1`.
+All conversion lives in **one module** — `pycozmo/cubes/identity.py`
+(`to_world_index`, `to_cube_id`, `cube_label`, `parse_cube_label`) — and
+is validated at the boundary (`cube_99` and `cube_id=0` raise). Every
+boundary (facade, `MsgRouter`, `state_builder`, event dispatch) converts
+through it.
+_Avoid_: raw `cube_id ± 1` anywhere except `cubes/identity.py`; calling
+the cube index "cube ID" in public API; naming an index variable
+`cube_id`.
 
 **Face index mapping** (cube marker faces, 0-5):
 | face_idx | face_type | rotation | Marker file |
@@ -124,6 +133,21 @@ _Avoid_: calling the world-map index "cube ID" in public API.
 | 3 | wall | 270° | cube{N}_face_3.jpg |
 | 4 | bottom | 0° | cube{N}_face_bottom.jpg |
 | 5 | top | 0° | cube{N}_face_top.jpg |
+
+**Face identity** (not the marker-face table above — that is cube surface
+geometry): `pycozmo/vision/face_identity.py`, class `FaceIdentity`.
+Assigns an ID to each **presence run** of a human face: one uninterrupted
+stretch of measured frames with a face in view. IDs start at 1 and are
+never reused within a session; the pipeline cannot re-identify people, so
+a face that leaves and returns gets a **new** ID. `FrameStage` calls
+`FaceIdentity.update(detections, measured=...)` once per frame, before
+annotation reads `detection.face_id`; a skipped face frame
+(`face_detect_every_n_frames`) passes `measured=False` and holds state —
+"not measured" is never "gone". The returned `FaceFrame`
+(`face_id` / `started` / `ended`) drives `EvtFaceDetected`/`EvtFaceLost`,
+is the `WorldMap` face key, and `ended` triggers `WorldMap.forget_face`.
+_Avoid_: `getattr(det, "_face_id")` probing (deleted — read the field);
+hardcoding `face_id: 0`; treating a frame skip as face loss.
 
 **Robot center calibration**:
 Two-ring marker detection on the robot chassis. Head tilted to max-down
