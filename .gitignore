@@ -20,3 +20,7 @@ __pycache__/
 /not_used/examples/*.png
 not_used/APK/
 not_used/dev/
+
+# OpenCode local config (per-machine MCP ports, etc.)
+/opencode.json
+.opencode/
