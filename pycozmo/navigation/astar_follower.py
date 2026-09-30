@@ -79,7 +79,7 @@ class AStarFollower:
 
         if self.planner is None:
             logger.warning("A*: no planner — falling back to built-in navigation")
-            self.go_to_pose_goal(goal_x, goal_y)
+            self.go_to_pose_goal(goal_x, goal_y, job)
             return
 
         robot_pose = cli.pose
@@ -93,7 +93,7 @@ class AStarFollower:
         if not self.waypoints:
             logger.warning("A*: no path found — falling back to built-in navigation")
             self._clear_path()
-            self.go_to_pose_goal(goal_x, goal_y)
+            self.go_to_pose_goal(goal_x, goal_y, job)
             return
 
         try:
@@ -191,7 +191,9 @@ class AStarFollower:
                 return True
         return False
 
-    def go_to_pose_goal(self, goal_x: float, goal_y: float) -> None:
+    def go_to_pose_goal(
+        self, goal_x: float, goal_y: float, job: MotionToken | None = None
+    ) -> None:
         """Drive straight to the goal with the robot's built-in path follower."""
         cli = self.cli
         if cli is None:
@@ -201,6 +203,7 @@ class AStarFollower:
         ok = cli.go_to_pose(
             Pose(goal_x, goal_y, 0, angle_z=Angle(radians=heading)),
             relative_to_robot=False,
+            should_interrupt=(None if job is None else lambda: job.cancelled),
         )
         if ok:
             logger.info("Arrived at target")

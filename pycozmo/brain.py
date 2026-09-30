@@ -16,6 +16,7 @@ from pycozmo.cubes.manager import CubeManager
 from pycozmo.logger import logger, logger_cubes
 from pycozmo.navigation.astar import AStarPlanner
 from pycozmo.navigation.dock_state import DockState
+from pycozmo.navigation.motion_controller import MotionController
 from pycozmo.navigation.navigator import Navigator
 from pycozmo.navigation.world_map import WorldMap
 from pycozmo.protocol import protocol_encoder
@@ -78,8 +79,14 @@ class Brain:
             self.frame_state, self.cube_tracking, self.world_map, self.web_viewer
         )
 
-        # Domain sub-components — each receives the state it needs
-        self.navigator = Navigator(self.dock_state, world_map=self.world_map)
+        # Domain sub-components — each receives the state it needs.
+        # One motion seam (cancellation + driver lease) shared by the
+        # navigation jobs and the browser remote control, so "who may
+        # command the wheels" lives in exactly one object.
+        self.motion = MotionController()
+        self.navigator = Navigator(
+            self.dock_state, world_map=self.world_map, motion=self.motion
+        )
         self.cubes = CubeManager(self.cube_tracking)
 
         # Wire cross-domain references
@@ -243,7 +250,7 @@ class Brain:
         """Wire browser keyboard input to Cozmo's motors."""
         from pycozmo.navigation.remote_control import RemoteControl
 
-        self._remote_control = RemoteControl(cli)
+        self._remote_control = RemoteControl(cli, motion=self.motion)
         self._remote_control.start()
         self.web_viewer.router.set_actions(
             control=self._remote_control.update_keys,

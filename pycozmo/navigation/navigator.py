@@ -51,12 +51,20 @@ class Navigator:
     JOB_ALIGN: ClassVar[str] = "align"
     JOB_TEST_MODE: ClassVar[str] = "test_mode"
 
-    def __init__(self, dock_state: DockState, world_map: "WorldMap | None" = None):
+    def __init__(
+        self,
+        dock_state: DockState,
+        world_map: "WorldMap | None" = None,
+        motion: MotionController | None = None,
+    ):
         self.ds = dock_state
         self.world_map = world_map
         self._cli: Any = None
-        # Cancellation for every motion this class starts.
-        self.motion = MotionController()
+        # The shared motion seam (cancellation + driver lease). Brain
+        # creates one controller and hands it to Navigator and
+        # RemoteControl, so navigation jobs and keyboard input contend on
+        # the same authority; a standalone Navigator gets its own.
+        self.motion = motion if motion is not None else MotionController()
         # A* path following (planner + enabled flag + follow loop)
         self.astar = AStarFollower(world_map=world_map)
         # Dock sequence — shares the motion controller so stop() reaches it
@@ -193,7 +201,11 @@ class Navigator:
                         0,
                         angle_z=Angle(radians=heading),
                     )
-                    ok = self.cli.go_to_pose(target_pose, relative_to_robot=False)
+                    ok = self.cli.go_to_pose(
+                        target_pose,
+                        relative_to_robot=False,
+                        should_interrupt=lambda: job.cancelled,
+                    )
                     if job.cancelled:
                         logger.info("Navigation cancelled")
                     elif ok:

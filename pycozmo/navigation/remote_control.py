@@ -22,6 +22,14 @@ commands to Cozmo. On key release, or when no keys are held for a short
 idle window, motors are stopped via ``stop_all_motors`` so a stuck or
 forgotten key can't drive Cozmo off the desk.
 
+The poll loop is an adapter loop, not an authority: every wheel command it
+sends is gated by the **driver lease** on the shared
+:class:`~pycozmo.navigation.motion_controller.MotionController`. A fresh
+drive-key edge (a key that wasn't held last tick) takes the lease —
+cancelling whatever motion job had it — and the loop goes silent the moment
+anything else takes the lease back or :meth:`stop` / ``cancel_all`` drops
+it. Head and lift keys are ungated: only the wheels contend.
+
 The class is intentionally library-friendly: it doesn't depend on the web
 viewer. Someone can ``import pycozmo.remote_control`` and feed it key
 state from any source (keyboard daemon, network, gamepad bridge, etc.).
@@ -31,8 +39,10 @@ import logging
 import threading
 import time
 from collections.abc import Iterable
+from typing import ClassVar
 
 from pycozmo import robot
+from pycozmo.navigation.motion_controller import MotionController
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +87,10 @@ class RemoteControl:
     """
 
     _VALID_KEYS = frozenset({"w", "a", "s", "d", "r", "f", "t", "g"})
+    #: Keys whose fresh appearance takes the driver lease (wheel commands).
+    _DRIVE_KEYS = frozenset({"w", "a", "s", "d"})
+    #: This driver's name in the MotionController's lease table.
+    LEASE_OWNER: ClassVar[str] = "remote"
 
     def __init__(
         self,
@@ -87,6 +101,7 @@ class RemoteControl:
         lift_speed: float = _DEFAULT_LIFT_SPEED,
         tick_hz: float = _DEFAULT_TICK_HZ,
         idle_stop_sec: float = _DEFAULT_IDLE_STOP_SEC,
+        motion: MotionController | None = None,
     ):
         self._cli = cli
         self._wheel_speed = float(wheel_speed)
@@ -95,11 +110,19 @@ class RemoteControl:
         self._lift_speed = float(lift_speed)
         self._tick_hz = float(tick_hz)
         self._idle_stop_sec = float(idle_stop_sec)
+        # The shared motion seam. Brain passes its one controller so
+        # navigation jobs and keyboard input contend for the same lease;
+        # a standalone RemoteControl gets a private controller (nothing
+        # contends with it, same behaviour).
+        self._motion = motion if motion is not None else MotionController()
 
         self._lock = threading.Lock()
         self._keys: set[str] = set()
         self._last_update: float = 0.0
         self._last_applied: set[str] = set()
+        # Drive keys seen on the previous tick — the edge that takes the
+        # lease. Written only by the _run thread.
+        self._prev_drive: set[str] = set()
 
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -124,6 +147,7 @@ class RemoteControl:
         if self._thread and self._thread.is_alive():
             return
         self._stop_event.clear()
+        self._prev_drive = set()
         self._thread = threading.Thread(
             target=self._run, name="RemoteControl", daemon=True
         )
@@ -135,6 +159,7 @@ class RemoteControl:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
         self._thread = None
+        self._motion.release_lease(self.LEASE_OWNER)
         try:
             self._cli.stop_all_motors()
         except Exception as e:  # noqa: BLE001 — best-effort during shutdown
@@ -154,8 +179,32 @@ class RemoteControl:
                 now = time.monotonic()
                 stale = (now - last_update) > self._idle_stop_sec
                 active_keys = set() if stale else keys
+                drive = active_keys & self._DRIVE_KEYS
 
-                self._apply_drive(active_keys)
+                # -- driver lease (wheels) ------------------------------
+                # Edge-triggered: a drive key that wasn't held last tick
+                # takes the lease (cancelling the current holder). A key
+                # merely *held* never re-takes it, so a programmatic
+                # sequence isn't stolen by a key down from before it
+                # started.
+                edge = drive != self._prev_drive
+                self._prev_drive = drive
+                has_lease = self._motion.lease_owner == self.LEASE_OWNER
+                if edge and drive and not has_lease:
+                    self._motion.acquire_lease(self.LEASE_OWNER)
+                    has_lease = True
+
+                if has_lease:
+                    if drive:
+                        self._apply_drive(drive)
+                    else:
+                        # Idle under our own lease: hold at zero once,
+                        # then give the lease up so jobs may start.
+                        self._apply_drive(set())
+                        self._motion.release_lease(self.LEASE_OWNER)
+                # No lease: send nothing. The holder commands the wheels.
+
+                # -- head / lift (ungated) ------------------------------
                 if active_keys != self._last_applied:
                     self._apply_head_lift(active_keys)
                     self._last_applied = active_keys

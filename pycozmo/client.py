@@ -10,11 +10,13 @@ import math
 import time
 from collections.abc import Callable, Sequence
 from threading import Event, Lock
+from typing import Any
 
 import numpy as np
 from PIL import Image
 
 from pycozmo.animation import anim_controller
+from pycozmo.logger import logger, logger_robot
 from pycozmo.protocol import protocol_declaration, protocol_encoder
 from pycozmo.sound import audio, tts
 from pycozmo.transport import conn
@@ -25,8 +27,6 @@ from . import (
     event,
     exception,
     lights,
-    logger,
-    logger_robot,
     util,
 )
 
@@ -173,10 +173,10 @@ class Client(event.Dispatcher):
         )
 
         self.serial_number_head = None
-        self.robot_fw_sig = None
+        self.robot_fw_sig: dict[str, Any] | None = None
         self.serial_number = None
         self.body_hw_version = None
-        self.body_color = None
+        self.body_color: protocol_encoder.BodyColor | None = None
         # Robot state
         # Heading in X-Y plane.
         self.pose_frame_id = 0
@@ -187,6 +187,12 @@ class Client(event.Dispatcher):
         # Incrementing event_id for execute_polyline paths (avoids clashing
         # with go_to_pose's fixed event_id=1).
         self._path_event_id = 100
+        # Serializes the firmware path protocol: the path buffer holds one
+        # path at a time, so event-id allocation + ClearPath → Append… →
+        # ExecutePath + the wait all run under this lock. Two concurrent
+        # callers (e.g. a navigate and a dock job) can no longer wipe each
+        # other's segments or steal each other's completion events.
+        self._path_lock = Lock()
         self.head_angle = util.Angle(radians=robot.MIN_HEAD_ANGLE.radians)
         self.left_wheel_speed = util.Speed(mmps=0.0)
         self.right_wheel_speed = util.Speed(mmps=0.0)
@@ -208,8 +214,8 @@ class Client(event.Dispatcher):
         # Camera state
         self.last_image_timestamp = None
         # Object state
-        self.available_objects = {}
-        self.connected_objects = {}
+        self.available_objects: dict[int, object.Object] = {}
+        self.connected_objects: dict[int, dict[str, Any]] = {}
         # Filters
         self.packet_type_filter = filter.Filter()
         self.packet_type_filter.deny_ids({protocol_declaration.PacketType.PING.value})
@@ -277,13 +283,14 @@ class Client(event.Dispatcher):
 
     def _on_firmware_signature(self, cli, pkt: protocol_encoder.FirmwareSignature):
         del cli
-        self.robot_fw_sig = json.loads(pkt.signature)
-        logger.info("Firmware version %s.", self.robot_fw_sig["version"])
-        if self.robot_fw_sig.get("build") == "FACTORY":
+        sig: dict[str, Any] = json.loads(pkt.signature)
+        self.robot_fw_sig = sig
+        logger.info("Firmware version %s.", sig["version"])
+        if sig.get("build") == "FACTORY":
             logger.warning(
                 "Factory/recovery firmware detected. Functionality is degraded."
             )
-        elif self.robot_fw_sig["version"] < protocol_declaration.FIRMWARE_VERSION:
+        elif sig["version"] < protocol_declaration.FIRMWARE_VERSION:
             logger.warning(
                 f"Old firmware detected. PyCozmo works best with v{protocol_declaration.FIRMWARE_VERSION}. Functionality may be degraded."
             )
@@ -654,6 +661,7 @@ class Client(event.Dispatcher):
         timeout_s: float | None = 30.0,
         position_tol_mm: float = 15.0,
         angle_tol_rad: float = 0.15,
+        should_interrupt: Callable[[], bool] | None = None,
     ) -> bool:
         """Move to a specific pose (position and orientation).
 
@@ -668,12 +676,49 @@ class Client(event.Dispatcher):
            firmware often omits ``PathFollowingEvent`` for simple
            paths, COZMO-53).
 
+        The whole build-and-wait is serialized on an internal lock: the
+        firmware path buffer holds one path at a time, so a second caller
+        starts only after the first resolves instead of wiping its
+        segments mid-flight.
+
+        Args:
+            pose: Target pose (world frame, or robot-relative).
+            relative_to_robot: Interpret *pose* relative to the robot.
+            timeout_s: Overall wait bound.
+            position_tol_mm: Pose-proximity completion tolerance.
+            angle_tol_rad: Heading completion tolerance.
+            should_interrupt: Polled while waiting; the first True stops
+                the motors and returns False. Motion jobs pass
+                ``lambda: job.cancelled`` so a stolen driver lease (or
+                ``Navigator.stop()``) actually ends the path.
+
         Returns:
             True when the path completed (event or pose proximity),
             False when it was interrupted, rejected, or timed out
             short of the target. On timeout a warning is logged — the
             robot may still be moving.
         """
+        with self._path_lock:
+            return self._go_to_pose(
+                pose,
+                relative_to_robot=relative_to_robot,
+                timeout_s=timeout_s,
+                position_tol_mm=position_tol_mm,
+                angle_tol_rad=angle_tol_rad,
+                should_interrupt=should_interrupt,
+            )
+
+    def _go_to_pose(
+        self,
+        pose: util.Pose,
+        *,
+        relative_to_robot: bool = False,
+        timeout_s: float | None = 30.0,
+        position_tol_mm: float = 15.0,
+        angle_tol_rad: float = 0.15,
+        should_interrupt: Callable[[], bool] | None = None,
+    ) -> bool:
+        """Body of :meth:`go_to_pose` — runs with ``_path_lock`` held."""
         self._settle_robot()
 
         if relative_to_robot:
@@ -683,6 +728,10 @@ class Client(event.Dispatcher):
                 self.pose.position.z,
                 angle_z=self.pose.rotation.angle_z,
             ).define_pose_relative_this(pose)
+
+        if should_interrupt is not None and should_interrupt():
+            logger.info("go_to_pose: cancelled before the path was sent")
+            return False
 
         self._path_event_id = self._path_event_id % 65535 + 1
         event_id = self._path_event_id
@@ -703,6 +752,7 @@ class Client(event.Dispatcher):
 
         handler = self.add_handler(protocol_encoder.PathFollowingEvent, event_wait)
         completed = False
+        interrupted = False
         dist = float("inf")
         angle_err = float("inf")
         try:
@@ -712,7 +762,7 @@ class Client(event.Dispatcher):
             self.conn.send(protocol_encoder.ClearPath())
             start_x = self.pose.position.x
             start_y = self.pose.position.y
-            pkt = protocol_encoder.AppendPathSegLine(
+            pkt: protocol_encoder.Packet = protocol_encoder.AppendPathSegLine(
                 from_x=start_x,
                 from_y=start_y,
                 to_x=pose.position.x,
@@ -742,6 +792,12 @@ class Client(event.Dispatcher):
                 if e.wait(timeout=0.25):
                     completed = bool(outcome and outcome[0])
                     break
+                # Cancellation: a motion job cancelled or the driver lease
+                # moved on — stop the wheels and give the robot back.
+                if should_interrupt is not None and should_interrupt():
+                    self.stop_all_motors()
+                    interrupted = True
+                    break
                 # Pose-polling fallback: check if we're close enough
                 dx = self.pose.position.x - pose.position.x
                 dy = self.pose.position.y - pose.position.y
@@ -758,6 +814,10 @@ class Client(event.Dispatcher):
                     break
         finally:
             self.del_handler(protocol_encoder.PathFollowingEvent, handler)
+
+        if interrupted:
+            logger.info("go_to_pose: interrupted — motors stopped")
+            return False
 
         if not completed:
             if outcome and not outcome[0]:
@@ -876,7 +936,35 @@ class Client(event.Dispatcher):
             True when every batch completed (firmware event or pose
             proximity), False when interrupted or timed out short of
             the goal.
+
+        The whole call is serialized with :meth:`go_to_pose` on the path
+        lock: the firmware buffer holds one path at a time.
         """
+        with self._path_lock:
+            return self._execute_polyline(
+                points,
+                speed_mmps=speed_mmps,
+                accel_mmps2=accel_mmps2,
+                decel_mmps2=decel_mmps2,
+                final_heading_rad=final_heading_rad,
+                timeout_s=timeout_s,
+                position_tol_mm=position_tol_mm,
+                should_interrupt=should_interrupt,
+            )
+
+    def _execute_polyline(
+        self,
+        points: Sequence[tuple[float, float]],
+        *,
+        speed_mmps: float = 90.0,
+        accel_mmps2: float = 40.0,
+        decel_mmps2: float = 40.0,
+        final_heading_rad: float | None = None,
+        timeout_s: float | None = None,
+        position_tol_mm: float = 20.0,
+        should_interrupt: Callable[[], bool] | None = None,
+    ) -> bool:
+        """Body of :meth:`execute_polyline` — runs with ``_path_lock`` held."""
         self._settle_robot()
 
         start = (self.pose.position.x, self.pose.position.y)
@@ -957,7 +1045,7 @@ class Client(event.Dispatcher):
     def set_backpack_lights(
         self, left_light, front_light, center_light, rear_light, right_light
     ) -> None:
-        pkt = protocol_encoder.LightStateCenter(
+        pkt: protocol_encoder.Packet = protocol_encoder.LightStateCenter(
             states=(front_light, center_light, rear_light)
         )
         self.conn.send(pkt)
@@ -989,7 +1077,7 @@ class Client(event.Dispatcher):
         self,
         enable: bool = True,
         color: bool = False,
-        resolution: "protocol_encoder.ImageResolution" = None,
+        resolution: protocol_encoder.ImageResolution | None = None,
     ) -> None:
         """Enable or disable camera image streaming in color or grayscale.
 
@@ -1012,7 +1100,7 @@ class Client(event.Dispatcher):
             if resolution is not None
             else protocol_encoder.ImageResolution.QVGA
         )
-        pkt = protocol_encoder.EnableCamera(
+        pkt: protocol_encoder.Packet = protocol_encoder.EnableCamera(
             image_send_mode=image_send_mode,
             image_resolution=image_resolution,
         )
@@ -1038,7 +1126,7 @@ class Client(event.Dispatcher):
         pkt = protocol_encoder.DisplayImage(image=b"\x3f\x3f")
         self.anim_controller.display_image(pkt)
 
-    def display_image(self, im: Image, duration: float | None = None) -> None:
+    def display_image(self, im: Image.Image, duration: float | None = None) -> None:
         encoder = image_encoder.ImageEncoder(im)
         buf = bytes(encoder.encode())
         pkt = protocol_encoder.DisplayImage(image=buf)

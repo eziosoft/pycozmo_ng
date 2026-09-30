@@ -169,15 +169,36 @@ _Avoid_: an ad-hoc `bool` flag (`_path_following`, `_stop_requested`,
 
 **Motion controller** (`pycozmo/navigation/motion_controller.py`):
 The single registry that knows which motion jobs are running
-(`active_names`), and the only cancellation authority: `cancel(name)` kills
+(`active_names`), the only cancellation authority — `cancel(name)` kills
 jobs by name, `cancel_all()` bumps a generation counter so *everything live*
-stops — and anything begun afterwards starts un-cancelled, which is what
-re-arms the robot after `Navigator.stop()` (replacing
-`_stop_requested.clear()`). `Navigator` owns one instance (`.motion`) and hands
-the same object to `Docking`; `CubeApproach` receives its `spawn` callable by
-injection.
+stops — and the owner of the **driver lease** (below). Anything begun
+afterwards starts un-cancelled, which is what re-arms the robot after
+`Navigator.stop()` (replacing `_stop_requested.clear()`). `Brain` creates
+the one instance and injects it into `Navigator` (`.motion`) and
+`RemoteControl`; `Navigator` hands the same object to `Docking`;
+`CubeApproach` receives its `spawn` callable by injection.
 _Avoid_: per-feature cancellation flags/locks, spawning bare
-`threading.Thread`s for motion work.
+`threading.Thread`s for motion work, a second place that decides who may
+drive.
+
+**Driver lease**:
+The wheel-command authority held by exactly one driver at a time, recorded
+on the `MotionController` (`lease_owner`: a job name, `"remote"`, or
+`None`). A *root* motion job (no enclosing job on its thread) takes it in
+`begin()` — cancelling the previous holder, last requester wins — while
+nested jobs ride their parent's (`approach → drive → align` never
+contends with itself). Non-job drivers take/release it explicitly
+(`acquire_lease` / `release_lease`): the browser `RemoteControl` takes it
+on the *edge* of fresh drive-key input (w/a/s/d), so a key merely held
+never steals control back from a programmatic sequence, and goes silent
+the moment it loses the lease. Only the holder sends `drive_wheels` /
+`go_to_pose` / `execute_polyline`; `stop_all_motors` is always free, and
+head/lift keys are ungated. `cancel_all()` drops the lease, so
+`Navigator.stop()` silences held keys until the next key edge or root job
+asks again. `Client` additionally serializes each path build-and-wait on
+one lock (the firmware path buffer is a single resource).
+_Avoid_: a `drive_wheels` writer outside the lease; per-feature "may
+drive" flags; re-triggering the lease from a held (unchanged) key set.
 
 **Motion token** (`pycozmo/navigation/motion_token.py`):
 The cancellation handle a single job polls — `token.cancelled`,
@@ -189,9 +210,9 @@ _Avoid_: reading the controller's internals from a job.
 **Navigator** (`pycozmo/navigation/navigator.py`):
 The navigation subsystem's one entry point — `navigate_to`, `drive_to_point`,
 `approach_cube*`, `dock`, `stop`, and the A* toggle — so callers address
-navigation as a single thing. It owns the shared `MotionController` and the
-`DockState`, and composes three sequences that hold their own tuning and job
-names: `AStarFollower` (`.astar` — plan, publish, and follow an A* path),
+navigation as a single thing. It receives `Brain`'s shared
+`MotionController` (`.motion`) and owns the `DockState`, and composes three
+sequences that hold their own tuning and job names: `AStarFollower` (`.astar` — plan, publish, and follow an A* path),
 `Docking` (`.docking` — dock approach, reverse into contact, retries), and the
 lazily built `CubeApproach` (`_cube_approach`). `Navigator.cli` is a property:
 assigning it (Brain wiring, or a reconnect) propagates the client to all three.

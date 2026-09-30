@@ -7,7 +7,9 @@ job polls. These tests cover the contract the navigation code relies on:
 * a token is cancelled by ``cancel(name)``, by ``cancel_all()``, or by an
   enclosing job being cancelled (jobs nest);
 * a token begun *after* ``cancel_all()`` is not cancelled (re-arming);
-* ``active_names`` lists exactly the jobs whose scope is open.
+* ``active_names`` lists exactly the jobs whose scope is open;
+* the **driver lease**: one root job (or the explicit non-job holder,
+  ``"remote"``) commands the wheels at a time; nested jobs never contend.
 """
 
 import threading
@@ -189,3 +191,104 @@ class TestSpawn:
         assert _wait_until(lambda: "cancelled" in result)
         assert result["cancelled"] is True
         assert _wait_until(lambda: motion.active_names == ())
+
+
+class TestDriverLease:
+    """One root driver at a time; nested jobs ride the parent's lease."""
+
+    @staticmethod
+    def _spawn_holding(motion: MotionController, name: str):
+        """Spawn a root job that blocks until released; returns (token, release)."""
+        entered = threading.Event()
+        release = threading.Event()
+
+        def target(job):
+            del job
+            entered.set()
+            release.wait(2.0)
+
+        token = motion.spawn(name, target)
+        assert entered.wait(2.0)
+        return token, release
+
+    def test_root_job_takes_lease_and_gives_it_up(self):
+        motion = MotionController()
+        with motion.begin("navigate"):
+            assert motion.lease_owner == "navigate"
+        assert motion.lease_owner is None
+
+    def test_nested_job_rides_the_parent_lease(self):
+        motion = MotionController()
+        with motion.begin("approach"):
+            with motion.begin("drive"):
+                assert motion.lease_owner == "approach"
+            assert motion.lease_owner == "approach"
+
+    def test_second_root_job_preempts_the_holder(self):
+        motion = MotionController()
+        first, release = self._spawn_holding(motion, "navigate")
+        assert motion.lease_owner == "navigate"
+
+        with motion.begin("dock") as second:
+            assert motion.lease_owner == "dock"
+            assert first.cancelled  # the previous holder was cancelled
+            assert not second.cancelled
+        release.set()
+        assert _wait_until(lambda: not motion.active_names)
+
+    def test_acquire_lease_cancels_the_job_holder(self):
+        """Fresh human input (RemoteControl) preempts a running sequence."""
+        motion = MotionController()
+        first, release = self._spawn_holding(motion, "navigate")
+
+        motion.acquire_lease("remote")
+        assert motion.lease_owner == "remote"
+        assert first.cancelled
+        release.set()
+        assert _wait_until(lambda: not motion.active_names)
+
+    def test_job_preempts_the_remote_lease(self):
+        motion = MotionController()
+        motion.acquire_lease("remote")
+        with motion.begin("drive"):
+            assert motion.lease_owner == "drive"
+        assert motion.lease_owner is None
+
+    def test_release_lease_is_owner_scoped(self):
+        motion = MotionController()
+        motion.acquire_lease("remote")
+        motion.release_lease("navigate")  # not the holder — no-op
+        assert motion.lease_owner == "remote"
+        motion.release_lease("remote")
+        assert motion.lease_owner is None
+
+    def test_cancel_all_drops_the_lease(self):
+        """Navigator.stop() silences every driver until one asks again."""
+        motion = MotionController()
+        with motion.begin("navigate"):
+            motion.cancel_all()
+            assert motion.lease_owner is None
+
+    def test_superseding_same_name_root_keeps_the_lease(self):
+        """navigate cancels+respawns itself; the lease must not drop out."""
+        motion = MotionController()
+        first, release_old = self._spawn_holding(motion, "navigate")
+        assert motion.lease_owner == "navigate"
+
+        # Supersede: cancel the old navigate (its thread has not popped
+        # the token yet) and start a replacement root of the same name.
+        motion.cancel("navigate")
+        second, release_new = self._spawn_holding(motion, "navigate")
+        assert first.cancelled
+        assert not second.cancelled
+        assert motion.lease_owner == "navigate"
+
+        release_old.set()
+        # Wait until the old token has actually popped (only the
+        # replacement remains registered).
+        assert _wait_until(lambda: motion.active_names == ("navigate",))
+        assert motion.lease_owner == "navigate"  # old pop kept the new lease
+
+        release_new.set()
+        assert _wait_until(lambda: not motion.active_names)
+        assert motion.lease_owner is None

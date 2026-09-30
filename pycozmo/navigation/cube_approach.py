@@ -379,6 +379,7 @@ class CubeApproach:
             self.cli.go_to_pose(
                 Pose(s1x, s1y, 0, angle_z=Angle(radians=heading)),
                 relative_to_robot=False,
+                should_interrupt=lambda: job.cancelled,
             )
 
             if job.cancelled:
@@ -406,6 +407,7 @@ class CubeApproach:
             self.cli.go_to_pose(
                 Pose(s2x, s2y, 0, angle_z=Angle(radians=heading2)),
                 relative_to_robot=False,
+                should_interrupt=lambda: job.cancelled,
             )
 
             # Wait for arrival
@@ -447,6 +449,7 @@ class CubeApproach:
                     break
 
                 attempts += 1
+                assert facing_err_rad is not None  # guaranteed by recoverable
                 logger.info(
                     "Misaligned by %.1f deg - creeping %.0fmm closer (%d/%d)",
                     math.degrees(facing_err_rad),

@@ -10,9 +10,20 @@ keeping its own cancellation flag. The interface is deliberately small:
 * :meth:`cancel_all` — cancel everything (``Navigator.stop``).
 * :attr:`active_names` — which jobs are running right now.
 
+It is also the single **driver lease**: exactly one *root* job (a job with
+no enclosing job on its thread) commands the wheels at a time, and the
+first thing a new root does in :meth:`begin` is take the lease from
+whichever holder had it. Nested jobs ride their parent's lease — a drive
+started by an approach never contends with the approach. Drivers that
+aren't jobs (the browser ``RemoteControl``) take and release the lease
+explicitly with :meth:`acquire_lease` / :meth:`release_lease`, so "who may
+command the wheels right now" is answered here and nowhere else.
+
 Cancellation itself is a generation counter plus the token's parent chain, so
 a token begun *after* ``cancel_all()`` starts un-cancelled: a stop() followed
 by a new command re-arms movement without any explicit "clear the latch" step.
+``cancel_all()`` also drops the lease, so a stopped robot stays stopped until
+the next driver asks for it.
 """
 
 from __future__ import annotations
@@ -30,12 +41,45 @@ class MotionController:
         self._lock = threading.Lock()
         self._jobs: list[MotionToken] = []
         self._generation = 0
+        self._lease: str | None = None
         self._local = threading.local()
 
     @property
     def generation(self) -> int:
         """Monotonic counter, bumped by every :meth:`cancel_all`."""
         return self._generation
+
+    @property
+    def lease_owner(self) -> str | None:
+        """Who may command the wheels right now.
+
+        A job name for a root motion job, ``"remote"`` for the browser
+        remote control, or ``None`` when nobody holds it.
+        """
+        with self._lock:
+            return self._lease
+
+    def acquire_lease(self, owner: str) -> None:
+        """Take the wheel lease for *owner*, cancelling the current holder.
+
+        For non-job drivers (``RemoteControl``): root jobs take the lease
+        automatically in :meth:`begin`. Taking a lease somebody else holds
+        cancels their jobs — last requester wins, so fresh human input
+        always preempts a running sequence.
+        """
+        with self._lock:
+            prev = self._lease
+            if prev == owner:
+                return
+            self._lease = owner
+        if prev is not None:
+            self.cancel(prev)
+
+    def release_lease(self, owner: str) -> None:
+        """Give up the wheel lease — a no-op unless *owner* holds it."""
+        with self._lock:
+            if self._lease == owner:
+                self._lease = None
 
     @property
     def active_names(self) -> tuple[str, ...]:
@@ -53,10 +97,22 @@ class MotionController:
         The returned token must be scoped — either ``with controller.begin(...)``
         or ``controller.begin(...).spawn(target)`` — so it is removed from
         :attr:`active_names` when the job ends.
+
+        A *root* token (no enclosing job on this thread) takes the wheel
+        lease for ``name``, cancelling the previous holder: one top-level
+        driver at a time. A nested token rides the parent's lease and
+        never contends.
         """
-        token = MotionToken(self, name, parent=self._current)
+        parent = self._current
+        token = MotionToken(self, name, parent=parent)
+        prev: str | None = None
         with self._lock:
             self._jobs.append(token)
+            if parent is None and self._lease != name:
+                prev = self._lease
+                self._lease = name
+        if prev is not None:
+            self.cancel(prev)
         return token
 
     def spawn(self, name: str, target: Callable[[MotionToken], None]) -> MotionToken:
@@ -76,10 +132,14 @@ class MotionController:
 
         Tokens begun after this call belong to the new generation and are
         not cancelled — that is what makes a stopped robot re-arm on the
-        next motion command.
+        next motion command. The wheel lease is dropped with everything
+        else: a driver that was holding it must ask again (a fresh
+        RemoteControl key edge or a new root job) before commanding the
+        wheels.
         """
         with self._lock:
             self._generation += 1
+            self._lease = None
             names = tuple(token.name for token in self._jobs)
         return names
 
@@ -112,3 +172,14 @@ class MotionController:
         with self._lock:
             if token in self._jobs:
                 self._jobs.remove(token)
+            # A root job releases the lease when it ends — unless another
+            # root of the same name is still live (navigate supersedes
+            # itself by cancelling + re-spawning).
+            if (
+                token._parent is None
+                and self._lease == token.name
+                and not any(
+                    t.name == token.name and t._parent is None for t in self._jobs
+                )
+            ):
+                self._lease = None

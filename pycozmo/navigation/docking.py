@@ -107,7 +107,11 @@ class Docking:
         try:
             turn_pose = Pose(turn_x, turn_y, 0, angle_z=Angle(radians=dock_heading))
             logger.info("Driving to %.0fmm in front of dock", self.DRIVE_DIST_MM)
-            cli.go_to_pose(turn_pose, relative_to_robot=False)
+            cli.go_to_pose(
+                turn_pose,
+                relative_to_robot=False,
+                should_interrupt=lambda: job.cancelled,
+            )
             time.sleep(0.3)
 
             docked = False
