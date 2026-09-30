@@ -618,7 +618,7 @@ class {packet.name}(Packet):
         self.f.write("\n\nPACKETS_BY_GROUP = {\n")
         for group, pkt_set in sorted(packet_map.items()):
             self.f.write(f'    "{group}": {{\n')
-            for pkt in sorted(pkt_set, key=lambda pkt2: pkt2.id):
+            for pkt in sorted(pkt_set, key=lambda pkt2: pkt2.id or 0):
                 self.f.write(f"        0x{pkt.id:02x},  # {pkt.name}\n")
             self.f.write("    },\n")
         self.f.write("}\n")

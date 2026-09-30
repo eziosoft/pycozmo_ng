@@ -48,16 +48,16 @@ class SendThread(Thread):
     def __init__(
         self, sock: socket.socket, receiver_address: tuple[str, int] | None
     ) -> None:
-        super().__init__(daemon=True, name=__class__.__name__)
+        super().__init__(daemon=True, name=type(self).__name__)
         self.sock = sock
         self.lock = Lock()
         self.receiver_address = receiver_address
         self.server = receiver_address is None
         self.window = SendWindow(16, size=62, max_seq=MAX_SEQ)
         self.stop_flag = False
-        self.queue = Queue()
+        self.queue: Queue[Any] = Queue()
         self.last_ack = 0
-        self.last_ack_time = 0
+        self.last_ack_time = 0.0
         self.disconnected = False
         # Number of packets received from the application layer.
         self.outgoing_packets = 0
@@ -163,7 +163,9 @@ class SendThread(Thread):
                 first_seq = seq
 
         if len(to_frame):
-            # Send current frame.
+            # Send current frame. to_frame only fills inside the loop, which
+            # also binds first_seq and seq.
+            assert first_seq is not None and seq is not None
             self._send_frame(to_frame, first_seq, seq, last_ack)
 
     def _send_ping(self, pkt) -> None:
@@ -190,6 +192,11 @@ class SendThread(Thread):
             raise
 
     def _send_raw_frame(self, raw_frame: bytes) -> None:
+        if self.receiver_address is None:
+            # Server-side connections have no peer address until the first
+            # RESET arrives (ReceiveThread.handle_reset assigns it).
+            self.discarded_frames += 1
+            return
         try:
             self.sock.sendto(raw_frame, self.receiver_address)
             self.sent_frames += 1
@@ -211,7 +218,7 @@ class SendThread(Thread):
         with self.lock:
             self.window.reset()
             self.last_ack = 0
-            self.last_ack_time = 0
+            self.last_ack_time = 0.0
         if self.server:
             self.receiver_address = None
         self.outgoing_packets = 0
@@ -237,7 +244,7 @@ class ReceiveThread(Thread):
         delivery_handler,
         buffer_size: int = 2048,
     ) -> None:
-        super().__init__(daemon=True, name=__class__.__name__)
+        super().__init__(daemon=True, name=type(self).__name__)
         self.sock = sock
         self.sender_address = sender_address
         self.server = sender_address is None
@@ -421,13 +428,13 @@ class Connection(Thread, event.Dispatcher):
         protocol_log_messages: list | None = None,
         server: bool = False,
     ) -> None:
-        super().__init__(daemon=True, name=__class__.__name__)
+        super().__init__(daemon=True, name=type(self).__name__)
         # Thread is an old-style class and does not propagate initialization.
         event.Dispatcher.__init__(self)
         self.robot_addr = robot_addr or (SERVER_ADDR if server else ROBOT_ADDR)
         self.server = server
         # Event queue.
-        self.queue = Queue()
+        self.queue: Queue[Any] = Queue()
         # Filters
         self.packet_type_filter = filter.Filter()
         self.packet_type_filter.deny_ids({PacketType.PING.value})
@@ -448,9 +455,9 @@ class Connection(Thread, event.Dispatcher):
             self._on_packet,
         )
         self.stop_flag = False
-        self.send_last = 0
-        self.ping_last = 0
-        self.stats_last = 0
+        self.send_last = 0.0
+        self.ping_last = 0.0
+        self.stats_last = 0.0
         self.ping_counter = 0
 
     def start(self) -> None:

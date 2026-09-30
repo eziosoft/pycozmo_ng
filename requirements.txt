@@ -1,7 +1,7 @@
 setuptools>=38.6.0
 dpkt
 numpy
-Pillow>=6.0.0
+Pillow>=9.1.0  # Image.Resampling in face rendering, textbbox in annotation
 flatbuffers
 opencv-contrib-python>=4.5.0
 scipy>=1.7.0

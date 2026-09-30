@@ -211,7 +211,7 @@ class AStarPlanner:
             dy = abs(r - goal_row)
             return HEURISTIC_WEIGHT * (dx + dy) + (COST_DIAGONAL - 2) * min(dx, dy)
 
-        open_set = []
+        open_set: list[tuple[float, float, int, int]] = []
         heapq.heappush(open_set, (0, 0, start_col, start_row))
 
         g_score: dict[tuple[int, int], float] = {(start_col, start_row): 0.0}
@@ -254,7 +254,7 @@ class AStarPlanner:
     def _reconstruct(
         self,
         came_from: dict[tuple[int, int], tuple[int, int] | None],
-        current: tuple[int, int],
+        current: tuple[int, int] | None,
     ) -> list[tuple[int, int]]:
         """Rebuild the path from start to *current*."""
         path = []

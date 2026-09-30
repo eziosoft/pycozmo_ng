@@ -11,15 +11,15 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from pycozmo import logger
+from pycozmo.logger import logger
 from pycozmo.vision.calibration.camera_calibration import CameraCalibration
+from pycozmo.vision.calibration.robot_center import RobotCenterResult
 from pycozmo.vision.interfaces import (
     CubeDetector,
     CubeFusionTracker,
     FaceDetector,
     RobotCenterDetector,
 )
-from pycozmo.vision.calibration.robot_center import RobotCenterResult
 
 
 @dataclass
@@ -79,7 +79,7 @@ class DetectionPipeline:
         self.camera_calibration = camera_calibration
         self.cube_detector = cube_detector
         self.cube_tracker = cube_tracker
-        self.fused_cubes = {}  # 3D fused cube states
+        self.fused_cubes: dict[int, dict] = {}  # 3D fused cube states
 
         # Face detection
         self.face_detector = face_detector
@@ -361,12 +361,12 @@ def create_default_detection_pipeline(
         Configured DetectionPipeline instance
     """
     # Import concrete implementations
+    from pycozmo.vision.calibration.robot_center import RobotCenterDetector
     from pycozmo.vision.cube_detector.cube_detector import (
         CozmoCubeDetector,
         CubeFusionTracker,
     )
     from pycozmo.vision.face_detector import FaceDetector
-    from pycozmo.vision.calibration.robot_center import RobotCenterDetector
 
     # Load markers
     target_markers = load_marker_templates(marker_dir)

@@ -48,6 +48,7 @@ class AnnotationEngine:
         """Load a font with fallbacks (cached)."""
         if size in self._fonts:
             return self._fonts[size]
+        font: ImageFont.FreeTypeFont | ImageFont.ImageFont
         try:
             font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size)
         except OSError:
@@ -95,13 +96,7 @@ class AnnotationEngine:
             if label_parts:
                 label = " | ".join(label_parts)
 
-                try:
-                    bbox = draw.textbbox((x1, y1 - 15), label, font=font)
-                    text_width = bbox[2] - bbox[0]
-                    text_height = bbox[3] - bbox[1]
-                except AttributeError:
-                    text_width, text_height = draw.textsize(label, font=font)
-                    bbox = (x1, y1 - 15, x1 + text_width, y1 - 15 + text_height)
+                bbox = draw.textbbox((x1, y1 - 15), label, font=font)
 
                 draw.rectangle(
                     [(bbox[0] - 2, bbox[1] - 2), (bbox[2] + 2, bbox[3] + 2)],

@@ -13,7 +13,7 @@ occupancy mapping and navigation.
 import cv2
 import numpy as np
 
-from pycozmo import logger
+from pycozmo.logger import logger
 from pycozmo.util.coords import CAMERA_TO_BODY_OFFSET, _head_tilt_matrix
 
 __all__ = ["FloorProjector"]
@@ -195,7 +195,7 @@ class FloorProjector:
         """
         self.update_mapping(head_angle_rad)
 
-        if self._remap_x is None:
+        if self._remap_x is None or self._remap_y is None:
             return np.zeros((self._out_h, self._out_w, 3), dtype=np.uint8)
 
         # cv2.remap needs float32 coordinate maps

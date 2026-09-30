@@ -59,12 +59,12 @@ def setup_basic_logging(
             "AnimationController.IsReadyToPlay.BufferStarved" messages).
     """
     if log_level is None:
-        log_level = os.environ.get("PYCOZMO_LOG_LEVEL", logging.INFO)
+        log_level = os.environ.get("PYCOZMO_LOG_LEVEL", "INFO")
     if protocol_log_level is None:
-        protocol_log_level = os.environ.get("PYCOZMO_PROTOCOL_LOG_LEVEL", logging.INFO)
+        protocol_log_level = os.environ.get("PYCOZMO_PROTOCOL_LOG_LEVEL", "INFO")
     if robot_log_level is None:
         # Keeping the default to WARNING due to "AnimationController.IsReadyToPlay.BufferStarved" messages.
-        robot_log_level = os.environ.get("PYCOZMO_ROBOT_LOG_LEVEL", logging.WARNING)
+        robot_log_level = os.environ.get("PYCOZMO_ROBOT_LOG_LEVEL", "WARNING")
     handler = logging.StreamHandler(stream=target)
     formatter = logging.Formatter(
         fmt="%(asctime)s.%(msecs)03d %(name)-20s %(levelname)-8s %(message)s",

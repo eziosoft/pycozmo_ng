@@ -899,14 +899,13 @@ class Pose:
         return self.is_valid and self._is_accurate
 
 
-def hex_dump(data: bytes) -> str:
+def hex_dump(data: bytes | bytearray) -> str:
     res = ":".join(f"{b:02x}" for b in data)
     return res
 
 
 def hex_load(data: str) -> bytes:
-    res = bytearray.fromhex(data.replace(":", ""))
-    return res
+    return bytes(bytearray.fromhex(data.replace(":", "")))
 
 
 def frange(start, stop, step):

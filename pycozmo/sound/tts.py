@@ -14,7 +14,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pycozmo import logger
+from pycozmo.logger import logger
 from pycozmo.sound.exception import TTSGenerationError, TTSNotInstalledError
 
 if TYPE_CHECKING:

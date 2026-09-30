@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from pycozmo import logger
+from pycozmo.logger import logger
 
 __all__ = ["RobotCenterDetector", "RobotCenterResult"]
 
@@ -125,7 +125,7 @@ class RobotCenterDetector:
         bs = min(self.threshold_block, *blurred.shape)
         bs -= 1 - (bs % 2)  # must be odd
         bs = max(3, bs)
-        dark = cv2.adaptiveThreshold(
+        dark: np.ndarray = cv2.adaptiveThreshold(
             blurred,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -134,7 +134,9 @@ class RobotCenterDetector:
             self.threshold_c,
         )
 
-        num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(dark, 8)
+        num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(
+            dark, connectivity=8
+        )
 
         spots = []
         for i in range(1, num_labels):  # skip background (0)

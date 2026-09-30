@@ -5,6 +5,7 @@ Cozmo image run-length encoding and decoding.
 """
 
 import sys
+from typing import Any
 from io import StringIO
 
 from PIL import Image
@@ -44,10 +45,11 @@ def image_to_str(image):
     return s.getvalue()
 
 
-def str_to_image(sim: str) -> Image:
+def str_to_image(sim: str) -> Image.Image:
     s = StringIO(sim)
     im = Image.new("1", (128, 32), color=0)
     px = im.load()
+    assert px is not None
     for y in range(32):
         while True:
             line = s.readline().strip()
@@ -151,7 +153,7 @@ class ImageDecoder:
                 self.repeat_column_shift = False
             self.last_draw = False
 
-    def decode(self) -> bytes:
+    def decode(self) -> bytearray:
         for i, b in enumerate(self.buffer):
             if self.debug:
                 sys.stdout.write(f"{i}: ")
@@ -160,14 +162,16 @@ class ImageDecoder:
 
 
 class ImageEncoder:
-    def __init__(self, im: Image):
+    def __init__(self, im: Image.Image):
         if im.size[0] != 128 or im.size[1] != 32:
             raise ValueError(
                 f"Invalid image dimensions. Only 128x32 images are supported. {im.size[0]}x{im.size[1]} given."
             )
         if im.mode != "1":
             raise ValueError("Invalid pixel format. Only binary images are supported.")
-        self.px = im.load()
+        px = im.load()
+        assert px is not None
+        self.px: Any = px
         self.buffer = bytearray()
         self.last_col = bytearray()
         self.cur_col = bytearray()
@@ -178,7 +182,7 @@ class ImageEncoder:
 
     def _encode_seq(self, color: int, cnt: int) -> int | None:
         """Encode a sequence of pixels with the same color."""
-        cmd = None  # type: Optional[int]
+        cmd: int | None = None
         if color:
             # Draw
             if cnt <= 15:
@@ -251,7 +255,7 @@ class ImageEncoder:
 
     def encode(self) -> bytearray:
         while self.x < 128 and self.y < 32:
-            color = self.px[self.x, self.y]
+            color = int(self.px[self.x, self.y])
             self.y += 1
             cnt = self._count_color(color)
             cmd = self._encode_seq(color, cnt)

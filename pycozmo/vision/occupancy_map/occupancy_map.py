@@ -9,7 +9,7 @@ starting position.
 import cv2
 import numpy as np
 
-from pycozmo import logger
+from pycozmo.logger import logger
 
 __all__ = ["OccupancyMap"]
 
@@ -148,7 +148,9 @@ class OccupancyMap:
         # (dilate the invalid region then zero edges under it) before inflation.
         # Interior object edges are untouched — they sit away from the silhouette.
         if self._edge_margin_px > 0:
-            silhouette = (gray < self._valid_min_brightness).astype(np.uint8)
+            silhouette: np.ndarray = (
+                gray < self._valid_min_brightness
+            ).astype(np.uint8)
             silhouette = cv2.dilate(
                 silhouette, np.ones((3, 3), np.uint8), iterations=self._edge_margin_px
             )

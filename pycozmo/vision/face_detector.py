@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from pycozmo import logger
+from pycozmo.logger import logger
 from pycozmo.vision.calibration.camera_calibration import CameraCalibration
 
 __all__ = ["FaceDetection", "FaceDetector"]

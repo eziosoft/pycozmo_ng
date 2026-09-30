@@ -20,7 +20,7 @@ class Filter:
     def deny_ids(self, ids: set[int]) -> None:
         self.denied_ids.update(ids)
 
-    def filter(self, target_id: int) -> bool:
+    def filter(self, target_id: int | None) -> bool:
         if target_id is not None:
             if self.allowed_ids and target_id not in self.allowed_ids:
                 return True

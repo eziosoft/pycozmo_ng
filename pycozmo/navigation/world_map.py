@@ -35,7 +35,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
-from pycozmo import logger
+from pycozmo.logger import logger
 from pycozmo.util.coords import camera_to_world
 
 __all__ = [

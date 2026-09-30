@@ -25,7 +25,7 @@ __all__ = [
 ]
 
 
-_struct_cache = {}  # type: Dict[Tuple[str, int], struct.Struct]
+_struct_cache: dict[tuple[str, int], struct.Struct] = {}
 
 
 def _get_struct(fmt: str, length: int) -> struct.Struct:

@@ -6,6 +6,8 @@ from typing import Protocol
 
 import numpy as np
 
+from pycozmo.vision.calibration.robot_center import RobotCenterResult
+
 
 class CubeDetector(Protocol):
     """Protocol for cube detectors — any implementation can be plugged in."""
@@ -58,6 +60,6 @@ class RobotCenterDetector(Protocol):
 
     head_angle_rad: float
 
-    def detect(self, img_bgr: np.ndarray) -> object | None:
+    def detect(self, img_bgr: np.ndarray) -> RobotCenterResult | None:
         """Detect robot center circles. Returns result with detected, lateral_offset_mm, circle_a_px, circle_b_px."""
         ...

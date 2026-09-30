@@ -6,10 +6,10 @@ processing stage called by :class:`AnnotatedVisionProcessor`.
 
 import numpy as np
 
-from pycozmo import logger
+from pycozmo.logger import logger
 from pycozmo.vision.calibration.camera_calibration import CameraCalibration
-from pycozmo.vision.occupancy_map.floor_projector import FloorProjector
 from pycozmo.vision.occupancy_map import OccupancyMap
+from pycozmo.vision.occupancy_map.floor_projector import FloorProjector
 
 __all__ = ["FloorPipeline"]
 
