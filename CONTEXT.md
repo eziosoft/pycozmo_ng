@@ -243,18 +243,27 @@ Whether a cube is riding the lift — read it whenever you want via
 `cozmo.carry.state` / `cozmo.carry.is_carrying` (`True`/`False`/`None` for
 unknown) / `cozmo.carry.cube_id`. Nothing polls: `CarryDetector.state` is
 evaluated on each read, using the **post-grab visibility heuristic** — a
-grabbed cube sits on the raised forks in front of/above the camera, so with
-forks up, "cube still detected in the world map" = grab missed
-(`NOT_CARRYING`) and "cube gone from the map for ≥ `LOST_S`" = it is on the
-forks (`CARRYING`). Forks down (`< MIN_CARRY_LIFT_MM`) is authoritative
-`NOT_CARRYING` and disarms the observation; lift up with no witnessed grab
-is `UNKNOWN`. `CubeApproach` owns the hooks: it calls `clear()` when the
+grabbed cube sits on the raised forks in front of/above the camera. Two
+phases: after `note_grab` the detector *waits for the fork to finish
+rising* (lift motion observed through the `LIFT_IN_POS` status flag, or
+height ≥ `MIN_CARRY_LIFT_MM`) — no verdict mid-travel, and a lagging
+`lift_height_mm` reading never disarms the observation (known issue:
+live feedback can read low right after a grab). Once the fork is up,
+visibility decides: "cube still detected in the world map" = grab missed
+(`NOT_CARRYING`), "cube gone from the map for ≥ `LOST_S`" = it is on the
+forks (`CARRYING`). A fork settled *down* that never rose within
+`LIFT_TRANSIT_S` of the grab is authoritative `NOT_CARRYING` and clears
+the observation; lift up with no witnessed grab is `UNKNOWN`.
+`CubeApproach` owns the hooks: it calls `clear()` when the
 forks go down at approach start and `note_grab(cube_idx)` after the grab
 (lift-up) — Brain wires the detector (`brain.carry`) into Navigator →
-CubeApproach, and `Cozmo.carry` is a pure reader.
+CubeApproach, and `Cozmo.carry` is a pure reader. State transitions log
+with the raw reading (`Carry: carrying - cube 2 out of frame ... (lift
+92.0mm)`), so live logs show the verdict and the lift value that fed it.
 _Avoid_: background polling or a cached boolean (the state is decided at
 read time); treating "lift up" alone as "carrying" (it is `UNKNOWN` without
-a witnessed grab); assuming the heuristic survives a cube driven back into
+a witnessed grab); judging while the lift motor is travelling; assuming
+the heuristic survives a cube driven back into
 frame — re-`note_grab` after the next grab to resynchronise.
 
 ## Example dialogue

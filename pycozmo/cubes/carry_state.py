@@ -4,14 +4,18 @@ The lift (forklift) carries a grabbed cube *in front of and above* the
 camera, so a cube that rides the forks leaves the camera's field of view.
 That gives a simple post-grab visibility heuristic:
 
-* cube still visible after the grab -> it is lying on the floor, the grab
-  missed -> ``NOT_CARRYING``
-* cube gone from the world map with the forks up -> it is riding the
-  forks, out of frame -> ``CARRYING``
+* right after a grab the fork is still rising — nothing is judged until
+  the lift settles again (``LIFT_IN_POS`` status flag) or its height
+  reads up;
+* fork up + grabbed cube still visible -> it lies on the floor, the grab
+  missed -> ``NOT_CARRYING``;
+* fork up + cube gone from the world map -> it rides the forks, out of
+  frame -> ``CARRYING``;
+* fork down -> nothing can ride a lowered fork -> ``NOT_CARRYING``.
 
-Everything else (lift up but no witnessed grab) is ``UNKNOWN``.  Nothing
-polls in the background — :attr:`CarryDetector.state` is evaluated
-whenever a caller asks for it.
+Everything else (e.g. lift up but no witnessed grab) is ``UNKNOWN``.
+Nothing polls in the background — :attr:`CarryDetector.state` is
+evaluated whenever a caller asks for it.
 """
 
 from __future__ import annotations
@@ -49,12 +53,21 @@ class CarryDetector:
             its visibility is.
         get_lift_height: Current lift height in mm (``0.0`` = forks down).
             Callable so the detector never holds a ``Client``.
+        get_lift_in_pos: ``Callable[[], bool]`` — the robot's ``LIFT_IN_POS``
+            status flag: ``False`` while the lift motor is travelling,
+            ``True`` when it has settled. Optional; when omitted the lift
+            is assumed settled, so only the height reading decides.
         clock: Monotonic clock (injectable for tests).
 
-    The heuristic only makes sense with the forks up: while they are down
-    no cube can ride them, which is authoritative, so the detector reports
-    ``NOT_CARRYING`` (and forgets any observation — a lowered lift means
-    the cube was placed).
+    The heuristic runs in two phases, per the "wait for the fork" rule:
+    after :meth:`note_grab` the detector waits for the lift to finish
+    rising (observed motion + settle, or height reading up) before it
+    judges anything — a mid-travel or stale height reading is never a
+    verdict. Once the fork is up, visibility alone decides: cube still
+    in frame = grab missed, cube gone for at least ``LOST_S`` =
+    riding the forks. A fork that is settled *down* and never rose after
+    the grab is authoritative ``NOT_CARRYING`` and forgets the
+    observation (a lowered lift means the cube was placed).
 
     Limitation (inherent to visibility-based detection): a missed grab
     whose cube rolled out of view reads as ``CARRYING``, and a cube driven
@@ -68,23 +81,30 @@ class CarryDetector:
     #: Detections blink out for a frame or two; only after this long
     #: without a fused update is the cube "out of the frame".
     LOST_S = 2.0
-    #: ``set_lift_height`` returns as soon as the command is sent, so right
-    #: after a grab the lift is still travelling. Low lift readings are
-    #: ignored for this long so transit is not mistaken for a drop.
+    #: ``set_lift_height`` returns as soon as the command is sent, and the
+    #: firmware acknowledges before the motor starts. If no lift motion
+    #: has been seen this long after a grab, the rise never happened —
+    #: the fork is genuinely down.
     LIFT_TRANSIT_S = 2.0
 
     def __init__(
         self,
         get_cube_state: Callable[[int], Any] | None = None,
         get_lift_height: Callable[[], float] | None = None,
+        get_lift_in_pos: Callable[[], bool] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ):
         self._get_cube_state = get_cube_state
         self._get_lift_height = get_lift_height
+        self._get_lift_in_pos = get_lift_in_pos
         self._clock = clock
         self._lock = threading.Lock()
         self._cube_index: int | None = None
-        self._grabbed_at: float = 0.0
+        self._grabbed_at = 0.0
+        #: Lift motion seen since ``note_grab`` (the commanded rise).
+        self._saw_lift_motion = False
+        #: Last state written to the log, to log transitions only.
+        self._last_logged: CarryState | None = None
 
     # ------------------------------------------------------------------
     # Observation hooks (called by CubeApproach)
@@ -95,8 +115,10 @@ class CarryDetector:
         with self._lock:
             self._cube_index = int(cube_index)
             self._grabbed_at = self._clock()
+            self._saw_lift_motion = False
+            self._last_logged = None
         logger.info(
-            "Carry: observing cube %d (out of frame = carrying)",
+            "Carry: observing cube %d (waiting for the fork to finish rising)",
             to_cube_id(cube_index),
         )
 
@@ -105,6 +127,7 @@ class CarryDetector:
         with self._lock:
             index = self._cube_index
             self._cube_index = None
+            self._last_logged = None
         if index is not None:
             logger.info("Carry: cleared (cube %d)", to_cube_id(index))
 
@@ -121,26 +144,14 @@ class CarryDetector:
             grabbed_at = self._grabbed_at
 
         lift = self._lift_height_mm()
-        if lift < self.MIN_CARRY_LIFT_MM:
-            # Forks down: authoritative "not carrying" — and the cube was
-            # placed, so forget the observation. Skipped while the lift is
-            # still travelling up right after a grab (LIFT_TRANSIT_S).
-            in_transit = index is not None and now - grabbed_at < self.LIFT_TRANSIT_S
-            if not in_transit:
-                if index is not None:
-                    self.clear()
-                return CarryState.NOT_CARRYING
+        in_pos = self._lift_in_pos()
 
         if index is None:
-            # Lift up, but nobody saw a grab: could be an empty lift raised
-            # from the browser, or a cube we were never told about.
-            return CarryState.UNKNOWN
-
-        return (
-            CarryState.NOT_CARRYING
-            if self._seconds_since_seen(index, now) < self.LOST_S
-            else CarryState.CARRYING
-        )
+            state, detail = self._unarmed_state(lift, in_pos)
+        else:
+            state, detail = self._armed_state(index, grabbed_at, now, lift, in_pos)
+        self._log_transition(state, detail)
+        return state
 
     @property
     def is_carrying(self) -> bool | None:
@@ -162,6 +173,87 @@ class CarryDetector:
     # Internal
     # ------------------------------------------------------------------
 
+    def _unarmed_state(self, lift: float, in_pos: bool) -> tuple[CarryState, str]:
+        """No observation in progress: fork position alone is the answer."""
+        if lift >= self.MIN_CARRY_LIFT_MM:
+            return (
+                CarryState.UNKNOWN,
+                f"forks up but no grab witnessed (lift {lift:.1f}mm)",
+            )
+        if not in_pos:
+            return CarryState.UNKNOWN, f"lift in motion (lift {lift:.1f}mm)"
+        return CarryState.NOT_CARRYING, f"forks down (lift {lift:.1f}mm)"
+
+    def _armed_state(
+        self,
+        index: int,
+        grabbed_at: float,
+        now: float,
+        lift: float,
+        in_pos: bool,
+    ) -> tuple[CarryState, str]:
+        """A grab is being observed: wait for the fork, then judge visibility."""
+        cube_id = to_cube_id(index)
+
+        if not in_pos:
+            # The commanded rise is travelling — wait, never judge.
+            with self._lock:
+                self._saw_lift_motion = True
+            return (
+                CarryState.UNKNOWN,
+                f"lift in motion after grabbing cube {cube_id} (lift {lift:.1f}mm)",
+            )
+
+        with self._lock:
+            saw_motion = self._saw_lift_motion
+
+        if saw_motion or lift >= self.MIN_CARRY_LIFT_MM:
+            # The fork finished the commanded rise (or reads up): now,
+            # and only now, visibility decides.
+            age = self._seconds_since_seen(index, now)
+            if age < self.LOST_S:
+                return (
+                    CarryState.NOT_CARRYING,
+                    (
+                        f"cube {cube_id} still in frame {age:.1f}s after the grab"
+                        f" (lift {lift:.1f}mm)"
+                    ),
+                )
+            return (
+                CarryState.CARRYING,
+                (
+                    f"cube {cube_id} out of frame for {age:.1f}s with forks up"
+                    f" (lift {lift:.1f}mm)"
+                ),
+            )
+
+        if now - grabbed_at < self.LIFT_TRANSIT_S:
+            # Command sent, motor not moving yet — wait for the rise.
+            return (
+                CarryState.UNKNOWN,
+                f"waiting for the fork to rise (lift {lift:.1f}mm)",
+            )
+
+        # Settled low with no motion since the grab: the rise never
+        # happened. Forks down is authoritative — not carrying, and the
+        # cube was placed, so forget the observation.
+        self.clear()
+        return (
+            CarryState.NOT_CARRYING,
+            (
+                f"forks still down {now - grabbed_at:.1f}s after the grab"
+                f" (lift {lift:.1f}mm), observation cleared"
+            ),
+        )
+
+    def _log_transition(self, state: CarryState, detail: str) -> None:
+        """Log only when the reported state changes (reads run at ~30 Hz)."""
+        with self._lock:
+            if state is self._last_logged:
+                return
+            self._last_logged = state
+        logger.info("Carry: %s - %s", state.value.replace("_", " "), detail)
+
     def _lift_height_mm(self) -> float:
         if self._get_lift_height is None:
             return 0.0
@@ -170,6 +262,15 @@ class CarryDetector:
         except Exception:  # noqa: BLE001 — a broken read must not break reads
             logger.exception("Carry: lift height read failed")
             return 0.0
+
+    def _lift_in_pos(self) -> bool:
+        if self._get_lift_in_pos is None:
+            return True
+        try:
+            return bool(self._get_lift_in_pos())
+        except Exception:  # noqa: BLE001 — a broken read must not break reads
+            logger.exception("Carry: lift in-position read failed")
+            return True
 
     def _seconds_since_seen(self, index: int, now: float) -> float:
         if self._get_cube_state is None:

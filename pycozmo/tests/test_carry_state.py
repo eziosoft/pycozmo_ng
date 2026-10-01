@@ -1,17 +1,21 @@
 """Tests for the carry-state concept (cube on the lift, checked on demand).
 
-Covers the post-grab visibility heuristic: forks down is authoritative,
-lift up + grabbed cube still in frame = grab missed, lift up + cube gone
-from the world map = carrying. Nothing polls — every answer comes from the
+Covers the post-grab visibility heuristic: wait for the fork to finish
+rising, then let visibility decide — forks up + grabbed cube still in
+frame = grab missed, forks up + cube gone from the world map = carrying,
+forks down = not carrying. Nothing polls — every answer comes from the
 moment ``state`` is read.
 """
 
 from types import SimpleNamespace
 
 from pycozmo.cubes.carry_state import CarryDetector, CarryState
+from pycozmo.util.robot import RobotStatusFlag
 
 LIFT_UP = 92.0
 LIFT_DOWN = 32.0
+FORK_SETTLED = RobotStatusFlag.LIFT_IN_POS
+FORK_MOVING = 0
 
 
 class FakeClock:
@@ -25,40 +29,52 @@ class FakeClock:
         self.now += seconds
 
 
-def _detector(lift: float = LIFT_UP, seen_age_s: float = 0.0, cube_index: int = 0):
-    """Detector with a controllable lift, a visible cube, and a fake clock."""
+def _detector(
+    lift: float = LIFT_UP,
+    seen_age_s: float = 0.0,
+    cube_index: int = 0,
+    in_pos: bool = True,
+):
+    """Detector with controllable lift, fork flag, a cube, and a fake clock."""
     clock = FakeClock()
     lift_mm = [lift]
+    in_pos_flag = [in_pos]
     cube = SimpleNamespace(updated_at=clock.now - seen_age_s)
     det = CarryDetector(
         get_cube_state=lambda i: cube if i == cube_index else None,
         get_lift_height=lambda: lift_mm[0],
+        get_lift_in_pos=lambda: in_pos_flag[0],
         clock=clock,
     )
-    return det, clock, lift_mm, cube
+    return det, clock, lift_mm, cube, in_pos_flag
 
 
 class TestOnDemandStatus:
     def test_lift_up_without_a_grab_is_unknown(self):
-        det, _, _, _ = _detector(lift=LIFT_UP)
+        det, *_ = _detector(lift=LIFT_UP)
         assert det.state is CarryState.UNKNOWN
         assert det.is_carrying is None
         assert det.cube_id is None
 
     def test_forks_down_is_authoritatively_not_carrying(self):
-        det, _, _, _ = _detector(lift=LIFT_DOWN)
+        det, *_ = _detector(lift=LIFT_DOWN)
         assert det.state is CarryState.NOT_CARRYING
         assert det.is_carrying is False
 
+    def test_moving_lift_unarmed_is_unknown(self):
+        # Mid-travel the fork is neither up nor down: no verdict.
+        det, *_ = _detector(lift=LIFT_DOWN, in_pos=False)
+        assert det.state is CarryState.UNKNOWN
+
     def test_cube_still_visible_means_grab_missed(self):
-        det, _, _, _ = _detector(lift=LIFT_UP, seen_age_s=0.0)
+        det, *_ = _detector(lift=LIFT_UP, seen_age_s=0.0)
         det.note_grab(0)
         assert det.state is CarryState.NOT_CARRYING
         assert det.is_carrying is False
         assert det.cube_id == 1  # public IDs are 1-3
 
     def test_cube_gone_from_frame_means_carrying(self):
-        det, _, _, _ = _detector(lift=LIFT_UP, seen_age_s=3.0)
+        det, *_ = _detector(lift=LIFT_UP, seen_age_s=3.0)
         det.note_grab(0)
         assert det.state is CarryState.CARRYING
         assert det.is_carrying is True
@@ -66,12 +82,12 @@ class TestOnDemandStatus:
 
     def test_short_detection_gap_is_not_yet_carrying(self):
         # Detections blink; only LOST_S without an update counts as gone.
-        det, _, _, _ = _detector(lift=LIFT_UP, seen_age_s=0.5)
+        det, *_ = _detector(lift=LIFT_UP, seen_age_s=0.5)
         det.note_grab(0)
         assert det.state is CarryState.NOT_CARRYING
 
     def test_reappearing_cube_flips_back_on_the_next_read(self):
-        det, clock, _, cube = _detector(lift=LIFT_UP, seen_age_s=3.0)
+        det, clock, _, cube, _ = _detector(lift=LIFT_UP, seen_age_s=3.0)
         det.note_grab(0)
         assert det.state is CarryState.CARRYING
 
@@ -85,20 +101,26 @@ class TestOnDemandStatus:
         det = CarryDetector(
             get_cube_state=lambda i: None,
             get_lift_height=lambda: LIFT_UP,
+            get_lift_in_pos=lambda: True,
             clock=clock,
         )
         det.note_grab(0)
         assert det.state is CarryState.CARRYING
 
     def test_status_is_re_evaluated_on_every_read(self):
-        det, clock, lift_mm, cube = _detector(lift=LIFT_DOWN, seen_age_s=0.0)
+        det, clock, _, cube, in_pos_flag = _detector(lift=LIFT_DOWN, seen_age_s=0.0)
         det.note_grab(0)
-        # Lift still travelling up (transit grace): visibility decides.
-        assert det.state is CarryState.NOT_CARRYING
-        assert det.cube_id == 1  # not disarmed while in transit
+        # Command sent, fork not moving yet: wait, do not judge.
+        assert det.state is CarryState.UNKNOWN
+        assert det.cube_id == 1  # not disarmed while waiting
 
-        # Cube leaves the frame, lift reaches the top: carrying.
-        lift_mm[0] = LIFT_UP
+        # The lift motor starts travelling — still no verdict.
+        in_pos_flag[0] = False
+        assert det.state is CarryState.UNKNOWN
+
+        # The fork settles up (height feedback still reads low) and the
+        # cube has left the frame: carrying.
+        in_pos_flag[0] = True
         clock.advance(CarryDetector.LOST_S + 0.1)
         assert det.state is CarryState.CARRYING
 
@@ -107,9 +129,63 @@ class TestOnDemandStatus:
         assert det.state is CarryState.NOT_CARRYING
 
 
+class TestWaitForFork:
+    """Judge only once the fork has finished rising — never mid-travel."""
+
+    def test_no_verdict_while_the_lift_motor_travels(self):
+        det, *_ = _detector(lift=LIFT_DOWN, seen_age_s=3.0, in_pos=False)
+        det.note_grab(0)
+        # The height may even read "up" mid-travel: still wait for settle.
+        assert det.state is CarryState.UNKNOWN
+        assert det.cube_id == 1
+
+    def test_carrying_with_stale_lift_feedback_after_the_rise(self):
+        # Regression: lift_height_mm can lag or read low while the fork is
+        # physically up. Motion + settle is the "fork is up" signal; the
+        # height reading must not disarm the observation.
+        det, clock, lift_mm, _, in_pos_flag = _detector(
+            lift=LIFT_DOWN, seen_age_s=0.0, in_pos=False
+        )
+        det.note_grab(0)
+        clock.advance(0.1)
+        assert det.state is CarryState.UNKNOWN  # lift travelling
+
+        # Motor stops — fork is up — but the feedback still reads low.
+        in_pos_flag[0] = True
+        lift_mm[0] = LIFT_DOWN
+        clock.advance(CarryDetector.LOST_S + 0.1)
+        assert det.state is CarryState.CARRYING
+        assert det.cube_id == 1
+
+    def test_missed_grab_with_stale_lift_feedback_reads_not_carrying(self):
+        # Same as above, but the cube stayed in view: the grab missed.
+        det, clock, _, cube, in_pos_flag = _detector(
+            lift=LIFT_DOWN, seen_age_s=0.0, in_pos=False
+        )
+        det.note_grab(0)
+        assert det.state is CarryState.UNKNOWN  # lift travelling
+
+        # Fork settles (height still reads low), cube still tracked.
+        in_pos_flag[0] = True
+        clock.advance(0.5)
+        cube.updated_at = clock.now
+        assert det.state is CarryState.NOT_CARRYING
+        assert det.cube_id == 1
+
+    def test_settled_low_fork_that_never_rises_clears_the_observation(self):
+        # No motion at all and the height stays down: the rise never
+        # happened — forks down is authoritative, forget the grab.
+        det, clock, *_ = _detector(lift=LIFT_DOWN, seen_age_s=0.0, in_pos=True)
+        det.note_grab(0)
+        assert det.state is CarryState.UNKNOWN  # transit grace
+        clock.advance(CarryDetector.LIFT_TRANSIT_S + 0.1)
+        assert det.state is CarryState.NOT_CARRYING
+        assert det.cube_id is None
+
+
 class TestReleaseAndDrop:
     def test_lift_down_after_transit_clears_the_observation(self):
-        det, clock, lift_mm, _ = _detector(lift=LIFT_UP, seen_age_s=3.0)
+        det, clock, lift_mm, *_ = _detector(lift=LIFT_UP, seen_age_s=3.0)
         det.note_grab(0)
         assert det.state is CarryState.CARRYING
 
@@ -124,7 +200,7 @@ class TestReleaseAndDrop:
         assert det.state is CarryState.UNKNOWN
 
     def test_clear_forgets_the_observation(self):
-        det, _, _, _ = _detector(lift=LIFT_UP, seen_age_s=3.0)
+        det, *_ = _detector(lift=LIFT_UP, seen_age_s=3.0)
         det.note_grab(2)
         assert det.cube_id == 3
         det.clear()
@@ -152,7 +228,7 @@ class TestBrainWiring:
         assert brain.carry.cube_id == 1
 
 
-def _fake_cli(lift_mm: float):
+def _fake_cli(lift_mm: float, robot_status: int = FORK_SETTLED):
     """Minimal robot client for Brain._on_robot_state telemetry reads."""
     return SimpleNamespace(
         pose=SimpleNamespace(
@@ -165,6 +241,7 @@ def _fake_cli(lift_mm: float):
         right_wheel_speed=SimpleNamespace(mmps=0.0),
         head_angle=SimpleNamespace(degrees=0.0),
         lift_position=SimpleNamespace(height=SimpleNamespace(mm=lift_mm)),
+        robot_status=robot_status,
         cliff_data=None,
     )
 
@@ -206,3 +283,14 @@ class TestWebTelemetry:
         brain._cli = _fake_cli(lift_mm=92.0)
         telemetry = self._push(brain)
         assert telemetry["carry"] == "unknown"
+
+    def test_robot_state_pushes_unknown_while_fork_rises(self):
+        from pycozmo.brain import Brain
+
+        brain = Brain()
+        # Lift motor travelling (LIFT_IN_POS clear) right after a grab.
+        brain._cli = _fake_cli(lift_mm=32.0, robot_status=FORK_MOVING)
+        brain.carry.note_grab(0)
+        telemetry = self._push(brain)
+        assert telemetry["carry"] == "unknown"
+        assert telemetry["carry_cube"] == 1

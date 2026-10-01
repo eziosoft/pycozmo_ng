@@ -21,6 +21,7 @@ from pycozmo.navigation.motion_controller import MotionController
 from pycozmo.navigation.navigator import Navigator
 from pycozmo.navigation.world_map import WorldMap
 from pycozmo.protocol import protocol_encoder
+from pycozmo.util.robot import RobotStatusFlag
 from pycozmo.vision.annotation import AnnotationEngine
 from pycozmo.vision.cube_detector.detection_pipeline import (
     DetectionPipeline,
@@ -85,12 +86,16 @@ class Brain:
         # navigation jobs and the browser remote control, so "who may
         # command the wheels" lives in exactly one object.
         self.motion = MotionController()
-        # Cube carry state — "lift up + grabbed cube out of frame" heuristic,
-        # evaluated on demand by the public API (see cubes/carry_state.py).
+        # Cube carry state — after a grab, wait for the fork to finish
+        # rising, then let visibility decide (see cubes/carry_state.py).
         self.carry = CarryDetector(
             get_cube_state=self.world_map.get_cube,
             get_lift_height=lambda: (
                 self.cli.lift_position.height.mm if self.cli is not None else 0.0
+            ),
+            get_lift_in_pos=lambda: (
+                self.cli is None
+                or bool(self.cli.robot_status & RobotStatusFlag.LIFT_IN_POS)
             ),
         )
         self.navigator = Navigator(
