@@ -330,6 +330,10 @@ class Brain:
                 head_angle=round(c.head_angle.degrees, 1),
                 lift_height=round(c.lift_position.height.mm, 1),
                 cliff_data=c.cliff_data,
+                # Carry status for the HUD — evaluated on demand at push
+                # time (see cubes/carry_state.py).
+                carry=self.carry.state.value,
+                carry_cube=self.carry.cube_id,
             )
         except (AttributeError, ValueError) as e:
             logger.debug(f"Failed to update telemetry: {e}")

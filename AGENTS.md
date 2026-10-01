@@ -217,6 +217,8 @@ This branch includes:
 - Procedural face image streamed via WebSocket
 - Browser sends keyboard controls, click-to-navigate, cube approach, dock requests
 - Camera settings (gain, exposure, resolution, head light) configurable from browser
+- Telemetry HUD row "Carry" (cube N / none / unknown) — read from the same
+  on-demand CarryDetector the public API uses (`brain.carry`)
 
 ### Dependencies
 - Runtime: opencv-python, numpy, Pillow, scipy, PyOpenGL, pygame, aiohttp, websockets, pyttsx3

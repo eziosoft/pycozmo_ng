@@ -101,6 +101,10 @@
           <span class="tel-value" id="tel-lift">-- mm</span>
         </div>
         <div class="tel-row">
+          <span class="tel-label">Carry</span>
+          <span class="tel-value" id="tel-carry">--</span>
+        </div>
+        <div class="tel-row">
           <span class="tel-label">Wheel L</span>
           <span class="tel-value" id="tel-wheel-l">0 mm/s</span>
         </div>
@@ -1224,6 +1228,25 @@ function sendTestMode(enabled) {
         const lift = t.lift_height;
         document.getElementById('tel-lift').textContent =
           lift != null ? `${lift.toFixed(1)} mm` : '-- mm';
+
+        // Carry status — post-grab visibility heuristic (carry_state.py):
+        // carrying = cube on the forks (out of frame), none = no cube,
+        // unknown = lift up but no grab was witnessed.
+        const carryEl = document.getElementById('tel-carry');
+        if (t.carry === 'carrying') {
+          carryEl.textContent =
+            t.carry_cube != null ? `cube ${t.carry_cube}` : 'held';
+          carryEl.className = 'tel-value charging';
+        } else if (t.carry === 'not_carrying') {
+          carryEl.textContent = 'none';
+          carryEl.className = 'tel-value';
+        } else if (t.carry === 'unknown') {
+          carryEl.textContent = 'unknown';
+          carryEl.className = 'tel-value warn';
+        } else {
+          carryEl.textContent = '--';
+          carryEl.className = 'tel-value';
+        }
 
         document.getElementById('tel-wheel-l').textContent =
           `${(t.left_wheel_speed || 0).toFixed(0)} mm/s`;

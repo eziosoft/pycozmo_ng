@@ -150,3 +150,59 @@ class TestBrainWiring:
         # The lift callback follows the live client.
         brain.carry.note_grab(0)
         assert brain.carry.cube_id == 1
+
+
+def _fake_cli(lift_mm: float):
+    """Minimal robot client for Brain._on_robot_state telemetry reads."""
+    return SimpleNamespace(
+        pose=SimpleNamespace(
+            position=SimpleNamespace(x_y_z=(0.0, 0.0, 0.0), x=0.0, y=0.0),
+            rotation=SimpleNamespace(angle_z=SimpleNamespace(radians=0.0)),
+            origin_id=1,
+        ),
+        battery_voltage=3.9,
+        left_wheel_speed=SimpleNamespace(mmps=0.0),
+        right_wheel_speed=SimpleNamespace(mmps=0.0),
+        head_angle=SimpleNamespace(degrees=0.0),
+        lift_position=SimpleNamespace(height=SimpleNamespace(mm=lift_mm)),
+        cliff_data=None,
+    )
+
+
+class TestWebTelemetry:
+    """The browser HUD gets carry status through the telemetry push."""
+
+    @staticmethod
+    def _push(brain) -> dict:
+        captured: dict = {}
+        brain.web_viewer.update_telemetry = lambda **kw: captured.update(kw)
+        brain._on_robot_state(_fake_cli(lift_mm=92.0))
+        assert captured, "telemetry push skipped (incomplete fake cli)"
+        return captured
+
+    def test_robot_state_pushes_not_carrying(self):
+        from pycozmo.brain import Brain
+
+        brain = Brain()
+        brain._cli = _fake_cli(lift_mm=32.0)  # forks down
+        telemetry = self._push(brain)
+        assert telemetry["carry"] == "not_carrying"
+        assert telemetry["carry_cube"] is None
+
+    def test_robot_state_pushes_carrying(self):
+        from pycozmo.brain import Brain
+
+        brain = Brain()
+        brain._cli = _fake_cli(lift_mm=92.0)  # forks up
+        brain.carry.note_grab(0)  # armed; cube never seen again
+        telemetry = self._push(brain)
+        assert telemetry["carry"] == "carrying"
+        assert telemetry["carry_cube"] == 1
+
+    def test_lift_up_without_grab_pushes_unknown(self):
+        from pycozmo.brain import Brain
+
+        brain = Brain()
+        brain._cli = _fake_cli(lift_mm=92.0)
+        telemetry = self._push(brain)
+        assert telemetry["carry"] == "unknown"

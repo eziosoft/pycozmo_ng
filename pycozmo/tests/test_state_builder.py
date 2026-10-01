@@ -126,6 +126,25 @@ class TestBuildStateJson:
         assert state["telemetry"]["battery_voltage"] == 3.7
         assert state["telemetry"]["charging"] is False
 
+    def test_carry_status_included(self):
+        """The HUD reads carry state from telemetry — it must survive."""
+        wm = _make_world_map()
+        telemetry = {"carry": "carrying", "carry_cube": 2, "lift_height": 92.0}
+        result = build_state_json(
+            wm,
+            telemetry,
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
+        )
+        state = json.loads(result)
+        assert state["telemetry"]["carry"] == "carrying"
+        assert state["telemetry"]["carry_cube"] == 2
+
     def test_occupancy_included_when_forced(self):
         wm = _make_world_map()
         result = build_state_json(
