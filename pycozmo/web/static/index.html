@@ -270,6 +270,7 @@
     const CUBE_COLORS = [0xff4444, 0x4444ff, 0x44cc44];
     // Carried cube (rides the forks): rendered locked to the robot pose.
     const CARRY_FWD_MM = 55;          // cube centre ahead of the robot origin
+    const CARRY_H_MM = 114;           // forks up: MAX_LIFT_HEIGHT(92) + half cube
     const CARRY_CUBE_OPACITY = 0.85;  // carried cubes render more solid
     const CUBE_OPACITY = 0.45;
     const FACE_NAMES = ['face_0', 'face_1', 'face_2', 'face_3', 'top', 'bottom'];
@@ -749,8 +750,6 @@
     const cubeGroups = {};
     let hasRobotPose = false;
     let didInitialFrame = false;
-    // Latest lift height (mm) — a carried cube rides the forks at this height.
-    let carryLiftMm = 92;
 
     function createCubeLabel(text) {
       const canvas = document.createElement('canvas');
@@ -1249,7 +1248,6 @@ function sendTestMode(enabled) {
         const lift = t.lift_height;
         document.getElementById('tel-lift').textContent =
           lift != null ? `${lift.toFixed(1)} mm` : '-- mm';
-        if (lift != null) carryLiftMm = lift;
 
         // Carry status — post-grab visibility heuristic (carry_state.py):
         // carrying = cube on the forks (out of frame), none = no cube,
@@ -1459,13 +1457,14 @@ function sendTestMode(enabled) {
 
         // A carried cube rides the forks: lock it to the robot's rendered
         // pose so it follows exactly (no lerp of its own — it can never
-        // drift off the forks), at the current lift height.
+        // drift off the forks), at the fixed forks-up height (the lift
+        // height feedback reads low while carrying, so never use it here).
         for (const g of Object.values(cubeGroups)) {
           if (!g.userData.carried) continue;
           const h = robot.userData.heading || 0;
           g.position.set(
             robot.position.x + Math.sin(h) * CARRY_FWD_MM,
-            robot.position.y + carryLiftMm + CUBE_SIZE / 2,
+            robot.position.y + CARRY_H_MM,
             robot.position.z + Math.cos(h) * CARRY_FWD_MM
           );
           g.rotation.set(0, h, 0);

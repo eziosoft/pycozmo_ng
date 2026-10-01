@@ -216,7 +216,8 @@ This branch includes:
 - Carried cube in the 3D view: `state_builder` marks the cube `carried: true`
   (plus a robot-pose placeholder if the map lost it); the browser locks that
   cube to the robot's rendered pose — it rides the forks, following heading
-  and lift height exactly (no lerp of its own)
+  at a fixed forks-up height (never the lift feedback, which reads low while
+  carrying), no lerp of its own
 - MJPEG streams for camera, annotated camera, and floor views
 - Procedural face image streamed via WebSocket
 - Browser sends keyboard controls, click-to-navigate, cube approach, dock requests

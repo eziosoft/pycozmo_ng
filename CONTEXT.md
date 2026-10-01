@@ -263,8 +263,10 @@ with the raw reading (`Carry: carrying - cube 2 out of frame ... (lift
 The 3D viewer renders a carrying cube **locked to the robot**:
 `build_state_json` flags it `carried: true` (appending a robot-pose
 placeholder if the world map lost the cube out of frame) and `index.html`
-re-positions that cube every frame on the forks — robot heading + lift
-height, no lerp of its own, so it never drifts off the robot.
+re-positions that cube every frame on the forks — robot heading at a
+fixed forks-up height (`CARRY_H_MM`; the lift feedback reads low while
+carrying, so it is never used for rendering), no lerp of its own, so it
+never drifts off the robot.
 _Avoid_: background polling or a cached boolean (the state is decided at
 read time); treating "lift up" alone as "carrying" (it is `UNKNOWN` without
 a witnessed grab); judging while the lift motor is travelling; assuming
