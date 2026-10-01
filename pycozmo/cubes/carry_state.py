@@ -8,7 +8,9 @@ That gives a simple post-grab visibility heuristic:
   the lift settles again (``LIFT_IN_POS`` status flag) or its height
   reads up;
 * fork up + grabbed cube still visible -> it lies on the floor, the grab
-  missed -> ``NOT_CARRYING``;
+  missed -> ``NOT_CARRYING`` — and the verdict **resolves**: seeing the
+  cube is final until the next grab, so driving away afterwards (cube
+  leaves the frame) cannot flip it back to ``CARRYING``;
 * fork up + cube gone from the world map -> it rides the forks, out of
   frame -> ``CARRYING``;
 * fork down -> nothing can ride a lowered fork -> ``NOT_CARRYING``.
@@ -65,13 +67,18 @@ class CarryDetector:
     judges anything — a mid-travel or stale height reading is never a
     verdict. Once the fork is up, visibility alone decides: cube still
     in frame = grab missed, cube gone for at least ``LOST_S`` =
-    riding the forks. A fork that is settled *down* and never rose after
-    the grab is authoritative ``NOT_CARRYING`` and forgets the
-    observation (a lowered lift means the cube was placed).
+    riding the forks. Seeing the cube resolves the observation: the
+    ``NOT_CARRYING`` verdict latches, so the check *ends* — driving away
+    (cube leaves the frame) cannot flip it back to ``CARRYING``. Only a
+    fresh :meth:`note_grab` re-arms the check. A fork that is settled
+    *down* and never rose after the grab is authoritative
+    ``NOT_CARRYING`` and forgets the observation (a lowered lift means
+    the cube was placed).
 
     Limitation (inherent to visibility-based detection): a missed grab
-    whose cube rolled out of view reads as ``CARRYING``, and a cube driven
-    out of frame while carrying reads as ``NOT_CARRYING`` if it reappears.
+    whose cube rolled out of view *without ever being seen* after the
+    grab reads as ``CARRYING``; a cube that re-enters view while
+    ``CARRYING`` resolves the other way (visible = not on the forks).
     Re-check after ``clear()`` + a fresh grab to resynchronise.
     """
 
@@ -103,6 +110,9 @@ class CarryDetector:
         self._grabbed_at = 0.0
         #: Lift motion seen since ``note_grab`` (the commanded rise).
         self._saw_lift_motion = False
+        #: The cube was seen after the grab: the check ended — the
+        #: NOT_CARRYING verdict latches until the next ``note_grab``.
+        self._resolved = False
         #: Last state written to the log, to log transitions only.
         self._last_logged: CarryState | None = None
 
@@ -116,6 +126,7 @@ class CarryDetector:
             self._cube_index = int(cube_index)
             self._grabbed_at = self._clock()
             self._saw_lift_motion = False
+            self._resolved = False
             self._last_logged = None
         logger.info(
             "Carry: observing cube %d (waiting for the fork to finish rising)",
@@ -127,6 +138,7 @@ class CarryDetector:
         with self._lock:
             index = self._cube_index
             self._cube_index = None
+            self._resolved = False
             self._last_logged = None
         if index is not None:
             logger.info("Carry: cleared (cube %d)", to_cube_id(index))
@@ -212,11 +224,33 @@ class CarryDetector:
             # and only now, visibility decides.
             age = self._seconds_since_seen(index, now)
             if age < self.LOST_S:
+                with self._lock:
+                    newly_resolved = not self._resolved
+                    self._resolved = True
+                if newly_resolved:
+                    logger.info(
+                        "Carry: cube %d seen after the grab - resolved, "
+                        "not carrying until the next grab",
+                        cube_id,
+                    )
                 return (
                     CarryState.NOT_CARRYING,
                     (
                         f"cube {cube_id} still in frame {age:.1f}s after the grab"
                         f" (lift {lift:.1f}mm)"
+                    ),
+                )
+            with self._lock:
+                resolved = self._resolved
+            if resolved:
+                # The check already ended when the cube was seen: losing
+                # sight of it now (the robot drove away) must not
+                # resurrect a carry verdict.
+                return (
+                    CarryState.NOT_CARRYING,
+                    (
+                        f"cube {cube_id} was seen after the grab and has since"
+                        f" left view - left on the floor (lift {lift:.1f}mm)"
                     ),
                 )
             return (

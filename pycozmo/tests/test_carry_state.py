@@ -183,6 +183,50 @@ class TestWaitForFork:
         assert det.cube_id is None
 
 
+class TestResolveOnSight:
+    """Seeing the cube after the grab ends the check for good.
+
+    Regression: a cube put down and seen, then left behind as the robot
+    drives away (cube leaves the frame), must not flip carry back to
+    true — the observation latches until the next grab.
+    """
+
+    def test_seen_cube_stays_not_carrying_when_it_leaves_view(self):
+        det, clock, _, _, _ = _detector(lift=LIFT_UP, seen_age_s=0.0)
+        det.note_grab(0)
+        assert det.state is CarryState.NOT_CARRYING  # seen -> resolved
+
+        # Robot drives away: the cube leaves the camera view entirely.
+        clock.advance(CarryDetector.LOST_S + 1.0)
+        assert det.state is CarryState.NOT_CARRYING  # latched, no flip
+
+        clock.advance(30.0)
+        assert det.state is CarryState.NOT_CARRYING  # and it stays
+        assert det.cube_id == 1
+
+    def test_reappearing_cube_resolves_and_stays_resolved(self):
+        # carrying (never seen since the grab) -> cube reappears -> the
+        # verdict resolves to NOT_CARRYING and cannot flip back either.
+        det, clock, _, cube, _ = _detector(lift=LIFT_UP, seen_age_s=3.0)
+        det.note_grab(0)
+        assert det.state is CarryState.CARRYING  # not seen yet
+
+        cube.updated_at = clock.now
+        assert det.state is CarryState.NOT_CARRYING  # seen -> resolved
+
+        clock.advance(CarryDetector.LOST_S + 1.0)
+        assert det.state is CarryState.NOT_CARRYING  # latched
+
+    def test_next_grab_rearms_the_check(self):
+        det, clock, *_ = _detector(lift=LIFT_UP, seen_age_s=0.0)
+        det.note_grab(0)
+        assert det.state is CarryState.NOT_CARRYING  # resolved
+
+        clock.advance(5.0)
+        det.note_grab(0)  # a fresh grab re-arms the visibility check
+        assert det.state is CarryState.CARRYING  # cube not in frame anymore
+
+
 class TestReleaseAndDrop:
     def test_lift_down_after_transit_clears_the_observation(self):
         det, clock, lift_mm, *_ = _detector(lift=LIFT_UP, seen_age_s=3.0)

@@ -140,8 +140,10 @@ class CarryAPI:
     ``pycozmo.cubes.carry_state``): after a grab nothing is judged until
     the fork has finished rising (lift in position), then with the forks
     up, a grabbed cube that is still in camera view is on the floor (grab
-    missed), while one that left the frame is riding the forks. Forks
-    settled down reads as not carrying.
+    missed), while one that left the frame is riding the forks. Seeing
+    the cube resolves the answer to not carrying until the next grab
+    (driving away afterwards cannot flip it back). Forks settled down
+    reads as not carrying.
 
     Example:
         cozmo.navigator.approach_cube(1)

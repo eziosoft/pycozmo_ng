@@ -251,7 +251,10 @@ height ≥ `MIN_CARRY_LIFT_MM`) — no verdict mid-travel, and a lagging
 live feedback can read low right after a grab). Once the fork is up,
 visibility decides: "cube still detected in the world map" = grab missed
 (`NOT_CARRYING`), "cube gone from the map for ≥ `LOST_S`" = it is on the
-forks (`CARRYING`). A fork settled *down* that never rose within
+forks (`CARRYING`). Seeing the cube **resolves** the check: the
+`NOT_CARRYING` verdict latches until the next `note_grab`, so driving
+away from a left-behind cube (it leaves the frame) can never flip the
+status back to `CARRYING`. A fork settled *down* that never rose within
 `LIFT_TRANSIT_S` of the grab is authoritative `NOT_CARRYING` and clears
 the observation; lift up with no witnessed grab is `UNKNOWN`.
 `CubeApproach` owns the hooks: it calls `clear()` when the
