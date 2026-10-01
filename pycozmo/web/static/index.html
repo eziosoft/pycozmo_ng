@@ -268,6 +268,10 @@
     const WS_URL = `ws://${location.hostname || 'localhost'}:${WS_PORT}`;
     const CUBE_SIZE = 44;
     const CUBE_COLORS = [0xff4444, 0x4444ff, 0x44cc44];
+    // Carried cube (rides the forks): rendered locked to the robot pose.
+    const CARRY_FWD_MM = 55;          // cube centre ahead of the robot origin
+    const CARRY_CUBE_OPACITY = 0.85;  // carried cubes render more solid
+    const CUBE_OPACITY = 0.45;
     const FACE_NAMES = ['face_0', 'face_1', 'face_2', 'face_3', 'top', 'bottom'];
     const FACE_TYPES = ['wall', 'wall', 'wall', 'wall', 'bottom', 'top'];
 
@@ -745,6 +749,8 @@
     const cubeGroups = {};
     let hasRobotPose = false;
     let didInitialFrame = false;
+    // Latest lift height (mm) — a carried cube rides the forks at this height.
+    let carryLiftMm = 92;
 
     function createCubeLabel(text) {
       const canvas = document.createElement('canvas');
@@ -796,7 +802,7 @@
       const mat = new THREE.MeshLambertMaterial({
         color,
         transparent: true,
-        opacity: 0.45,
+        opacity: CUBE_OPACITY,
       });
       const mesh = new THREE.Mesh(geo, mat);
       group.add(mesh);
@@ -827,7 +833,7 @@
       group.add(label.sprite);
       label.sprite.visible = false;
 
-      group.userData = { targetPos: new THREE.Vector3(), targetQuat: new THREE.Quaternion(), label };
+      group.userData = { targetPos: new THREE.Vector3(), targetQuat: new THREE.Quaternion(), label, carried: false, fillMat: mat };
       scene.add(group);
       cubeGroups[id] = group;
       return group;
@@ -843,6 +849,14 @@
         }
         scene.remove(g);
         delete cubeGroups[id];
+      }
+    }
+
+    function setCubeCarried(g, carried) {
+      if (g.userData.carried === carried) return;
+      g.userData.carried = carried;
+      if (g.userData.fillMat) {
+        g.userData.fillMat.opacity = carried ? CARRY_CUBE_OPACITY : CUBE_OPACITY;
       }
     }
 
@@ -1118,8 +1132,15 @@ function sendTestMode(enabled) {
         );
         g.userData.targetQuat.setFromRotationMatrix(m);
 
+        // Carried = riding the forks (out of camera view); the pose is
+        // re-locked to the robot every frame in animate() instead.
+        setCubeCarried(g, !!c.carried);
+
         const label = g.userData.label;
-        if (label && c.face_idx >= 0) {
+        if (c.carried && label) {
+          updateCubeLabel(label, `Cube ${parseInt(c.id.replace('cube_', ''), 10)} | on the forks`);
+          label.sprite.visible = true;
+        } else if (label && c.face_idx >= 0) {
           const faceName = FACE_NAMES[c.face_idx] || `face_${c.face_idx}`;
           const faceType = FACE_TYPES[c.face_idx] || 'unknown';
           const rot = c.face_rotation || 0;
@@ -1228,6 +1249,7 @@ function sendTestMode(enabled) {
         const lift = t.lift_height;
         document.getElementById('tel-lift').textContent =
           lift != null ? `${lift.toFixed(1)} mm` : '-- mm';
+        if (lift != null) carryLiftMm = lift;
 
         // Carry status — post-grab visibility heuristic (carry_state.py):
         // carrying = cube on the forks (out of frame), none = no cube,
@@ -1409,6 +1431,7 @@ function sendTestMode(enabled) {
       requestAnimationFrame(animate);
 
       for (const g of Object.values(cubeGroups)) {
+        if (g.userData.carried) continue;  // locked to the robot, no lerp
         const lerp = 0.35;
         _tmpPos.copy(g.userData.targetPos);
         g.position.lerp(_tmpPos, lerp);
@@ -1433,6 +1456,20 @@ function sendTestMode(enabled) {
         _tmpPos.copy(robot.userData.targetPos);
         robot.position.lerp(_tmpPos, 0.25);
         robot.userData.pos.copy(robot.position);
+
+        // A carried cube rides the forks: lock it to the robot's rendered
+        // pose so it follows exactly (no lerp of its own — it can never
+        // drift off the forks), at the current lift height.
+        for (const g of Object.values(cubeGroups)) {
+          if (!g.userData.carried) continue;
+          const h = robot.userData.heading || 0;
+          g.position.set(
+            robot.position.x + Math.sin(h) * CARRY_FWD_MM,
+            robot.position.y + carryLiftMm + CUBE_SIZE / 2,
+            robot.position.z + Math.cos(h) * CARRY_FWD_MM
+          );
+          g.rotation.set(0, h, 0);
+        }
       }
 
       if (hasRobotPose && !didInitialFrame) {

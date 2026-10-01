@@ -28,6 +28,9 @@ MAX_PATH_POINTS_SENT: int = 800
 # often and only embed the PNG in a state message when it actually changed.
 OCCUPANCY_SEND_INTERVAL_S: float = 0.2
 
+# Size of a cube in scene units (mm) — mirrors CUBE_SIZE in index.html.
+CUBE_SIZE_MM: float = 44.0
+
 
 def encode_jpeg(image, quality: int = 70) -> bytes:
     """Encode a PIL image to JPEG bytes (runs on a worker thread).
@@ -85,18 +88,49 @@ def build_state_json(
     robot_heading = coords.world_yaw_to_scene(world["robot"]["yaw"])
 
     # Cubes: world frame -> scene frame (identity at the wire boundary).
+    # `carried` marks the cube riding the forks: the world map only has its
+    # last-seen (stale) pose, so the browser locks it to the robot instead.
+    carry_state = telemetry.get("carry")
+    carry_cube = telemetry.get("carry_cube")
+    carried_id = (
+        f"cube_{carry_cube}"
+        if carry_state == "carrying" and carry_cube is not None
+        else None
+    )
     cube_list = []
     for cube_index, cube_state in world["cubes"].items():
         pos_gl = coords.world_to_scene_point(cube_state["position"])
         rot_gl = coords.world_to_scene_rotation(cube_state["rotation"])
+        cube_id = cube_label(cube_index)
         cube_list.append(
             {
-                "id": cube_label(cube_index),
+                "id": cube_id,
                 "position": [float(v) for v in pos_gl],
                 "rotation": [row.tolist() for row in rot_gl],
-                "size": 44,
+                "size": CUBE_SIZE_MM,
                 "face_idx": cube_state.get("face_idx", -1),
                 "face_rotation": cube_state.get("face_rotation", 0),
+                "carried": cube_id == carried_id,
+            }
+        )
+
+    if carried_id is not None and not any(c["id"] == carried_id for c in cube_list):
+        # The carried cube left the camera frame, so the world map no
+        # longer tracks it. Send a placeholder at the robot pose — the
+        # browser re-locks the cube to the forks anyway (carried: true).
+        cube_list.append(
+            {
+                "id": carried_id,
+                "position": [float(v) for v in robot_pos],
+                "rotation": [
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                "size": CUBE_SIZE_MM,
+                "face_idx": -1,
+                "face_rotation": 0,
+                "carried": True,
             }
         )
 

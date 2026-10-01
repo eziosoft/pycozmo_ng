@@ -260,6 +260,11 @@ forks go down at approach start and `note_grab(cube_idx)` after the grab
 CubeApproach, and `Cozmo.carry` is a pure reader. State transitions log
 with the raw reading (`Carry: carrying - cube 2 out of frame ... (lift
 92.0mm)`), so live logs show the verdict and the lift value that fed it.
+The 3D viewer renders a carrying cube **locked to the robot**:
+`build_state_json` flags it `carried: true` (appending a robot-pose
+placeholder if the world map lost the cube out of frame) and `index.html`
+re-positions that cube every frame on the forks — robot heading + lift
+height, no lerp of its own, so it never drifts off the robot.
 _Avoid_: background polling or a cached boolean (the state is decided at
 read time); treating "lift up" alone as "carrying" (it is `UNKNOWN` without
 a witnessed grab); judging while the lift motor is travelling; assuming

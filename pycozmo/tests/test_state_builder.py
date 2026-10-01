@@ -302,3 +302,63 @@ class TestBuildStateJson:
         )
         state = json.loads(result)
         assert state["astar_path"] == []
+
+
+class TestCarriedCube:
+    """The carried cube is flagged so the browser locks it to the robot.
+
+    The world map only holds the cube's last-seen pose — while it rides
+    the forks (out of camera view) that pose is stale, so the state marks
+    the cube ``carried`` and the viewer re-renders it on the forks.
+    """
+
+    @staticmethod
+    def _build(telemetry: dict, world_map=None) -> dict:
+        result = build_state_json(
+            world_map or _make_world_map(),
+            telemetry,
+            (600.0, 600.0),
+            (200.0, 0.0),
+            None,
+            None,
+            0,
+            -1,
+            time.time(),
+        )
+        return json.loads(result)
+
+    def test_matching_cube_is_flagged_carried(self):
+        # The map tracks cube index 0 -> label "cube_1".
+        state = self._build({"carry": "carrying", "carry_cube": 1})
+        carried = [c for c in state["cubes"] if c["carried"]]
+        assert [c["id"] for c in carried] == ["cube_1"]
+
+    def test_placeholder_appended_when_carried_cube_untracked(self):
+        # Carrying cube 2 while the map only has cube 1 (the carried cube
+        # left the frame): a placeholder must still reach the browser.
+        state = self._build({"carry": "carrying", "carry_cube": 2})
+        ids = [c["id"] for c in state["cubes"]]
+        assert ids == ["cube_1", "cube_2"]
+        placeholder = state["cubes"][1]
+        assert placeholder["carried"] is True
+        assert placeholder["face_idx"] == -1
+        # Placeholder sits at the robot pose (the browser re-locks it to
+        # the forks anyway).
+        assert placeholder["position"] == state["robot"]["position"]
+        # The tracked cube is not the carried one.
+        assert state["cubes"][0]["carried"] is False
+
+    def test_not_carrying_leaves_all_cubes_unflagged(self):
+        state = self._build({"carry": "not_carrying", "carry_cube": 1})
+        assert all(c["carried"] is False for c in state["cubes"])
+        assert len(state["cubes"]) == 1  # no placeholder
+
+    def test_carrying_without_cube_id_appends_nothing(self):
+        # Defensive: carrying but no known cube id -> no flag, no placeholder.
+        state = self._build({"carry": "carrying", "carry_cube": None})
+        assert all(c["carried"] is False for c in state["cubes"])
+        assert len(state["cubes"]) == 1
+
+    def test_no_telemetry_at_all(self):
+        state = self._build({})
+        assert all(c["carried"] is False for c in state["cubes"])

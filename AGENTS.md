@@ -213,6 +213,10 @@ This branch includes:
 ### Web Viewer
 - WebSocket server on port 8765, HTTP server on port 8766
 - Three.js browser viewer renders robot, cubes, faces, path trail, occupancy grid
+- Carried cube in the 3D view: `state_builder` marks the cube `carried: true`
+  (plus a robot-pose placeholder if the map lost it); the browser locks that
+  cube to the robot's rendered pose — it rides the forks, following heading
+  and lift height exactly (no lerp of its own)
 - MJPEG streams for camera, annotated camera, and floor views
 - Procedural face image streamed via WebSocket
 - Browser sends keyboard controls, click-to-navigate, cube approach, dock requests
