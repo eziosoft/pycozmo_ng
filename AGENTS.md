@@ -57,7 +57,7 @@ pytest pycozmo/tests/ -v
 pycozmo/           # Main library
 ├── cozmo.py       # Cozmo — public API for library users
 ├── brain.py       # Brain — internal orchestrator (NOT public API)
-├── client.py      # Client class (low-level robot connection)
+├── client.py      # Client class (low-level robot connection; paths → PathExecutor)
 ├── event.py       # Event dispatcher
 ├── exception.py   # Exception classes
 ├── json_loader.py # JSON config loader
@@ -112,6 +112,7 @@ pycozmo/           # Main library
 │   ├── motion_controller.py # MotionController — registry of running motion jobs
 │   ├── motion_token.py      # MotionToken — per-job cancellation handle
 │   ├── navigator.py         # Navigator — navigate, approach, dock, stop
+│   ├── path_executor.py     # PathExecutor — firmware path state machine + lock
 │   ├── remote_control.py    # RemoteControl — browser keyboard driving
 │   ├── steering.py          # steer_velocities, wrap_pi — differential drive
 │   └── world_map.py         # WorldMap — fused robot/cube poses, path trail

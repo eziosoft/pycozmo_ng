@@ -207,6 +207,24 @@ flag, a generation comparison, and its parent's answer; nesting outranks the
 generation, so a dying parent takes children begun after a `cancel_all()`.
 _Avoid_: reading the controller's internals from a job.
 
+**Path executor** (`pycozmo/navigation/path_executor.py`):
+The firmware path-following state machine, owned by the `PathExecutor`
+class: settle → allocate an event id → `ClearPath` → `AppendPathSeg*` →
+`ExecutePath` → wait for a `PathFollowingEvent` **or** pose proximity
+(COZMO-53), plus the chunked-polyline loop and the single lock that
+serializes it all (the firmware buffer holds one path at a time).
+Interface: `go_to_pose(...)` and `execute_polyline(...)` — everything
+else is behind them. It reaches the robot only through the `PathRobot`
+port (`send`, `stop_all_motors`, `pose`, wheel speeds, `add_handler` /
+`del_handler`), which `Client` satisfies; `cli.paths` is the instance and
+`Client.go_to_pose()` / `Client.execute_polyline()` are one-line
+delegations, so navigation callers (`Navigator`, `AStarFollower`,
+`Docking`, `CubeApproach`) never touch it directly. The pure helpers
+(`chunk_polyline_points`, `build_polyline_packets`) live beside it.
+_Avoid_: reaching path logic through `client.py` or importing the helpers
+from `pycozmo.client` (moved); a second path lock or event-id counter
+outside `PathExecutor`; sending path packets without that lock.
+
 **Navigator** (`pycozmo/navigation/navigator.py`):
 The navigation subsystem's one entry point — `navigate_to`, `drive_to_point`,
 `approach_cube*`, `dock`, `stop`, and the A* toggle — so callers address

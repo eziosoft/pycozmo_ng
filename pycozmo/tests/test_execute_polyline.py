@@ -13,10 +13,13 @@ follower runs the trajectory at high rate on the robot.
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from pycozmo.client import build_polyline_packets, chunk_polyline_points
 from pycozmo.navigation.astar import AStarPlanner, PathPoint
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.navigator import Navigator
+from pycozmo.navigation.path_executor import (
+    build_polyline_packets,
+    chunk_polyline_points,
+)
 from pycozmo.protocol import protocol_encoder
 from pycozmo.vision.occupancy_map import FREE, OCCUPIED, OccupancyMap
 

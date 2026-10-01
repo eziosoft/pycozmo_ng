@@ -8,6 +8,7 @@ from pycozmo.navigation.docking import Docking
 from pycozmo.navigation.motion_controller import MotionController
 from pycozmo.navigation.motion_token import MotionToken
 from pycozmo.navigation.navigator import Navigator
+from pycozmo.navigation.path_executor import PathExecutor, PathRobot
 from pycozmo.navigation.world_map import CubeState, WorldMap
 
 __all__ = [
@@ -20,6 +21,8 @@ __all__ = [
     "MotionController",
     "MotionToken",
     "Navigator",
+    "PathExecutor",
     "PathPoint",
+    "PathRobot",
     "WorldMap",
 ]
