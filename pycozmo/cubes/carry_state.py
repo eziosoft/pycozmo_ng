@@ -85,9 +85,14 @@ class CarryDetector:
     #: Lift height above which a cube could actually ride the forks.
     #: ``MIN_LIFT_HEIGHT`` (fully down) is 32 mm, ``MAX`` (fully up) 92 mm.
     MIN_CARRY_LIFT_MM = 60.0
-    #: Detections blink out for a frame or two; only after this long
-    #: without a fused update is the cube "out of the frame".
-    LOST_S = 2.0
+    #: Detections run at ~30 Hz (the approach's freshness check reads
+    #: age 0.0s), so only this long without a fused update means the cube
+    #: is out of the frame. Deliberately short: the last sighting is
+    #: typically the grab itself, and a long window would count that
+    #: stale pre-grab sighting as "still in frame" right after the forks
+    #: rise — a false NOT_CARRYING that latches (live log: fork up at
+    #: grab+1.3s, sighting age 1.3s, resolved wrongly).
+    LOST_S = 0.3
     #: ``set_lift_height`` returns as soon as the command is sent, and the
     #: firmware acknowledges before the motor starts. If no lift motion
     #: has been seen this long after a grab, the rise never happened —

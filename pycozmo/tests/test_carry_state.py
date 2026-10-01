@@ -81,8 +81,9 @@ class TestOnDemandStatus:
         assert det.cube_id == 1
 
     def test_short_detection_gap_is_not_yet_carrying(self):
-        # Detections blink; only LOST_S without an update counts as gone.
-        det, *_ = _detector(lift=LIFT_UP, seen_age_s=0.5)
+        # Detections blink for a frame or two; only LOST_S (0.3s) without
+        # an update counts as gone.
+        det, *_ = _detector(lift=LIFT_UP, seen_age_s=0.1)
         det.note_grab(0)
         assert det.state is CarryState.NOT_CARRYING
 
@@ -225,6 +226,21 @@ class TestResolveOnSight:
         clock.advance(5.0)
         det.note_grab(0)  # a fresh grab re-arms the visibility check
         assert det.state is CarryState.CARRYING  # cube not in frame anymore
+
+    def test_stale_grab_time_sighting_does_not_resolve_the_rise(self):
+        # Live-log regression: the cube's last sighting is the grab
+        # itself (it left the frame on the rising forks), and the fork
+        # finishes rising ~1.3s later. That stale sighting must NOT
+        # count as "still in frame" — the verdict is CARRYING.
+        det, clock, *_ = _detector(lift=LIFT_UP, seen_age_s=0.0)
+        det.note_grab(0)  # grab at t0, last sighting == t0
+
+        clock.advance(1.3)  # forks finish rising
+        assert det.state is CarryState.CARRYING
+        assert det.is_carrying is True
+
+        clock.advance(10.0)  # carried: never updated again -> stays
+        assert det.state is CarryState.CARRYING
 
 
 class TestReleaseAndDrop:
