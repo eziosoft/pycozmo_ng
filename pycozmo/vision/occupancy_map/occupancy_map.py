@@ -30,10 +30,14 @@ class OccupancyMap:
         edge_low: Canny low threshold.
         edge_high: Canny high threshold.
         vote_cap: Saturation cap on each cell's vote accumulator. Votes are
-            never decayed, so the map persists forever; each free/occupied
-            observation moves a cell's accumulator toward ±cap, which bounds
-            how long it takes to *flip* a cell (reacting to a new obstacle or
-            a freed path) no matter how long the previous state was held.
+            never decayed, so the map persists forever. Occupied evidence is
+            weighted by pixel count, so a cell flips to OCCUPIED as soon as it
+            is seen; free evidence counts at most **one vote per cell per
+            frame**, so clearing an established OCCUPIED cell takes about
+            ``vote_cap`` consecutive free frames. That asymmetry is what keeps
+            the grid stable enough for A*: transient free frames (blur,
+            lighting, a passing shadow) cannot wipe a known obstacle, while
+            new obstacles still appear immediately.
         valid_min_brightness: Grey value below which a floor pixel is treated
             as unseen (excludes the black unmapped border and the dim 1-2px
             interpolation ring along the projection boundary).
@@ -52,7 +56,7 @@ class OccupancyMap:
         free_threshold: int = 60,
         edge_low: int = 50,
         edge_high: int = 150,
-        vote_cap: int = 100,
+        vote_cap: int = 10,
         valid_min_brightness: int = 8,
         edge_margin_px: int = 3,
     ):
@@ -186,10 +190,15 @@ class OccupancyMap:
         )
 
         # --- Accumulate votes --------------------------------------------
-        # Votes are never decayed — the map persists forever. Each observation
-        # nudges the cell's signed counter toward ±cap; the cap is what bounds
-        # flip latency (how soon a cell reacts to a new obstacle / freed path),
-        # independent of how long the previous state was held.
+        # Votes are never decayed — the map persists forever, and the
+        # accumulator is what bounds flip latency (how soon a cell reacts to
+        # a new obstacle or a freed path), independent of how long the
+        # previous state was held.
+        # Occupied evidence counts pixels: a fresh obstacle saturates a cell
+        # in one frame. Free evidence counts cells: at most one vote per cell
+        # per frame, so an established occupied cell needs ~vote_cap
+        # consecutive free frames before it clears. Without that damping a
+        # single blurry/shadowed frame flips the grid and A* replans on noise.
         # Use np.bincount (vectorized) instead of np.add.at (slow scatter).
         row_in = row[in_bounds]
         col_in = col[in_bounds]
@@ -208,7 +217,10 @@ class OccupancyMap:
             free_counts = np.bincount(
                 flat_idx[free_mask], minlength=self._grid_cells * self._grid_cells
             )
-            self._vote_delta.ravel()[: len(free_counts)] -= free_counts.astype(np.int32)
+            # (free_counts > 0) → one vote per observed cell, not per pixel.
+            self._vote_delta.ravel()[: len(free_counts)] -= (free_counts > 0).astype(
+                np.int32
+            )
 
         np.clip(
             self._votes + self._vote_delta,
