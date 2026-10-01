@@ -68,12 +68,18 @@ class CubeApproach:
     ARRIVE_POS_MM = 8.0
     ARRIVE_ANG_RAD = math.radians(2.0)
 
-    def __init__(self, cli, get_cube_state, drive_to_point, move_forward, spawn):
+    def __init__(
+        self, cli, get_cube_state, drive_to_point, move_forward, spawn, carry=None
+    ):
         self.cli = cli
         self._get_cube_state = get_cube_state
         self._drive_to_point = drive_to_point
         self._move_forward = move_forward
         self._spawn = spawn
+        # Carry observation (Brain's CarryDetector) — cleared when the
+        # forks go down, armed after a grab so "cube out of frame" means
+        # "cube on the lift". Optional: a standalone approach works without.
+        self.carry = carry
         # Serializes approaches: multiple in-flight runs would race each other
         # with conflicting go_to_pose / drive_wheels commands.
         self._approach_lock = threading.Lock()
@@ -347,6 +353,9 @@ class CubeApproach:
                 max_speed=self.LIFT_UP_SPEED,
             )
             logger.info("Lift lowered (%.0fmm)", pycozmo.MIN_LIFT_HEIGHT.mm)
+            if self.carry is not None:
+                # Forks down: nothing rides them — forget any carry state.
+                self.carry.clear()
 
             self.cli.set_head_angle(
                 math.radians(self.HEAD_TILT_DEG), accel=30.0, max_speed=30.0
@@ -481,5 +490,10 @@ class CubeApproach:
                 max_speed=self.LIFT_UP_SPEED,
             )
             logger.info("Cube %d grabbed (lift up)", to_cube_id(cube_idx))
+            if self.carry is not None:
+                # Arm the observation: while the forks are up the cube
+                # should leave the camera frame; if it never does, the
+                # grab missed and we are not carrying it.
+                self.carry.note_grab(cube_idx)
         except Exception as e:  # noqa: BLE001
             logger.exception("Approach error: %s", e)

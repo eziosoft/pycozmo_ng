@@ -136,6 +136,7 @@ pycozmo/           # Main library
 ├── lights/        # LED color and light state
 │   └── lights.py    # Color class, predefined light states
 ├── cubes/         # Cube BLE management
+│   ├── carry_state.py   # CarryDetector/CarryState — cube on the lift, checked on demand
 │   ├── cycler.py      # CubeCycler — rapid BLE cycling
 │   ├── cube_tracking_state.py # CubeTrackingState — factory mapping, BLE cycler, movement
 │   ├── identity.py     # Cube ID 1-3 ↔ cube index 0-2 conversion (the only ±1)

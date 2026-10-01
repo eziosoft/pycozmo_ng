@@ -11,6 +11,7 @@ import time
 import pycozmo
 from pycozmo import event
 from pycozmo.camera.service import CameraService
+from pycozmo.cubes.carry_state import CarryDetector
 from pycozmo.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo.cubes.manager import CubeManager
 from pycozmo.logger import logger, logger_cubes
@@ -84,8 +85,19 @@ class Brain:
         # navigation jobs and the browser remote control, so "who may
         # command the wheels" lives in exactly one object.
         self.motion = MotionController()
+        # Cube carry state — "lift up + grabbed cube out of frame" heuristic,
+        # evaluated on demand by the public API (see cubes/carry_state.py).
+        self.carry = CarryDetector(
+            get_cube_state=self.world_map.get_cube,
+            get_lift_height=lambda: (
+                self.cli.lift_position.height.mm if self.cli is not None else 0.0
+            ),
+        )
         self.navigator = Navigator(
-            self.dock_state, world_map=self.world_map, motion=self.motion
+            self.dock_state,
+            world_map=self.world_map,
+            motion=self.motion,
+            carry=self.carry,
         )
         self.cubes = CubeManager(self.cube_tracking)
 

@@ -238,6 +238,25 @@ _False friend_: "delegate" here does not mean callers reach past Navigator —
 they keep using `navigator.dock()` / `navigator.set_astar_enabled()`;
 sub-classes are reached only through `navigator.astar` and `navigator.docking`.
 
+**Carry state** (`pycozmo/cubes/carry_state.py`):
+Whether a cube is riding the lift — read it whenever you want via
+`cozmo.carry.state` / `cozmo.carry.is_carrying` (`True`/`False`/`None` for
+unknown) / `cozmo.carry.cube_id`. Nothing polls: `CarryDetector.state` is
+evaluated on each read, using the **post-grab visibility heuristic** — a
+grabbed cube sits on the raised forks in front of/above the camera, so with
+forks up, "cube still detected in the world map" = grab missed
+(`NOT_CARRYING`) and "cube gone from the map for ≥ `LOST_S`" = it is on the
+forks (`CARRYING`). Forks down (`< MIN_CARRY_LIFT_MM`) is authoritative
+`NOT_CARRYING` and disarms the observation; lift up with no witnessed grab
+is `UNKNOWN`. `CubeApproach` owns the hooks: it calls `clear()` when the
+forks go down at approach start and `note_grab(cube_idx)` after the grab
+(lift-up) — Brain wires the detector (`brain.carry`) into Navigator →
+CubeApproach, and `Cozmo.carry` is a pure reader.
+_Avoid_: background polling or a cached boolean (the state is decided at
+read time); treating "lift up" alone as "carrying" (it is `UNKNOWN` without
+a witnessed grab); assuming the heuristic survives a cube driven back into
+frame — re-`note_grab` after the next grab to resynchronise.
+
 ## Example dialogue
 
 **Dev**: The cube drifts when Cozmo turns. Why?

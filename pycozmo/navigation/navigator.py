@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import numpy as np
 
 import pycozmo
+from pycozmo.cubes.carry_state import CarryDetector
 from pycozmo.cubes.identity import to_cube_id, to_world_index
 from pycozmo.logger import logger
 from pycozmo.navigation.astar import AStarPlanner
@@ -56,9 +57,13 @@ class Navigator:
         dock_state: DockState,
         world_map: "WorldMap | None" = None,
         motion: MotionController | None = None,
+        carry: "CarryDetector | None" = None,
     ):
         self.ds = dock_state
         self.world_map = world_map
+        # Carry state — created by Brain, read through the public API;
+        # CubeApproach arms/clears it around a grab.
+        self.carry = carry
         self._cli: Any = None
         # The shared motion seam (cancellation + driver lease). Brain
         # creates one controller and hands it to Navigator and
@@ -391,6 +396,7 @@ class Navigator:
                 drive_to_point=self.drive_to_point,
                 move_forward=self._move_forward,
                 spawn=self.motion.spawn,
+                carry=self.carry,
             )
         return self._cube_approach
 

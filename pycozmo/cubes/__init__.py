@@ -1,5 +1,6 @@
 """Cubes subpackage — BLE cycling, mapping, state tracking, IMU detection."""
 
+from pycozmo.cubes.carry_state import CarryDetector, CarryState
 from pycozmo.cubes.cube_imu import CubeMoveDetector
 from pycozmo.cubes.cycler import CubeCycler
 from pycozmo.cubes.identity import (
@@ -11,6 +12,8 @@ from pycozmo.cubes.identity import (
 from pycozmo.cubes.manager import CubeManager
 
 __all__ = [
+    "CarryDetector",
+    "CarryState",
     "CubeCycler",
     "CubeManager",
     "CubeMoveDetector",

@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 import pycozmo
 from pycozmo.brain import Brain
+from pycozmo.cubes.carry_state import CarryState
 from pycozmo.cubes.identity import to_cube_id, to_world_index
 from pycozmo.logger import logger, setup_basic_logging
 from pycozmo.navigation.world_map import CubeState, WorldMap
@@ -130,6 +131,44 @@ class CubesAPI:
     def _require_connection(self) -> None:
         if self._brain.cli is None:
             raise RuntimeError("Not connected - call Cozmo.connect() first")
+
+
+class CarryAPI:
+    """Whether the robot is carrying a cube on its lift — checked on demand.
+
+    The answer comes from the post-grab visibility heuristic (see
+    ``pycozmo.cubes.carry_state``): with the forks up, a grabbed cube that
+    is still in camera view is on the floor (grab missed), while one that
+    left the frame is riding the forks.
+
+    Example:
+        cozmo.navigator.approach_cube(1)
+        ...
+        if cozmo.carry.is_carrying:
+            print(f"holding cube {cozmo.carry.cube_id}")
+    """
+
+    def __init__(self, brain: Brain):
+        self._brain = brain
+
+    @property
+    def state(self) -> CarryState:
+        """``CarryState.CARRYING`` / ``NOT_CARRYING`` / ``UNKNOWN``."""
+        return self._brain.carry.state
+
+    @property
+    def is_carrying(self) -> bool | None:
+        """``True`` / ``False``, or ``None`` when it cannot be determined."""
+        return self._brain.carry.is_carrying
+
+    @property
+    def cube_id(self) -> int | None:
+        """Cube ID (1-3) whose grab is being observed, or ``None``."""
+        return self._brain.carry.cube_id
+
+    def clear(self) -> None:
+        """Forget the observation (cube placed / forks lowered)."""
+        self._brain.carry.clear()
 
 
 class NavigatorAPI:
@@ -301,6 +340,7 @@ class Cozmo:
         # Public subsystem APIs (lazy-initialized)
         self._vision: VisionAPI | None = None
         self._cubes: CubesAPI | None = None
+        self._carry: CarryAPI | None = None
         self._navigator: NavigatorAPI | None = None
         self._world_map: WorldMapAPI | None = None
         self._sensors: SensorsAPI | None = None
@@ -317,6 +357,12 @@ class Cozmo:
         if self._cubes is None:
             self._cubes = CubesAPI(self._brain)
         return self._cubes
+
+    @property
+    def carry(self) -> CarryAPI:
+        if self._carry is None:
+            self._carry = CarryAPI(self._brain)
+        return self._carry
 
     @property
     def navigator(self) -> NavigatorAPI:

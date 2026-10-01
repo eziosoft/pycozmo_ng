@@ -181,6 +181,84 @@ class TestCorrectedTarget:
         assert ty == pytest.approx(210.0, abs=1e-6)
 
 
+class TestApproachIntegration:
+    """The approach arms/clears the carry observation around a grab."""
+
+    @staticmethod
+    def _fake_carry():
+        calls = {"clear": 0, "note_grab": []}
+        carry = MagicMock()
+        carry.clear.side_effect = lambda: calls.__setitem__("clear", calls["clear"] + 1)
+        carry.note_grab.side_effect = lambda i: calls["note_grab"].append(i)
+        return carry, calls
+
+    def test_successful_grab_arms_the_observation(self):
+        # Robot parked at the step-2 standoff (0, 200) facing the cube at
+        # (0, 300), so alignment passes and the grab code path runs.
+        cli, _pose = _make_mock_cli(x=0.0, y=200.0, yaw=math.pi / 2)
+        cube_state = _make_cube_state(x=0.0, y=300.0)
+        carry, calls = self._fake_carry()
+
+        def get_state(idx):
+            cube_state.updated_at = time.monotonic()  # fresh during dwell
+            return cube_state
+
+        ca = CubeApproach(
+            cli,
+            get_cube_state=get_state,
+            drive_to_point=lambda *a, **k: True,
+            move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
+            carry=carry,
+        )
+        with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
+            ca._run(job, 0, 0.0, 300.0)
+
+        # Forks down first (clears), then the grab arms the observation.
+        assert calls["clear"] >= 1
+        assert calls["note_grab"] == [0]
+
+    def test_abandoned_approach_never_arms(self):
+        """Cube lost at the standoff: no grab, so carry stays un-armed."""
+        cli, _pose = _make_mock_cli(x=0.0, y=0.0, yaw=0.0)
+        cube_state = _make_cube_state(x=0.0, y=300.0)
+        carry, calls = self._fake_carry()
+
+        ca = CubeApproach(
+            cli,
+            get_cube_state=lambda i: cube_state,  # updated_at never advances
+            drive_to_point=lambda *a, **k: True,
+            move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
+            carry=carry,
+        )
+        with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
+            ca._run(job, 0, 0.0, 300.0)
+
+        assert calls["clear"] >= 1
+        assert calls["note_grab"] == []
+
+    def test_approach_without_carry_still_works(self):
+        """carry is optional — a standalone CubeApproach runs without it."""
+        cli, _pose = _make_mock_cli(x=0.0, y=0.0, yaw=0.0)
+        cube_state = _make_cube_state(x=0.0, y=300.0)
+
+        def get_state(idx):
+            cube_state.updated_at = time.monotonic()
+            return cube_state
+
+        ca = CubeApproach(
+            cli,
+            get_cube_state=get_state,
+            drive_to_point=lambda *a, **k: True,
+            move_forward=lambda d: True,
+            spawn=_MOTION.spawn,
+        )
+        with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
+            ca._run(job, 0, 0.0, 300.0)
+        assert cli.go_to_pose.call_count >= 2
+
+
 class TestApproachThread:
     def test_no_cube_prints_message(self):
         cli, _ = _make_mock_cli()
