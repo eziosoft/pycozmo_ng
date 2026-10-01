@@ -52,7 +52,7 @@ class OccupancyMap:
         free_threshold: int = 60,
         edge_low: int = 50,
         edge_high: int = 150,
-        vote_cap: int = 10,
+        vote_cap: int = 100,
         valid_min_brightness: int = 8,
         edge_margin_px: int = 3,
     ):
