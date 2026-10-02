@@ -283,7 +283,8 @@ class Brain:
             self.dock_state.dock_pose = self.cli.pose
         logger.info("Browser keyboard control enabled: WASD drive, R/F head, T/G lift")
         logger.info("Click-to-navigate: click ground to drive there")
-        logger.info("Click cube to approach and align")
+        logger.info("Click cube to approach and grab it")
+        logger.info("Click another cube while carrying one to stack them")
         logger.info("Z to dock: drive back to start position")
         logger.info("A* pathfinding: toggle in the web viewer")
 

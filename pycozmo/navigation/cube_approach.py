@@ -80,9 +80,10 @@ class CubeApproach:
         # forks go down, armed after a grab so "cube out of frame" means
         # "cube on the lift". Optional: a standalone approach works without.
         self.carry = carry
-        # Serializes approaches: multiple in-flight runs would race each other
-        # with conflicting go_to_pose / drive_wheels commands.
-        self._approach_lock = threading.Lock()
+        # Serializes cube visits (approach and stack): multiple in-flight
+        # runs would race each other with conflicting go_to_pose /
+        # drive_wheels commands. Public because CubeStack shares it.
+        self.approach_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Pure helpers
@@ -297,7 +298,7 @@ class CubeApproach:
         it. Only one approach runs at a time: if one is already in
         progress, the request is ignored.
         """
-        if not self._approach_lock.acquire(blocking=False):
+        if not self.approach_lock.acquire(blocking=False):
             logger.warning(
                 "Approach busy - ignoring request for cube %d", to_cube_id(cube_idx)
             )
@@ -307,12 +308,12 @@ class CubeApproach:
             try:
                 self._run(job, cube_idx, cube_x, cube_y)
             finally:
-                self._approach_lock.release()
+                self.approach_lock.release()
 
         try:
             self._spawn(self.JOB_APPROACH, _run_guarded)
         except Exception:
-            self._approach_lock.release()
+            self.approach_lock.release()
             raise
 
     def _run(
@@ -320,32 +321,67 @@ class CubeApproach:
     ) -> None:
         """Blocking implementation — runs inside the ``approach`` job."""
         try:
-            state = self._get_cube_state(cube_idx)
-            if state is None:
-                logger.warning("Cube %d not in world map", to_cube_id(cube_idx))
-                return
-
-            robot_pose = self.cli.pose
-            rx, ry = robot_pose.position.x, robot_pose.position.y
-            robot_yaw = robot_pose.rotation.angle_z.radians
-
-            face = self.pick_face_normal(
-                state.position, state.rotation_matrix, (rx, ry), robot_yaw
+            aligned = self.drive_and_align(
+                job, cube_idx, cube_x, cube_y, lower_forks=True
             )
-            if face is None:
-                logger.warning("Could not determine approach face")
+            if job.cancelled:
+                logger.info("Approach cancelled - not grabbing")
+                self.cli.stop_all_motors()
                 return
-            nx, ny, heading = face
+            if not aligned:
+                return
+            self._grab(cube_idx)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("Approach error: %s", e)
 
-            logger.info(
-                "Approaching cube %d at (%.0f, %.0f) face normal=(%.2f, %.2f)",
-                to_cube_id(cube_idx),
-                cube_x,
-                cube_y,
-                nx,
-                ny,
-            )
+    def drive_and_align(
+        self,
+        job: MotionToken,
+        cube_idx: int,
+        cube_x: float,
+        cube_y: float,
+        *,
+        lower_forks: bool = True,
+    ) -> bool:
+        """Drive to the cube, align with its face, and verify the pose.
 
+        The shared prelude of a grab (:class:`CubeApproach`) and a stack
+        (:class:`CubeStack`), run inside the caller's motion job. With
+        ``lower_forks=True`` the forks are dropped first (forgetting any
+        carried cube) — the grab prelude; a stack passes ``False`` so its
+        cube keeps riding the raised forks to the target.
+
+        Returns True when aligned and ready for the caller's terminal
+        action (grab or place); False when the cube is unknown, the
+        drive was cancelled, or the alignment checks failed.
+        """
+        state = self._get_cube_state(cube_idx)
+        if state is None:
+            logger.warning("Cube %d not in world map", to_cube_id(cube_idx))
+            return False
+
+        robot_pose = self.cli.pose
+        rx, ry = robot_pose.position.x, robot_pose.position.y
+        robot_yaw = robot_pose.rotation.angle_z.radians
+
+        face = self.pick_face_normal(
+            state.position, state.rotation_matrix, (rx, ry), robot_yaw
+        )
+        if face is None:
+            logger.warning("Could not determine approach face")
+            return False
+        nx, ny, heading = face
+
+        logger.info(
+            "Approaching cube %d at (%.0f, %.0f) face normal=(%.2f, %.2f)",
+            to_cube_id(cube_idx),
+            cube_x,
+            cube_y,
+            nx,
+            ny,
+        )
+
+        if lower_forks:
             # Forks down
             self.cli.set_lift_height(
                 pycozmo.MIN_LIFT_HEIGHT.mm,
@@ -357,143 +393,144 @@ class CubeApproach:
                 # Forks down: nothing rides them — forget any carry state.
                 self.carry.clear()
 
-            self.cli.set_head_angle(
-                math.radians(self.HEAD_TILT_DEG), accel=30.0, max_speed=30.0
+        self.cli.set_head_angle(
+            math.radians(self.HEAD_TILT_DEG), accel=30.0, max_speed=30.0
+        )
+        logger.info("Head tilt %.0f deg", self.HEAD_TILT_DEG)
+
+        # Back away if too close
+        dist_to_cube = math.hypot(cube_x - rx, cube_y - ry)
+        if dist_to_cube < self.TOO_CLOSE_MM:
+            bx = cube_x + (rx - cube_x) / dist_to_cube * self.BACK_AWAY_DIST_MM
+            by = cube_y + (ry - cube_y) / dist_to_cube * self.BACK_AWAY_DIST_MM
+            logger.info("Too close (%.0fmm) - backing away", dist_to_cube)
+            self._drive_to_point(bx, by, timeout_s=8.0)
+
+        time.sleep(0.3)
+        if job.cancelled:
+            logger.info("Approach cancelled")
+            self.cli.stop_all_motors()
+            return False
+
+        threading.Thread(
+            target=self._watch_near_tilt,
+            args=(cube_idx, job),
+            daemon=True,
+        ).start()
+
+        # Step 1: view standoff
+        s1x, s1y = self._standoff(state, self.STEP1_DIST_MM, (nx, ny))
+        logger.info("Step 1: go_to_pose to view standoff (%.0f, %.0f)", s1x, s1y)
+        self.cli.go_to_pose(
+            Pose(s1x, s1y, 0, angle_z=Angle(radians=heading)),
+            relative_to_robot=False,
+            should_interrupt=lambda: job.cancelled,
+        )
+
+        if job.cancelled:
+            logger.info("Approach cancelled")
+            self.cli.stop_all_motors()
+            return False
+        if not self._dwell_for_smoothing(cube_idx, job):
+            self.cli.stop_all_motors()
+            logger.warning("Cube not re-detected at standoff - cancelling approach")
+            return False
+
+        # Step 2: corrected standoff
+        target2 = self._corrected_target(cube_idx, self.STEP2_DIST_MM)
+        if target2 is None:
+            logger.warning("Cube lost after step 1 - keeping last standoff")
+            s2x, s2y, heading2 = s1x, s1y, heading
+        else:
+            s2x, s2y, heading2 = target2
+        logger.info(
+            "Step 2: go_to_pose to %.0fmm standoff (%.0f, %.0f)",
+            self.STEP2_DIST_MM,
+            s2x,
+            s2y,
+        )
+        self.cli.go_to_pose(
+            Pose(s2x, s2y, 0, angle_z=Angle(radians=heading2)),
+            relative_to_robot=False,
+            should_interrupt=lambda: job.cancelled,
+        )
+
+        # Wait for arrival
+        t_arrive = time.monotonic()
+        while not job.cancelled and time.monotonic() - t_arrive < 10.0:
+            rp = self.cli.pose
+            pos_err = math.hypot(s2x - rp.position.x, s2y - rp.position.y)
+            ang_err = abs(wrap_pi(heading2 - rp.rotation.angle_z.radians))
+            if pos_err <= self.ARRIVE_POS_MM and ang_err <= self.ARRIVE_ANG_RAD:
+                break
+            time.sleep(0.05)
+
+        if job.cancelled:
+            logger.info("Approach cancelled")
+            self.cli.stop_all_motors()
+            return False
+
+        logger.info("Aligned with cube %d", to_cube_id(cube_idx))
+
+        # Alignment verification with retry
+        attempts = 0
+        while not job.cancelled:
+            (aligned, checks, facing_err_rad, forward, lateral, _, fresh) = (
+                self._verify_grab_alignment(cube_idx)
             )
-            logger.info("Head tilt %.0f deg", self.HEAD_TILT_DEG)
+            for msg in checks:
+                logger.info("check: %s", msg)
 
-            # Back away if too close
-            dist_to_cube = math.hypot(cube_x - rx, cube_y - ry)
-            if dist_to_cube < self.TOO_CLOSE_MM:
-                bx = cube_x + (rx - cube_x) / dist_to_cube * self.BACK_AWAY_DIST_MM
-                by = cube_y + (ry - cube_y) / dist_to_cube * self.BACK_AWAY_DIST_MM
-                logger.info("Too close (%.0fmm) - backing away", dist_to_cube)
-                self._drive_to_point(bx, by, timeout_s=8.0)
+            recoverable = (
+                not aligned
+                and fresh
+                and facing_err_rad is not None
+                and facing_err_rad <= self.GRAB_RETRY_ANGLE_RAD
+                and abs(lateral) <= self.GRAB_CENTER_TOL_MM
+                and forward - self.GRAB_RECHECK_MM >= self.GRAB_RANGE_MM[0]
+                and attempts < self.GRAB_MAX_RECHECKS
+            )
+            if not recoverable:
+                break
 
+            attempts += 1
+            assert facing_err_rad is not None  # guaranteed by recoverable
+            logger.info(
+                "Misaligned by %.1f deg - creeping %.0fmm closer (%d/%d)",
+                math.degrees(facing_err_rad),
+                self.GRAB_RECHECK_MM,
+                attempts,
+                self.GRAB_MAX_RECHECKS,
+            )
+            self._move_forward(self.GRAB_RECHECK_MM)
             time.sleep(0.3)
-            if job.cancelled:
-                logger.info("Approach cancelled")
-                self.cli.stop_all_motors()
-                return
 
-            threading.Thread(
-                target=self._watch_near_tilt,
-                args=(cube_idx, job),
-                daemon=True,
-            ).start()
+        if job.cancelled:
+            logger.info("Approach cancelled")
+            self.cli.stop_all_motors()
+            return False
+        if not aligned:
+            logger.warning("Alignment check FAILED - not continuing")
+            return False
+        return True
 
-            # Step 1: view standoff
-            s1x, s1y = self._standoff(state, self.STEP1_DIST_MM, (nx, ny))
-            logger.info("Step 1: go_to_pose to view standoff (%.0f, %.0f)", s1x, s1y)
-            self.cli.go_to_pose(
-                Pose(s1x, s1y, 0, angle_z=Angle(radians=heading)),
-                relative_to_robot=False,
-                should_interrupt=lambda: job.cancelled,
-            )
-
-            if job.cancelled:
-                logger.info("Approach cancelled")
-                self.cli.stop_all_motors()
-                return
-            if not self._dwell_for_smoothing(cube_idx, job):
-                self.cli.stop_all_motors()
-                logger.warning("Cube not re-detected at standoff - cancelling approach")
-                return
-
-            # Step 2: corrected standoff
-            target2 = self._corrected_target(cube_idx, self.STEP2_DIST_MM)
-            if target2 is None:
-                logger.warning("Cube lost after step 1 - keeping last standoff")
-                s2x, s2y, heading2 = s1x, s1y, heading
-            else:
-                s2x, s2y, heading2 = target2
-            logger.info(
-                "Step 2: go_to_pose to %.0fmm standoff (%.0f, %.0f)",
-                self.STEP2_DIST_MM,
-                s2x,
-                s2y,
-            )
-            self.cli.go_to_pose(
-                Pose(s2x, s2y, 0, angle_z=Angle(radians=heading2)),
-                relative_to_robot=False,
-                should_interrupt=lambda: job.cancelled,
-            )
-
-            # Wait for arrival
-            t_arrive = time.monotonic()
-            while not job.cancelled and time.monotonic() - t_arrive < 10.0:
-                rp = self.cli.pose
-                pos_err = math.hypot(s2x - rp.position.x, s2y - rp.position.y)
-                ang_err = abs(wrap_pi(heading2 - rp.rotation.angle_z.radians))
-                if pos_err <= self.ARRIVE_POS_MM and ang_err <= self.ARRIVE_ANG_RAD:
-                    break
-                time.sleep(0.05)
-
-            if job.cancelled:
-                logger.info("Approach cancelled")
-                self.cli.stop_all_motors()
-                return
-
-            logger.info("Aligned with cube %d", to_cube_id(cube_idx))
-
-            # Alignment verification with retry
-            attempts = 0
-            while not job.cancelled:
-                (aligned, checks, facing_err_rad, forward, lateral, _, fresh) = (
-                    self._verify_grab_alignment(cube_idx)
-                )
-                for msg in checks:
-                    logger.info("check: %s", msg)
-
-                recoverable = (
-                    not aligned
-                    and fresh
-                    and facing_err_rad is not None
-                    and facing_err_rad <= self.GRAB_RETRY_ANGLE_RAD
-                    and abs(lateral) <= self.GRAB_CENTER_TOL_MM
-                    and forward - self.GRAB_RECHECK_MM >= self.GRAB_RANGE_MM[0]
-                    and attempts < self.GRAB_MAX_RECHECKS
-                )
-                if not recoverable:
-                    break
-
-                attempts += 1
-                assert facing_err_rad is not None  # guaranteed by recoverable
-                logger.info(
-                    "Misaligned by %.1f deg - creeping %.0fmm closer (%d/%d)",
-                    math.degrees(facing_err_rad),
-                    self.GRAB_RECHECK_MM,
-                    attempts,
-                    self.GRAB_MAX_RECHECKS,
-                )
-                self._move_forward(self.GRAB_RECHECK_MM)
-                time.sleep(0.3)
-
-            if job.cancelled:
-                logger.info("Approach cancelled - not grabbing")
-                self.cli.stop_all_motors()
-                return
-            if not aligned:
-                logger.warning("Alignment check FAILED - not grabbing")
-                return
-
-            logger.info(
-                "Aligned - grabbing cube %d: +%.0fmm, lift to %.0fmm",
-                to_cube_id(cube_idx),
-                self.GRAB_FORWARD_MM,
-                pycozmo.MAX_LIFT_HEIGHT.mm,
-            )
-            self._move_forward(self.GRAB_FORWARD_MM)
-            self.cli.set_lift_height(
-                pycozmo.MAX_LIFT_HEIGHT.mm,
-                accel=self.LIFT_UP_ACCEL,
-                max_speed=self.LIFT_UP_SPEED,
-            )
-            logger.info("Cube %d grabbed (lift up)", to_cube_id(cube_idx))
-            if self.carry is not None:
-                # Arm the observation: while the forks are up the cube
-                # should leave the camera frame; if it never does, the
-                # grab missed and we are not carrying it.
-                self.carry.note_grab(cube_idx)
-        except Exception as e:  # noqa: BLE001
-            logger.exception("Approach error: %s", e)
+    def _grab(self, cube_idx: int) -> None:
+        """Terminal action of an approach: creep in, raise the forks, arm carry."""
+        logger.info(
+            "Aligned - grabbing cube %d: +%.0fmm, lift to %.0fmm",
+            to_cube_id(cube_idx),
+            self.GRAB_FORWARD_MM,
+            pycozmo.MAX_LIFT_HEIGHT.mm,
+        )
+        self._move_forward(self.GRAB_FORWARD_MM)
+        self.cli.set_lift_height(
+            pycozmo.MAX_LIFT_HEIGHT.mm,
+            accel=self.LIFT_UP_ACCEL,
+            max_speed=self.LIFT_UP_SPEED,
+        )
+        logger.info("Cube %d grabbed (lift up)", to_cube_id(cube_idx))
+        if self.carry is not None:
+            # Arm the observation: while the forks are up the cube
+            # should leave the camera frame; if it never does, the
+            # grab missed and we are not carrying it.
+            self.carry.note_grab(cube_idx)

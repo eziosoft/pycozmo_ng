@@ -181,6 +181,23 @@ class CarryDetector:
         return None
 
     @property
+    def on_forks(self) -> bool:
+        """Is a cube believed to ride the raised forks right now?
+
+        ``True`` while the observation says so: state ``CARRYING``, or an
+        armed grab whose verdict is still pending (the fork is still
+        rising right after the grab). ``False`` when unarmed (nothing
+        grabbed, or the observation was cleared) and when the check
+        resolved the grab as missed (``NOT_CARRYING``). This is the
+        "may I stack?" predicate for :class:`CubeStack`.
+        """
+        with self._lock:
+            armed = self._cube_index is not None
+        if not armed:
+            return False
+        return self.state is not CarryState.NOT_CARRYING
+
+    @property
     def cube_id(self) -> int | None:
         """Cube ID (1-3) being observed, or ``None`` when not armed."""
         with self._lock:

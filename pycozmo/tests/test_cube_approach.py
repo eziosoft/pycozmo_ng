@@ -345,18 +345,18 @@ class TestApproachThread:
             spawn=_MOTION.spawn,
         )
         # Hold the approach lock to simulate an in-flight run.
-        ca._approach_lock.acquire(blocking=False)
+        ca.approach_lock.acquire(blocking=False)
         try:
             ca.approach(0, 0.0, 300.0)
             time.sleep(0.2)  # give any (wrongly) started thread a chance
         finally:
-            ca._approach_lock.release()
+            ca.approach_lock.release()
 
         # The second approach was refused — no run started, no go_to_pose.
         assert cli.go_to_pose.call_count == 0
         # And the lock is free again for the next real approach.
-        assert ca._approach_lock.acquire(blocking=False)
-        ca._approach_lock.release()
+        assert ca.approach_lock.acquire(blocking=False)
+        ca.approach_lock.release()
 
     def test_approach_runs_as_a_cancellable_job(self):
         """The approach is registered on the motion controller, so
@@ -392,5 +392,5 @@ class TestApproachThread:
         ):
             time.sleep(0.01)
         assert CubeApproach.JOB_APPROACH not in _MOTION.active_names
-        assert ca._approach_lock.acquire(blocking=False)
-        ca._approach_lock.release()
+        assert ca.approach_lock.acquire(blocking=False)
+        ca.approach_lock.release()

@@ -170,6 +170,15 @@ class CarryAPI:
         """Cube ID (1-3) whose grab is being observed, or ``None``."""
         return self._brain.carry.cube_id
 
+    @property
+    def on_forks(self) -> bool:
+        """Is a cube believed to be on the raised forks right now?
+
+        ``True`` while carrying (or right after a grab, before the fork
+        finished rising) — the predicate for stacking a cube on another.
+        """
+        return self._brain.carry.on_forks
+
     def clear(self) -> None:
         """Forget the observation (cube placed / forks lowered)."""
         self._brain.carry.clear()
@@ -190,9 +199,18 @@ class NavigatorAPI:
         """Approach and align with the cube with the given ID (1-3).
 
         Returns True if the approach was started (the cube is in the
-        world map), False otherwise.
+        world map), False otherwise. While a cube is on the raised forks,
+        approaching a *different* cube stacks the held cube on it.
         """
         return self._navigator.approach_cube(cube_id)
+
+    def stack_cube(self, cube_id: int) -> bool:
+        """Carry the held cube to the given cube ID (1-3) and stack it.
+
+        Requires a cube on the raised forks (see ``cozmo.carry``).
+        Returns True if the stack was started, False when refused.
+        """
+        return self._navigator.stack_cube(cube_id)
 
     def dock(self) -> None:
         """Drive back to dock/origin (in the background)."""

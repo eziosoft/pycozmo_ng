@@ -227,13 +227,15 @@ outside `PathExecutor`; sending path packets without that lock.
 
 **Navigator** (`pycozmo/navigation/navigator.py`):
 The navigation subsystem's one entry point — `navigate_to`, `drive_to_point`,
-`approach_cube*`, `dock`, `stop`, and the A* toggle — so callers address
-navigation as a single thing. It receives `Brain`'s shared
-`MotionController` (`.motion`) and owns the `DockState`, and composes three
+`approach_cube*`, `stack_cube`, `dock`, `stop`, and the A* toggle — so callers
+address navigation as a single thing. It receives `Brain`'s shared
+`MotionController` (`.motion`) and owns the `DockState`, and composes four
 sequences that hold their own tuning and job names: `AStarFollower` (`.astar` — plan, publish, and follow an A* path),
-`Docking` (`.docking` — dock approach, reverse into contact, retries), and the
-lazily built `CubeApproach` (`_cube_approach`). `Navigator.cli` is a property:
-assigning it (Brain wiring, or a reconnect) propagates the client to all three.
+`Docking` (`.docking` — dock approach, reverse into contact, retries), the
+lazily built `CubeApproach` (`_cube_approach`) and `CubeStack`
+(`_cube_stack`). `Navigator.cli` is a property:
+assigning it (Brain wiring, or a reconnect) propagates the client to all of
+them.
 _False friend_: "delegate" here does not mean callers reach past Navigator —
 they keep using `navigator.dock()` / `navigator.set_astar_enabled()`;
 sub-classes are reached only through `navigator.astar` and `navigator.docking`.
@@ -259,6 +261,9 @@ the frame) can never flip the status back to `CARRYING`. A fork settled
 *down* that never rose within
 `LIFT_TRANSIT_S` of the grab is authoritative `NOT_CARRYING` and clears
 the observation; lift up with no witnessed grab is `UNKNOWN`.
+`on_forks` is the derived "may I stack?" predicate: armed observation and
+not resolved-miss → `True` (carrying, or the fork is still rising),
+otherwise `False`.
 `CubeApproach` owns the hooks: it calls `clear()` when the
 forks go down at approach start and `note_grab(cube_idx)` after the grab
 (lift-up) — Brain wires the detector (`brain.carry`) into Navigator →
@@ -277,6 +282,29 @@ read time); treating "lift up" alone as "carrying" (it is `UNKNOWN` without
 a witnessed grab); judging while the lift motor is travelling; assuming
 the heuristic survives a cube driven back into
 frame — re-`note_grab` after the next grab to resynchronise.
+
+**Cube stacking** (`pycozmo/navigation/cube_stack.py`):
+Putting the carried cube on top of a second cube. Trigger: click another
+cube in the viewer while `carry.on_forks`, or the explicit
+`cozmo.navigator.stack_cube(id)` — `Navigator.approach_cube_at` is the
+single routing seam (no browser-side state): held cube, or nothing on the
+forks → the normal grab approach; a *different* cube while holding →
+`CubeStack`. The sequence reuses `CubeApproach.drive_and_align(...,
+lower_forks=False)` — the forks stay **up** the whole way (the usual
+forks-down prelude would dump the held cube) — then places: creep
+`GRAB_FORWARD_MM` over the target (same geometry as the grab), lower to
+`PLACE_LIFT_MM` (half up ≈ 46 mm: the carried cube's bottom meets the
+44 mm cube below), back away `STACK_BACK_AWAY_MM` (slides the prongs out
+from under it), forks fully down, `carry.clear()`. A failed back-away
+skips the final lowering — dropping the forks while still over the stack
+would push it over — and leaves them half down. Shares
+`CubeApproach.approach_lock` (one cube visit at a time) and runs as the
+`stack` motion job; the post-lower settle wait is time-based because the
+lift feedback reads ~0 on this robot.
+_Avoid_: lowering the forks before alignment; `note_grab` in a stack
+flow; trusting `lift_height_mm` for the release height; assuming the
+target cube stays visible at close standoffs with the carried cube in
+front of the camera (dwell re-detection gates the approach).
 
 ## Example dialogue
 

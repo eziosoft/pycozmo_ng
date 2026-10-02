@@ -130,6 +130,55 @@ class TestOnDemandStatus:
         assert det.state is CarryState.NOT_CARRYING
 
 
+class TestOnForks:
+    """``on_forks`` — the "may I stack?" predicate for CubeStack."""
+
+    def test_unarmed_is_false(self):
+        det, *_ = _detector(lift=LIFT_DOWN)
+        assert det.on_forks is False
+        # Forks up without a witnessed grab: unknown, but nothing is
+        # believed to be riding them, so stacking is refused too.
+        det_up, *_ = _detector(lift=LIFT_UP)
+        assert det_up.state is CarryState.UNKNOWN
+        assert det_up.on_forks is False
+
+    def test_armed_while_the_fork_rises_is_true(self):
+        det, *_ = _detector(lift=LIFT_DOWN, in_pos=False, seen_age_s=0.0)
+        det.note_grab(0)
+        assert det.state is CarryState.UNKNOWN  # verdict pending
+        assert det.on_forks is True
+
+    def test_carrying_is_true(self):
+        det, *_ = _detector(lift=LIFT_UP, seen_age_s=3.0)
+        det.note_grab(0)
+        assert det.state is CarryState.CARRYING
+        assert det.on_forks is True
+
+    def test_resolved_miss_is_false(self):
+        det, *_ = _detector(lift=LIFT_UP, seen_age_s=0.0)
+        det.note_grab(0)
+        assert det.state is CarryState.NOT_CARRYING
+        assert det.on_forks is False
+
+    def test_cleared_is_false(self):
+        det, *_ = _detector(lift=LIFT_UP, seen_age_s=3.0)
+        det.note_grab(0)
+        assert det.on_forks is True
+        det.clear()
+        assert det.on_forks is False
+
+    def test_forks_settling_down_forgets_the_observation(self):
+        det, clock, *_ = _detector(lift=LIFT_DOWN, in_pos=True, seen_age_s=3.0)
+        det.note_grab(0)
+        # Settled but within the transit grace: verdict still pending.
+        assert det.state is CarryState.UNKNOWN
+        assert det.on_forks is True
+        # Past the grace the rise clearly never happened: auto-cleared.
+        clock.advance(CarryDetector.LIFT_TRANSIT_S + 0.1)
+        assert det.state is CarryState.NOT_CARRYING
+        assert det.on_forks is False
+
+
 class TestWaitForFork:
     """Judge only once the fork has finished rising — never mid-travel."""
 

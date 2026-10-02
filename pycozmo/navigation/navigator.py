@@ -20,6 +20,7 @@ from pycozmo.logger import logger
 from pycozmo.navigation.astar import AStarPlanner
 from pycozmo.navigation.astar_follower import AStarFollower
 from pycozmo.navigation.cube_approach import CubeApproach
+from pycozmo.navigation.cube_stack import CubeStack
 from pycozmo.navigation.dock_state import DockState
 from pycozmo.navigation.docking import Docking
 from pycozmo.navigation.motion_controller import MotionController
@@ -80,6 +81,9 @@ class Navigator:
         )
         # Cube approach (lazily created with DI callbacks)
         self._cube_approach: CubeApproach | None = None
+        # Cube stacking — created on demand, shares the approach's
+        # drive sequence and visit lock.
+        self._cube_stack: CubeStack | None = None
 
     @property
     def cli(self) -> Any:
@@ -93,6 +97,8 @@ class Navigator:
         self.docking.cli = value
         if self._cube_approach is not None:
             self._cube_approach.cli = value
+        if self._cube_stack is not None:
+            self._cube_stack.cli = value
 
     # ------------------------------------------------------------------
     # Charger / origin handlers (COZMO-28)
@@ -400,6 +406,19 @@ class Navigator:
             )
         return self._cube_approach
 
+    def _get_cube_stack(self) -> CubeStack:
+        """Lazily create the CubeStack with DI callbacks (shares the approach)."""
+        if self._cube_stack is None:
+            self._cube_stack = CubeStack(
+                cli=self.cli,
+                drive_to_point=self.drive_to_point,
+                move_forward=self._move_forward,
+                spawn=self.motion.spawn,
+                carry=self.carry,
+                approach=self._get_cube_approach(),
+            )
+        return self._cube_stack
+
     @staticmethod
     def _pick_face_normal(
         cube_pos: np.ndarray,
@@ -437,17 +456,49 @@ class Navigator:
         return True
 
     def approach_cube_at(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
-        """Approach the cube at world position (x, y) — delegates to CubeApproach.
+        """Approach the cube at world position (x, y) — grab or stack.
 
         ``cube_idx`` is the 0-indexed world-map key; the browser message
         router resolves the pose and calls this directly. Use
         :meth:`approach_cube` to address a cube by its ID (1-3).
+
+        Normally this delegates to :class:`CubeApproach` (drive up, grab).
+        While a cube is believed to be riding the raised forks
+        (``carry.on_forks``) and the target is a *different* cube, it
+        routes to :class:`CubeStack` instead — so clicking a second cube
+        in the viewer stacks the held cube on it rather than dumping it.
         """
         if not self.cli:
             logger.warning("Approach: no robot connected")
             return
+        carry = self.carry
+        if (
+            carry is not None
+            and carry.on_forks
+            and to_cube_id(cube_idx) != carry.cube_id
+        ):
+            self._get_cube_stack().stack(cube_idx, cube_x, cube_y)
+            return
         ca = self._get_cube_approach()
         ca.approach(cube_idx, cube_x, cube_y)
+
+    def stack_cube(self, cube_id: int) -> bool:
+        """Approach the cube with the given ID (1-3) and stack the held cube on it.
+
+        Returns True if the stack was started (a cube is believed to be
+        on the raised forks and the target is in the world map), False
+        otherwise. The same routing happens automatically for
+        click-to-approach while carrying — this method is the explicit
+        library API.
+        """
+        carry = self.carry
+        if carry is None or not carry.on_forks:
+            logger.warning("Stack: no cube on the forks - not stacking")
+            return False
+        if carry.cube_id == cube_id:
+            logger.warning("Stack: cube %d is already on the forks", cube_id)
+            return False
+        return self.approach_cube(cube_id)
 
     # ------------------------------------------------------------------
     # Docking (COZMO-28)

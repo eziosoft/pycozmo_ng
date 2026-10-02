@@ -107,6 +107,7 @@ pycozmo/           # Main library
 │   ├── astar.py            # AStarPlanner, PathPoint — A* pathfinding
 │   ├── astar_follower.py    # AStarFollower — plan, publish, follow A* path
 │   ├── cube_approach.py     # CubeApproach — two-step standoff approach
+│   ├── cube_stack.py        # CubeStack — stack the carried cube on another cube
 │   ├── dock_state.py        # DockState — charger/dock pose tracking
 │   ├── docking.py           # Docking — dock approach, contact, retries
 │   ├── motion_controller.py # MotionController — registry of running motion jobs
@@ -177,7 +178,7 @@ This branch includes:
 - **Robot center calibration**: Two-ring marker detection for precise lateral offset measurement
 - **Face detection**: Haar cascade face detection with expression control
 - **3D web viewer**: Three.js browser viewer with WebSocket state broadcast, MJPEG camera streams, occupancy grid overlay, procedural face streaming
-- **Navigation**: Navigator with cube approach, docking, point-to-point steering
+- **Navigation**: Navigator with cube approach, cube stacking, docking, point-to-point steering
 - **Cube BLE management**: CubeCycler, CubeManager, CubeMoveDetector with IMU-based movement tracking
 - **Offline TTS**: `Cozmo.say()` / `Client.say()` using pyttsx3 + espeak-ng, with WAV caching
 
