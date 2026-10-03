@@ -1,6 +1,6 @@
 """Tests for CubeStack — stacking the carried cube onto a second cube.
 
-Covers the placement sequence (forks stay up, half-down release, back
+Covers the placement sequence (forks stay up, release-height drop, back
 away, forks fully down, carry cleared), the entry guards (a cube must be
 believed to be on the forks), the shared visit lock, and the Navigator
 routing that turns a click on another cube while carrying into a stack.
@@ -13,7 +13,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 import pycozmo
 from pycozmo.cubes.identity import to_cube_id
@@ -101,7 +100,7 @@ def _make_stack(
 class TestStackPlacement:
     """The full placement sequence inside the stack job."""
 
-    def test_half_down_release_then_back_away_then_forks_down(self):
+    def test_release_then_back_away_then_forks_down(self):
         # Robot parked at the step-2 standoff (0, 200) facing the cube at
         # (0, 300), so drive_and_align verifies and _place runs.
         cli, _pose = _make_mock_cli(x=0.0, y=200.0)
@@ -116,18 +115,13 @@ class TestStackPlacement:
         with _MOTION.begin(CubeStack.JOB_STACK) as job:
             stack._run(job, 0, 0.0, 300.0)
 
-        # Exactly two lift commands: half down (release), then fully
+        # Exactly two lift commands: the release height, then fully
         # down (after backing out) — never the grab's forks-down prelude.
         lift_calls = [c.args[0] for c in cli.set_lift_height.call_args_list]
         assert lift_calls == [
             CubeStack.PLACE_LIFT_MM,
             pycozmo.MIN_LIFT_HEIGHT.mm,
         ]
-        # Half = MAX/2: the carried cube's bottom lands at ~the top of
-        # the 44 mm cube below.
-        assert CubeStack.PLACE_LIFT_MM == pytest.approx(
-            pycozmo.MAX_LIFT_HEIGHT.mm * 0.5
-        )
         # One back-away drive (the other drive_to_point is the
         # approach's "too close" reverse at the start).
         assert len(drives) == 2
@@ -136,10 +130,13 @@ class TestStackPlacement:
         carry.clear.assert_called_once()
         carry.note_grab.assert_not_called()
 
-    def test_place_height_is_below_the_cube_below(self):
-        # The release height must let the cube rest on the 44mm cube.
-        assert CubeStack.PLACE_LIFT_MM < 50.0
-        assert CubeStack.PLACE_LIFT_MM > pycozmo.MIN_LIFT_HEIGHT.mm
+    def test_release_height_clears_the_stack_while_backing(self):
+        # Live-tuned: the prongs must stay above the 44 mm cube below
+        # while the robot reverses (half up, 46 mm, wedged against it
+        # and dragged the stack); the carried cube then drops the
+        # remaining gap onto the stack as the prongs withdraw.
+        assert CubeStack.PLACE_LIFT_MM == 72.0
+        assert 44.0 < CubeStack.PLACE_LIFT_MM < pycozmo.MAX_LIFT_HEIGHT.mm
 
     def test_unknown_cube_never_places(self):
         cli, _ = _make_mock_cli()
@@ -151,7 +148,7 @@ class TestStackPlacement:
         cli.set_lift_height.assert_not_called()
         carry.clear.assert_not_called()
 
-    def test_failed_back_away_leaves_the_forks_half_down(self):
+    def test_failed_back_away_leaves_the_forks_at_the_release_height(self):
         """If the robot cannot reverse, the final lowering is skipped —
         dropping the forks while still over the stack would push it."""
         cli, _pose = _make_mock_cli(x=0.0, y=200.0)

@@ -8,13 +8,15 @@ whole way (the carried cube would be dumped by the usual forks-down
 prelude), and instead of scooping, the terminal action places:
 
 1. creep forward so the carried cube sits directly above the target,
-2. lower the fork half way down so the carried cube lands on the cube
-   below (``PLACE_LIFT_MM`` puts its bottom at roughly the height of the
-   cube's top — CUBE_SIZE is 44 mm, half of MAX_LIFT_HEIGHT is 46 mm),
-3. back away, sliding the prongs out from under the now-stacked cube,
+2. lower the fork to ``PLACE_LIFT_MM`` (72 mm, live-tuned) — the carried
+   cube comes down to the stack while the prongs stay clear of the 44 mm
+   cube below,
+3. back away: the prongs slide out from under the carried cube (never
+   touching the stack), which drops it the remaining gap onto the cube
+   below,
 4. drop the forks fully and forget the carry observation.
 
-The settle wait after the half-down command is time-based:
+The settle wait after the release command is time-based:
 ``set_lift_height`` returns as soon as the command is sent (the firmware
 acks before the motor starts), so the job waits out the travel.
 """
@@ -57,10 +59,12 @@ class CubeStack:
     # ------------------------------------------------------------------
     # Tuning constants
     # ------------------------------------------------------------------
-    #: Half-raised fork: with the carried cube's bottom ≈ fork height,
-    #: 46 mm (half of MAX 92) lands it on the 44 mm cube below, so the
-    #: prongs can slide out. Tune against the robot live.
-    PLACE_LIFT_MM: float = pycozmo.MAX_LIFT_HEIGHT.mm * 0.5
+    #: Live-tuned release height: bring the carried cube down onto the
+    #: stack while keeping the prongs clear of the 44 mm cube below as
+    #: the robot reverses (at half-up, 46 mm, the prongs wedged against
+    #: it and dragged the stack on the way back). The carried cube drops
+    #: the remaining gap as the prongs withdraw.
+    PLACE_LIFT_MM: float = 72.0
     #: Gentle lowering so the placed cube is not bounced off.
     PLACE_LIFT_ACCEL = 1.5
     PLACE_LIFT_SPEED = 1.5
@@ -160,7 +164,7 @@ class CubeStack:
             logger.exception("Stack error: %s", e)
 
     def _place(self, job: MotionToken, cube_idx: int, carried_id: int | None) -> None:
-        """Terminal action: creep over the target, half-lower, back out."""
+        """Terminal action: creep over the target, release height, back out."""
         # 1. Creep in so the carried cube is directly above the target
         #    (same geometry the grab uses to straddle the cube).
         logger.info(
@@ -175,7 +179,8 @@ class CubeStack:
             self.cli.stop_all_motors()
             return
 
-        # 2. Half down: the carried cube lands on the cube below.
+        # 2. Release height: the carried cube comes down to the stack,
+        #    prongs still clear of the cube below.
         self.cli.set_lift_height(
             self.PLACE_LIFT_MM,
             accel=self.PLACE_LIFT_ACCEL,
@@ -193,7 +198,7 @@ class CubeStack:
                 self.cli.stop_all_motors()
                 return
             # Backing out failed: do NOT drop the forks — that would
-            # push through the stack. Leave them half down and report.
+            # push through the stack. Leave them at the release height.
             logger.warning(
                 "Stack: back-away failed - forks left at %.0fmm over cube %d",
                 self.PLACE_LIFT_MM,

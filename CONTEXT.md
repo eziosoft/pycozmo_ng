@@ -306,11 +306,13 @@ forks → the normal grab approach; a *different* cube while holding →
 lower_forks=False)` — the forks stay **up** the whole way (the usual
 forks-down prelude would dump the held cube) — then places: creep
 `GRAB_FORWARD_MM` over the target (same geometry as the grab), lower to
-`PLACE_LIFT_MM` (half up ≈ 46 mm: the carried cube's bottom meets the
-44 mm cube below), back away `STACK_BACK_AWAY_MM` (slides the prongs out
-from under it), forks fully down, `carry.clear()`. A failed back-away
-skips the final lowering — dropping the forks while still over the stack
-would push it over — and leaves them half down. Shares
+`PLACE_LIFT_MM` (72 mm, live-tuned: bring the cube down to the stack
+while keeping the prongs clear of the 44 mm cube below), back away
+`STACK_BACK_AWAY_MM` — the prongs slide out from under the carried cube
+and it drops the remaining gap onto the stack — then forks fully down,
+`carry.clear()`. A failed back-away skips the final lowering — dropping
+the forks while still over the stack would push it over — and leaves
+them at `PLACE_LIFT_MM`. Shares
 `CubeApproach.approach_lock` (one cube visit at a time) and runs as the
 `stack` motion job; the post-lower settle wait is time-based
 (`set_lift_height` returns as soon as the command is sent).
