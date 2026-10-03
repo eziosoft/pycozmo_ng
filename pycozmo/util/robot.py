@@ -24,6 +24,7 @@ __all__ = [
     "LiftPosition",
     "RobotStatusFlag",
     "RobotStatusFlagNames",
+    "lift_position_from_raw",
 ]
 
 
@@ -182,3 +183,18 @@ class LiftPosition:
         sin_angle = (self._height.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm
         angle = math.asin(sin_angle)
         return util.Angle(radians=angle)
+
+
+def lift_position_from_raw(raw_angle: float) -> LiftPosition:
+    """Lift position from the raw ``RobotState.lift_height_mm`` value.
+
+    The field name is a misnomer: the firmware reports the lift arm
+    **angle in radians**, not millimetres — live hardware reads ≈ -0.2
+    with the forks down and ≈ 0.8 with them up, which is exactly
+    :data:`MIN_LIFT_ANGLE` / :data:`MAX_LIFT_ANGLE` (the 66 mm arm on a
+    45 mm pivot). The angle is clamped to the arm's travel limits first,
+    so the resulting height always lies within
+    [MIN_LIFT_HEIGHT, MAX_LIFT_HEIGHT].
+    """
+    angle = max(MIN_LIFT_ANGLE.radians, min(MAX_LIFT_ANGLE.radians, raw_angle))
+    return LiftPosition(angle=util.Angle(radians=angle))

@@ -274,14 +274,27 @@ The 3D viewer renders a carrying cube **locked to the robot**:
 `build_state_json` flags it `carried: true` (appending a robot-pose
 placeholder if the world map lost the cube out of frame) and `index.html`
 re-positions that cube every frame on the forks — robot heading at a
-fixed forks-up height (`CARRY_H_MM`; the lift feedback reads low while
-carrying, so it is never used for rendering), no lerp of its own, so it
+fixed forks-up height (`CARRY_H_MM`, fixed by design: the render locks
+to the robot, not to lift telemetry), no lerp of its own, so it
 never drifts off the robot.
 _Avoid_: background polling or a cached boolean (the state is decided at
 read time); treating "lift up" alone as "carrying" (it is `UNKNOWN` without
 a witnessed grab); judging while the lift motor is travelling; assuming
 the heuristic survives a cube driven back into
 frame — re-`note_grab` after the next grab to resynchronise.
+
+**Lift feedback** (`pycozmo/util/robot.py`):
+`RobotState.lift_height_mm` is misnamed — the firmware reports the lift
+arm **angle in radians** (live: ≈ -0.2 with forks down, ≈ 0.8 with them
+up = `MIN_LIFT_ANGLE`/`MAX_LIFT_ANGLE` for the 66 mm arm on a 45 mm
+pivot). `client._on_robot_state` converts it through
+`robot.lift_position_from_raw()` (`sin(a)·66 + 45`, clamped to the arm's
+travel), so `cli.lift_position.height.mm`, `cozmo.sensors.lift_height`,
+the carry logs and the web HUD's LIFT row read real millimetres
+(32…92). Carry still keys on `LIFT_IN_POS` first — height is only the
+fallback, never the settle signal.
+_Avoid_: reading `pkt.lift_height_mm` raw (radians, not mm); using a
+height threshold as the "lift settled" signal.
 
 **Cube stacking** (`pycozmo/navigation/cube_stack.py`):
 Putting the carried cube on top of a second cube. Trigger: click another
@@ -299,10 +312,11 @@ from under it), forks fully down, `carry.clear()`. A failed back-away
 skips the final lowering — dropping the forks while still over the stack
 would push it over — and leaves them half down. Shares
 `CubeApproach.approach_lock` (one cube visit at a time) and runs as the
-`stack` motion job; the post-lower settle wait is time-based because the
-lift feedback reads ~0 on this robot.
+`stack` motion job; the post-lower settle wait is time-based
+(`set_lift_height` returns as soon as the command is sent).
 _Avoid_: lowering the forks before alignment; `note_grab` in a stack
-flow; trusting `lift_height_mm` for the release height; assuming the
+flow; timing the release from lift feedback (the sequence is
+command-timed); assuming the
 target cube stays visible at close standoffs with the carried cube in
 front of the camera (dwell re-detection gates the approach).
 

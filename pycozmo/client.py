@@ -369,9 +369,10 @@ class Client(event.Dispatcher):
         self.head_angle = util.Angle(radians=pkt.head_angle_rad)
         self.left_wheel_speed = util.Speed(mmps=pkt.lwheel_speed_mmps)
         self.right_wheel_speed = util.Speed(mmps=pkt.rwheel_speed_mmps)
-        self.lift_position = robot.LiftPosition(
-            height=util.Distance(mm=pkt.lift_height_mm)
-        )
+        # NB: "lift_height_mm" is misnamed — the firmware sends the lift
+        # arm angle in radians; convert through the lift geometry so all
+        # consumers (sensors API, telemetry, HUD) read real millimetres.
+        self.lift_position = robot.lift_position_from_raw(pkt.lift_height_mm)
         self.battery_voltage = pkt.battery_voltage
         self.accel = util.Vector3(pkt.accel_x, pkt.accel_y, pkt.accel_z)
         self.gyro = util.Vector3(pkt.gyro_x, pkt.gyro_y, pkt.gyro_z)

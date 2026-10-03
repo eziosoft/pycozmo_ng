@@ -14,8 +14,9 @@ prelude), and instead of scooping, the terminal action places:
 3. back away, sliding the prongs out from under the now-stacked cube,
 4. drop the forks fully and forget the carry observation.
 
-The lift *feedback* height reads ~0 on this robot (see carry_state), so
-the settle wait after the half-down command is time-based.
+The settle wait after the half-down command is time-based:
+``set_lift_height`` returns as soon as the command is sent (the firmware
+acks before the motor starts), so the job waits out the travel.
 """
 
 import math
@@ -64,8 +65,8 @@ class CubeStack:
     PLACE_LIFT_ACCEL = 1.5
     PLACE_LIFT_SPEED = 1.5
     #: ``set_lift_height`` returns once the command is sent (and the
-    #: firmware acks before the motor starts), and the feedback height is
-    #: unusable — wait a fixed, generous travel time before backing out.
+    #: firmware acks before the motor starts) — wait a fixed, generous
+    #: travel time before backing out rather than polling.
     PLACE_TRAVEL_S = 2.0
     #: How far to reverse so the prongs clear the stacked cube.
     STACK_BACK_AWAY_MM = 160.0
