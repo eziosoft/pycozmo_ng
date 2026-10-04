@@ -8,6 +8,7 @@ Maintain a running knowledge base on the LIFIC issue tracker (project `COZMO`).
 - **Fill new info as it surfaces.** After exploring code, solving a problem, or finishing a task, write the takeaways to LIFIC (issue comments, pages, or a dedicated `architecture` / `notes` page) before moving on.
 - Treat `AGENTS.md`, `CONTEXT.md`, and the LIFIC pages as a pair: short, project-stable rules live in `AGENTS.md`; deeper domain notes (frame conventions, coordinate transforms, face/index mappings) live in `CONTEXT.md`; evolving notes with citations and structure live on LIFIC.
 - Always read `CONTEXT.md` before working on vision, navigation, or world-map code — it defines the canonical frame conventions and coordinate transforms that the entire localization stack depends on.
+- **Always mark a LIFIC issue as ACTIVE when you start working on it.** As soon as you pick up a task from LIFIC, set its status to `active` before doing the work; mark it `done` when finished.
 - Quick reference: `list_resources(type='project')` to find `COZMO`; `lific_search` to find existing notes before adding duplicates.
 
 ## Project Overview
