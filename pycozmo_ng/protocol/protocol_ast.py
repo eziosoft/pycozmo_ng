@@ -250,6 +250,13 @@ class Enum:
         self.base = int(base)
 
 
+# Default instances for the parameter defaults below. Module-level on purpose: ruff B008
+# rejects function calls evaluated in a default value.
+_INT8_DEFAULT = Int8Argument()
+_UINT8_DEFAULT = UInt8Argument()
+_UINT16_DEFAULT = UInt16Argument()
+
+
 class EnumArgument(Argument):
     """Enumeration argument."""
 
@@ -258,7 +265,7 @@ class EnumArgument(Argument):
         name: str,
         enum_type: Enum,
         description: str | None = None,
-        data_type: IntArgument | UIntArgument = Int8Argument(),
+        data_type: IntArgument | UIntArgument = _INT8_DEFAULT,
         default: int = 0,
     ) -> None:
         super().__init__(name, description, int(default))
@@ -292,7 +299,7 @@ class FArrayArgument(Argument):
         self,
         name: str | None = None,
         description: str | None = None,
-        data_type: Argument = UInt8Argument(),
+        data_type: Argument = _UINT8_DEFAULT,
         length: int = 0,
         default: tuple = (),
     ) -> None:
@@ -312,8 +319,8 @@ class VArrayArgument(Argument):
         self,
         name: str | None = None,
         description: str | None = None,
-        data_type: Argument = UInt8Argument(),
-        length_type: Argument = UInt16Argument(),
+        data_type: Argument = _UINT8_DEFAULT,
+        length_type: Argument = _UINT16_DEFAULT,
         default: tuple = (),
     ) -> None:
         super().__init__(name, description, tuple(default))
@@ -333,7 +340,7 @@ class StringArgument(Argument):
         self,
         name: str | None = None,
         description: str | None = None,
-        length_type: Argument = UInt16Argument(),
+        length_type: Argument = _UINT16_DEFAULT,
         default: str = "",
     ) -> None:
         super().__init__(name, description, str(default))

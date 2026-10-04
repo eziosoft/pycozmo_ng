@@ -34,7 +34,7 @@ def get_fmt_by_type(t: protocol_declaration.Argument) -> str:
     elif isinstance(t, protocol_declaration.Int32Argument):
         fmt = "l"
     else:
-        raise ValueError(f"Unexpected argument type '{t.__class__.__name__}'")
+        raise TypeError(f"Unexpected argument type '{t.__class__.__name__}'")
     return fmt
 
 

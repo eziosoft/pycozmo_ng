@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterator
 import pytest
 
 from pycozmo_ng import Cozmo
+from pycozmo_ng.exception import PyCozmoNGConnectionError
 from pycozmo_ng.logger import setup_basic_logging
 
 
@@ -40,7 +41,8 @@ def cozmo() -> Iterator[Cozmo]:
     c = Cozmo()
     try:
         c.connect()
-    except Exception as exc:  # ConnectionTimeout when no robot answers
+    except (PyCozmoNGConnectionError, OSError) as exc:
+        # Unreachable robot: connection timeout, refused or no route to host.
         pytest.skip(f"Cozmo unreachable: {exc}")
     yield c
     c.disconnect()

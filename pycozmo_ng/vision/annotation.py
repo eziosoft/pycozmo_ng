@@ -8,9 +8,9 @@ in headless contexts.
 from PIL import Image, ImageDraw, ImageFont
 
 from pycozmo_ng.cubes.identity import to_cube_id
+from pycozmo_ng.vision.calibration.robot_center import RobotCenterResult
 from pycozmo_ng.vision.cube_detector.detection_pipeline import CubeDetection
 from pycozmo_ng.vision.face_detector import FaceDetection
-from pycozmo_ng.vision.calibration.robot_center import RobotCenterResult
 
 
 class AnnotationEngine:

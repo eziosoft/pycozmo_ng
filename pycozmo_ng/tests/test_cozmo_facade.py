@@ -7,9 +7,10 @@ subsystem method fails here instead of raising AttributeError in front of
 a user (the bug this suite guards against).
 """
 
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
-from unittest.mock import MagicMock
 
 import pycozmo_ng
 from pycozmo_ng import Cozmo, cubes, navigation

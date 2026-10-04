@@ -68,7 +68,7 @@ def validate_integer(name, value, minimum, maximum):
 
 def validate_object(name, value, expected_type):
     if not isinstance(value, expected_type):
-        raise ValueError(
+        raise TypeError(
             f"{name} must be a {expected_type.__name__}. Got a {type(value).__name__}."
         )
     return value

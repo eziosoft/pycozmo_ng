@@ -1,5 +1,7 @@
 import threading
 
+from pycozmo_ng.logger import logger_cubes
+
 
 class CubeCycler:
     """Rapidly cycles through cubes, connecting to one at a time.
@@ -102,7 +104,7 @@ class CubeCycler:
                 cli.conn.send(pe.ObjectConnect(factory_id=factory_id, connect=False))
                 self._stop.wait(0.05)  # brief pause for disconnect to propagate
             except Exception:  # noqa: BLE001
-                pass
+                logger_cubes.debug("Disconnect failed for cube %s", cube_id, exc_info=True)
             with self._lock:
                 if self._current_cube_id == cube_id:
                     self._current_cube_id = None

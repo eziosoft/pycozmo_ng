@@ -10,10 +10,10 @@ from threading import Lock, Thread
 from typing import Any
 
 from pycozmo_ng import event, logger, util
-from pycozmo_ng.vision import image_encoder
 from pycozmo_ng.display import procedural_face
 from pycozmo_ng.protocol import protocol_encoder
 from pycozmo_ng.util import robot
+from pycozmo_ng.vision import image_encoder
 
 
 class AnimationQueue:

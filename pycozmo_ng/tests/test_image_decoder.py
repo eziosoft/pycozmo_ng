@@ -1,8 +1,8 @@
 import unittest
 
-from pycozmo_ng.vision.image_encoder import ImageDecoder, image_to_str
 from pycozmo_ng.tests.image_encoder_fixtures import FIXTURES
 from pycozmo_ng.util import hex_load
+from pycozmo_ng.vision.image_encoder import ImageDecoder, image_to_str
 
 
 class TestImageDecoder(unittest.TestCase):

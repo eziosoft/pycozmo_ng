@@ -5,8 +5,8 @@ Cozmo image run-length encoding and decoding.
 """
 
 import sys
-from typing import Any
 from io import StringIO
+from typing import Any
 
 from PIL import Image
 
@@ -238,12 +238,11 @@ class ImageEncoder:
 
     def _repeat_cols(self) -> None:
         """Handle column repetition."""
-        if self.repeat_cols:
-            # Optimization: Remove skips, right before column repeats.
-            if self.buffer:
-                cmd = self.buffer[-1]
-                if (cmd & 0xC3 == 0x80) or (cmd & 0xC3 == 0xC0):
-                    self.buffer.pop()
+        # Optimization: Remove skips, right before column repeats.
+        if self.repeat_cols and self.buffer:
+            cmd = self.buffer[-1]
+            if (cmd & 0xC3 == 0x80) or (cmd & 0xC3 == 0xC0):
+                self.buffer.pop()
         while self.repeat_cols >= 64:
             cmd = 0x40 + 0x3F
             self.buffer.append(cmd)
