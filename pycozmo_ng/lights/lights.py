@@ -55,9 +55,7 @@ class Color:
         if int_color is not None:
             self._int_color = int(int_color) | 0xFF
         elif rgb is not None:
-            self._int_color = (
-                (int(rgb[0]) << 24) | (int(rgb[1]) << 16) | (int(rgb[2]) << 8) | 0xFF
-            )
+            self._int_color = (int(rgb[0]) << 24) | (int(rgb[1]) << 16) | (int(rgb[2]) << 8) | 0xFF
         else:
             self._int_color = 0
 
@@ -69,11 +67,7 @@ class Color:
         r = ((self._int_color & 0xFF000000) >> 24) * 31 // 255
         g = ((self._int_color & 0x00FF0000) >> 16) * 31 // 255
         b = ((self._int_color & 0x0000FF00) >> 8) * 31 // 255
-        value = (
-            (r << LED_ENC_RED_SHIFT)
-            | (g << LED_ENC_GREEN_SHIFT)
-            | (b << LED_ENC_BLUE_SHIFT)
-        )
+        value = (r << LED_ENC_RED_SHIFT) | (g << LED_ENC_GREEN_SHIFT) | (b << LED_ENC_BLUE_SHIFT)
         return value
 
     @classmethod
@@ -101,22 +95,12 @@ white = Color(name="white", int_color=0xFFFFFFFF)  # Does not work well with cub
 off = Color(name="off")
 
 #: Green light.
-green_light = protocol_encoder.LightState(
-    on_color=green.to_int16(), off_color=green.to_int16()
-)
+green_light = protocol_encoder.LightState(on_color=green.to_int16(), off_color=green.to_int16())
 #: Red light.
-red_light = protocol_encoder.LightState(
-    on_color=red.to_int16(), off_color=red.to_int16()
-)
+red_light = protocol_encoder.LightState(on_color=red.to_int16(), off_color=red.to_int16())
 #: Blue light.
-blue_light = protocol_encoder.LightState(
-    on_color=blue.to_int16(), off_color=blue.to_int16()
-)
+blue_light = protocol_encoder.LightState(on_color=blue.to_int16(), off_color=blue.to_int16())
 #: White light.
-white_light = protocol_encoder.LightState(
-    on_color=white.to_int16(), off_color=white.to_int16()
-)
+white_light = protocol_encoder.LightState(on_color=white.to_int16(), off_color=white.to_int16())
 #: Off/no light.
-off_light = protocol_encoder.LightState(
-    on_color=off.to_int16(), off_color=off.to_int16()
-)
+off_light = protocol_encoder.LightState(on_color=off.to_int16(), off_color=off.to_int16())

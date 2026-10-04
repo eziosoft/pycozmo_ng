@@ -60,17 +60,13 @@ def validate_integer(name, value, minimum, maximum):
     except ValueError:
         raise ValueError(f"{name} must be an integer. Got a {type(value).__name__}.")
     if value < minimum or value > maximum:
-        raise ValueError(
-            f"{name} must be between {minimum} and {maximum}. Got {value}."
-        )
+        raise ValueError(f"{name} must be between {minimum} and {maximum}. Got {value}.")
     return value
 
 
 def validate_object(name, value, expected_type):
     if not isinstance(value, expected_type):
-        raise TypeError(
-            f"{name} must be a {expected_type.__name__}. Got a {type(value).__name__}."
-        )
+        raise TypeError(f"{name} must be a {expected_type.__name__}. Got a {type(value).__name__}.")
     return value
 
 
@@ -79,21 +75,14 @@ def validate_farray(name, value, length, element_validation):
         try:
             value = tuple(value)
         except ValueError:
-            raise ValueError(
-                f"{name} must be a sequence. Got a {type(value).__name__}."
-            )
+            raise ValueError(f"{name} must be a sequence. Got a {type(value).__name__}.")
     if len(value) != length:
-        raise ValueError(
-            f"{name} must be a sequence of length {length}. "
-            f"Got a sequence of length {len(value)}."
-        )
+        raise ValueError(f"{name} must be a sequence of length {length}. Got a sequence of length {len(value)}.")
     if isinstance(value, (bytes, bytearray)):
         # Do not validate byte arrays.
         res = value
     else:
-        res = [
-            element_validation((name, i), element) for i, element in enumerate(value)
-        ]
+        res = [element_validation((name, i), element) for i, element in enumerate(value)]
     return res
 
 
@@ -102,9 +91,7 @@ def validate_varray(name, value, maximum_length, element_validation):
         try:
             value = tuple(value)
         except ValueError:
-            raise ValueError(
-                f"{name} must be a sequence. Got a {type(value).__name__}."
-            )
+            raise ValueError(f"{name} must be a sequence. Got a {type(value).__name__}.")
     if len(value) > maximum_length:
         raise ValueError(
             f"{name} must be a sequence with length less than or equal to {maximum_length}. "
@@ -114,17 +101,14 @@ def validate_varray(name, value, maximum_length, element_validation):
         # Do not validate byte arrays.
         res = value
     else:
-        res = [
-            element_validation((name, i), element) for i, element in enumerate(value)
-        ]
+        res = [element_validation((name, i), element) for i, element in enumerate(value)]
     return res
 
 
 def validate_string(name, value, maximum_length):
     if len(value) > maximum_length:
         raise ValueError(
-            f"{name} must be a string with less than or equal to {maximum_length}. "
-            f"Got a string of length {len(value)}."
+            f"{name} must be a string with less than or equal to {maximum_length}. Got a string of length {len(value)}."
         )
     return value
 
@@ -141,9 +125,7 @@ def get_farray_size(fmt, length):
 
 def get_varray_size(value, length_format, data_format):
     """Figures out the size of a variable-length array with given format."""
-    return (
-        _get_struct(length_format, 1).size + _get_struct(data_format, len(value)).size
-    )
+    return _get_struct(length_format, 1).size + _get_struct(data_format, len(value)).size
 
 
 def get_string_size(value, length_format):

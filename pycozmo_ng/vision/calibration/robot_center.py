@@ -88,9 +88,7 @@ class RobotCenterDetector:
         self.head_angle_rad = head_angle_rad
         self.circle_spacing_mm = circle_spacing_mm
         self.head_tolerance_rad = (
-            head_tolerance_rad
-            if head_tolerance_rad is not None
-            else self.DEFAULT_HEAD_TOLERANCE_RAD
+            head_tolerance_rad if head_tolerance_rad is not None else self.DEFAULT_HEAD_TOLERANCE_RAD
         )
         #: How far (px) the rings are allowed to move from the anchored ROI
         #: (fixed to the module-level ANCHOR_* constants).
@@ -103,14 +101,9 @@ class RobotCenterDetector:
         self._last_offset: float | None = None
 
     def _head_near_min(self) -> bool:
-        return (
-            abs(self.head_angle_rad - self.MIN_HEAD_ANGLE_RAD)
-            <= self.head_tolerance_rad
-        )
+        return abs(self.head_angle_rad - self.MIN_HEAD_ANGLE_RAD) <= self.head_tolerance_rad
 
-    def _component_spots(
-        self, sub: np.ndarray, x_off: float, y_off: float, w: int
-    ) -> list[tuple[float, float]]:
+    def _component_spots(self, sub: np.ndarray, x_off: float, y_off: float, w: int) -> list[tuple[float, float]]:
         """Find small dark spots in ``sub`` via connected components.
 
         ``sub`` is a crop of the inverted image band; ``x_off``/``y_off`` are the
@@ -134,9 +127,7 @@ class RobotCenterDetector:
             self.threshold_c,
         )
 
-        num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(
-            dark, connectivity=8
-        )
+        num_labels, _, stats, centroids = cv2.connectedComponentsWithStats(dark, connectivity=8)
 
         spots = []
         for i in range(1, num_labels):  # skip background (0)
@@ -236,10 +227,7 @@ class RobotCenterDetector:
         lateral_offset_mm = lateral_offset_px * scale_mm_per_px
 
         # Log at INFO only on first detection or when offset changes significantly
-        if (
-            self._last_offset is None
-            or abs(lateral_offset_mm - self._last_offset) > 0.5
-        ):
+        if self._last_offset is None or abs(lateral_offset_mm - self._last_offset) > 0.5:
             logger.info(
                 f"Robot center: lateral_offset={lateral_offset_mm:+.2f}mm, "
                 f"circles at ({circle_a_px[0]:.0f},{circle_a_px[1]:.0f}) and "

@@ -92,11 +92,7 @@ def build_state_json(
     # last-seen (stale) pose, so the browser locks it to the robot instead.
     carry_state = telemetry.get("carry")
     carry_cube = telemetry.get("carry_cube")
-    carried_id = (
-        f"cube_{carry_cube}"
-        if carry_state == "carrying" and carry_cube is not None
-        else None
-    )
+    carried_id = f"cube_{carry_cube}" if carry_state == "carrying" and carry_cube is not None else None
     cube_list = []
     for cube_index, cube_state in world["cubes"].items():
         pos_gl = coords.world_to_scene_point(cube_state["position"])
@@ -159,17 +155,13 @@ def build_state_json(
         offset = (len(path_world) - 1) % step
         path_world = path_world[offset::step]
     path_scene = [
-        [fx, fy + PATH_SCENE_LIFT_MM, fz]
-        for (fx, fy, fz) in (coords.world_to_scene_point(p) for p in path_world)
+        [fx, fy + PATH_SCENE_LIFT_MM, fz] for (fx, fy, fz) in (coords.world_to_scene_point(p) for p in path_world)
     ]
 
     # A* planned path: stored as 2-D world-frame [x, y] — convert to scene
     # frame (scene = [world_y, lift, world_x]) and lift above the ground so
     # the line doesn't z-fight the grid floor, same as the path trail.
-    astar_path_scene = [
-        [float(y), PATH_SCENE_LIFT_MM, float(x)]
-        for (x, y) in world.get("astar_path", [])
-    ]
+    astar_path_scene = [[float(y), PATH_SCENE_LIFT_MM, float(x)] for (x, y) in world.get("astar_path", [])]
 
     state = {
         "cubes": cube_list,
@@ -195,9 +187,7 @@ def build_state_json(
 
     # Include occupancy grid PNG if available — and only when it actually
     # changed (or the receiver needs a full snapshot, e.g. on connect).
-    if occupancy_png is not None and (
-        force_occupancy or occupancy_seq != occupancy_seq_sent
-    ):
+    if occupancy_png is not None and (force_occupancy or occupancy_seq != occupancy_seq_sent):
         state["occupancy_png"] = occupancy_png
         state["occupancy_origin"] = occupancy_origin
 

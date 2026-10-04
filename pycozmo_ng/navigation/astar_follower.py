@@ -100,10 +100,7 @@ class AStarFollower:
             attempts = 0
             while not job.cancelled:
                 pose = cli.pose
-                if (
-                    math.hypot(goal_x - pose.position.x, goal_y - pose.position.y)
-                    <= self.GOAL_TOL_MM
-                ):
+                if math.hypot(goal_x - pose.position.x, goal_y - pose.position.y) <= self.GOAL_TOL_MM:
                     logger.info("A*: reached goal")
                     break
 
@@ -115,9 +112,7 @@ class AStarFollower:
                 pts = [(w.x, w.y) for w in self.waypoints]
                 arrived = cli.execute_polyline(
                     pts,
-                    final_heading_rad=self._final_heading(
-                        pts, start_x, start_y, goal_x, goal_y
-                    ),
+                    final_heading_rad=self._final_heading(pts, start_x, start_y, goal_x, goal_y),
                     should_interrupt=lambda: self.should_interrupt(job),
                 )
 
@@ -126,17 +121,12 @@ class AStarFollower:
                     break
 
                 pose = cli.pose
-                if arrived and (
-                    math.hypot(goal_x - pose.position.x, goal_y - pose.position.y)
-                    <= self.GOAL_TOL_MM
-                ):
+                if arrived and (math.hypot(goal_x - pose.position.x, goal_y - pose.position.y) <= self.GOAL_TOL_MM):
                     logger.info("A*: reached goal")
                     break
 
                 # Interrupted (new obstacle) or fell short — replan from here.
-                new_path = self.planner.find_path(
-                    pose.position.x, pose.position.y, goal_x, goal_y
-                )
+                new_path = self.planner.find_path(pose.position.x, pose.position.y, goal_x, goal_y)
                 if not new_path:
                     logger.warning("A*: replan failed — no path to goal")
                     break
@@ -179,21 +169,14 @@ class AStarFollower:
             return False
         pose = cli.pose
         for w in self.waypoints:
-            if (
-                math.hypot(w.x - pose.position.x, w.y - pose.position.y)
-                < self.MONITOR_SKIP_MM
-            ):
+            if math.hypot(w.x - pose.position.x, w.y - pose.position.y) < self.MONITOR_SKIP_MM:
                 continue
             if not planner.is_traversable(w.x, w.y):
-                logger.warning(
-                    "A*: waypoint (%.0f, %.0f) now blocked — replanning", w.x, w.y
-                )
+                logger.warning("A*: waypoint (%.0f, %.0f) now blocked — replanning", w.x, w.y)
                 return True
         return False
 
-    def go_to_pose_goal(
-        self, goal_x: float, goal_y: float, job: MotionToken | None = None
-    ) -> None:
+    def go_to_pose_goal(self, goal_x: float, goal_y: float, job: MotionToken | None = None) -> None:
         """Drive straight to the goal with the robot's built-in path follower."""
         cli = self.cli
         if cli is None:
@@ -216,9 +199,7 @@ class AStarFollower:
 
     def _publish_path(self) -> None:
         if self.world_map is not None:
-            self.world_map.set_astar_path(
-                [[float(w.x), float(w.y)] for w in self.waypoints]
-            )
+            self.world_map.set_astar_path([[float(w.x), float(w.y)] for w in self.waypoints])
 
     def _clear_path(self) -> None:
         if self.world_map is not None:

@@ -59,9 +59,7 @@ class AnnotationEngine:
         self._fonts[size] = font
         return font
 
-    def draw_detections(
-        self, image: Image.Image, detections: list[CubeDetection]
-    ) -> None:
+    def draw_detections(self, image: Image.Image, detections: list[CubeDetection]) -> None:
         """
         Draw detection bounding boxes and labels on an image (in place).
 
@@ -105,9 +103,7 @@ class AnnotationEngine:
 
                 draw.text((x1, y1 - 15), label, fill=color, font=font)
 
-    def draw_face_detections(
-        self, image: Image.Image, detections: list[FaceDetection]
-    ) -> None:
+    def draw_face_detections(self, image: Image.Image, detections: list[FaceDetection]) -> None:
         """Draw face bounding boxes on the image (in place).
 
         Args:
@@ -133,9 +129,7 @@ class AnnotationEngine:
             label = f"Face {face_id} | {z_mm:.0f}mm"
             draw.text((x1, y1 - 13), label, fill=color, font=font)
 
-    def draw_robot_center(
-        self, image: Image.Image, result: RobotCenterResult | None = None
-    ) -> None:
+    def draw_robot_center(self, image: Image.Image, result: RobotCenterResult | None = None) -> None:
         """Draw robot center detection overlay on the image (in place).
 
         Shows the two detected circles, the midpoint (robot center), and
@@ -155,16 +149,12 @@ class AnnotationEngine:
         if result.circle_a_px is not None:
             cx, cy = result.circle_a_px
             r = 6
-            draw.ellipse(
-                [(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 255), width=2
-            )
+            draw.ellipse([(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 255), width=2)
 
         if result.circle_b_px is not None:
             cx, cy = result.circle_b_px
             r = 6
-            draw.ellipse(
-                [(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 255), width=2
-            )
+            draw.ellipse([(cx - r, cy - r), (cx + r, cy + r)], outline=(0, 255, 255), width=2)
 
         if result.circle_a_px is not None and result.circle_b_px is not None:
             mid_x = (result.circle_a_px[0] + result.circle_b_px[0]) / 2.0

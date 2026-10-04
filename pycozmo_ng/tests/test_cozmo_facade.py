@@ -34,9 +34,7 @@ class TestConstruction:
         assert cozmo.is_connected is False
         assert cozmo.cli is None
 
-    @pytest.mark.parametrize(
-        "name", ["vision", "cubes", "navigator", "world_map", "sensors", "web_viewer"]
-    )
+    @pytest.mark.parametrize("name", ["vision", "cubes", "navigator", "world_map", "sensors", "web_viewer"])
     def test_subsystems_available(self, cozmo, name):
         assert getattr(cozmo, name) is not None
 

@@ -283,9 +283,7 @@ class LightState(Struct):
 
     @transition_on_frames.setter
     def transition_on_frames(self, value):
-        self._transition_on_frames = validate_integer(
-            "transition_on_frames", value, 0, 255
-        )
+        self._transition_on_frames = validate_integer("transition_on_frames", value, 0, 255)
 
     @property
     def transition_off_frames(self):
@@ -293,9 +291,7 @@ class LightState(Struct):
 
     @transition_off_frames.setter
     def transition_off_frames(self, value):
-        self._transition_off_frames = validate_integer(
-            "transition_off_frames", value, 0, 255
-        )
+        self._transition_off_frames = validate_integer("transition_off_frames", value, 0, 255)
 
     @property
     def offset(self):
@@ -431,9 +427,7 @@ class PathSegmentSpeed(Struct):
         speed_mmps = reader.read("f")
         accel_mmps2 = reader.read("f")
         decel_mmps2 = reader.read("f")
-        return cls(
-            speed_mmps=speed_mmps, accel_mmps2=accel_mmps2, decel_mmps2=decel_mmps2
-        )
+        return cls(speed_mmps=speed_mmps, accel_mmps2=accel_mmps2, decel_mmps2=decel_mmps2)
 
 
 class Connect(Packet):
@@ -582,9 +576,7 @@ class Ping(Packet):
         counter = reader.read("L")
         last = reader.read("L")
         unknown = reader.read("B")
-        return cls(
-            time_sent_ms=time_sent_ms, counter=counter, last=last, unknown=unknown
-        )
+        return cls(time_sent_ms=time_sent_ms, counter=counter, last=last, unknown=unknown)
 
 
 class Keyframe(Packet):
@@ -814,9 +806,7 @@ class StreamObjectAccel(Packet):
         return 4 + 1
 
     def __repr__(self):
-        return (
-            f"{type(self).__name__}(object_id={self._object_id}, enable={self._enable})"
-        )
+        return f"{type(self).__name__}(object_id={self._object_id}, enable={self._enable})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -951,18 +941,14 @@ class CubeId(Packet):
 
     @rotation_period_frames.setter
     def rotation_period_frames(self, value):
-        self._rotation_period_frames = validate_integer(
-            "rotation_period_frames", value, 0, 255
-        )
+        self._rotation_period_frames = validate_integer("rotation_period_frames", value, 0, 255)
 
     def __len__(self):
         return 4 + 1
 
     def __repr__(self):
         return (
-            f"{type(self).__name__}("
-            f"object_id={self._object_id}, "
-            f"rotation_period_frames={self._rotation_period_frames})"
+            f"{type(self).__name__}(object_id={self._object_id}, rotation_period_frames={self._rotation_period_frames})"
         )
 
     def to_bytes(self):
@@ -2332,9 +2318,7 @@ class ExecutePath(Packet):
         return 2 + 1
 
     def __repr__(self):
-        return (
-            f"{type(self).__name__}(event_id={self._event_id}, unknown={self._unknown})"
-        )
+        return f"{type(self).__name__}(event_id={self._event_id}, unknown={self._unknown})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -2573,9 +2557,7 @@ class EnableCamera(Packet):
 
     def __repr__(self):
         return (
-            f"{type(self).__name__}("
-            f"image_send_mode={self._image_send_mode}, "
-            f"image_resolution={self._image_resolution})"
+            f"{type(self).__name__}(image_send_mode={self._image_send_mode}, image_resolution={self._image_resolution})"
         )
 
     def to_bytes(self):
@@ -3286,9 +3268,7 @@ class AnimLift(Packet):
         duration_ms = reader.read("B")
         variability_mm = reader.read("B")
         height_mm = reader.read("B")
-        return cls(
-            duration_ms=duration_ms, variability_mm=variability_mm, height_mm=height_mm
-        )
+        return cls(duration_ms=duration_ms, variability_mm=variability_mm, height_mm=height_mm)
 
 
 class DisplayImage(Packet):
@@ -3748,9 +3728,7 @@ class DebugData(Packet):
             "args",
             value,
             255,
-            lambda name, value_inner: validate_integer(
-                name, value_inner, 0, 4294967295
-            ),
+            lambda name, value_inner: validate_integer(name, value_inner, 0, 4294967295),
         )
 
     def __len__(self):
@@ -3791,9 +3769,7 @@ class DebugData(Packet):
         name_id = reader.read("H")
         level = reader.read("b")
         args = reader.read_varray("L", "B")
-        return cls(
-            format_id=format_id, unused=unused, name_id=name_id, level=level, args=args
-        )
+        return cls(format_id=format_id, unused=unused, name_id=name_id, level=level, args=args)
 
 
 class ObjectMoved(Packet):
@@ -3988,9 +3964,7 @@ class ObjectTapped(Packet):
         "_timestamp",  # uint32
     )
 
-    def __init__(
-        self, timestamp=0, object_id=0, num_taps=0, tap_time=0, tap_neg=0, tap_pos=0
-    ):
+    def __init__(self, timestamp=0, object_id=0, num_taps=0, tap_time=0, tap_neg=0, tap_pos=0):
         super().__init__(PacketType.COMMAND, packet_id=0xB6)
         self.timestamp = timestamp
         self.object_id = object_id
@@ -4180,9 +4154,7 @@ class ObjectTapFiltered(Packet):
         object_id = reader.read("L")
         time = reader.read("B")
         intensity = reader.read("B")
-        return cls(
-            timestamp=timestamp, object_id=object_id, time=time, intensity=intensity
-        )
+        return cls(timestamp=timestamp, object_id=object_id, time=time, intensity=intensity)
 
 
 class AcknowledgeAction(Packet):
@@ -4367,9 +4339,7 @@ class HardwareInfo(Packet):
 
     @serial_number_head.setter
     def serial_number_head(self, value):
-        self._serial_number_head = validate_integer(
-            "serial_number_head", value, 0, 4294967295
-        )
+        self._serial_number_head = validate_integer("serial_number_head", value, 0, 4294967295)
 
     @property
     def unknown1(self):
@@ -4419,9 +4389,7 @@ class HardwareInfo(Packet):
         serial_number_head = reader.read("L")
         unknown1 = reader.read("B")
         unknown2 = reader.read("B")
-        return cls(
-            serial_number_head=serial_number_head, unknown1=unknown1, unknown2=unknown2
-        )
+        return cls(serial_number_head=serial_number_head, unknown1=unknown1, unknown2=unknown2)
 
 
 class AnimationStarted(Packet):
@@ -4853,9 +4821,7 @@ class MotorCalibration(Packet):
         motor_id = reader.read("B")
         calib_started = bool(reader.read("b"))
         auto_started = bool(reader.read("b"))
-        return cls(
-            motor_id=motor_id, calib_started=calib_started, auto_started=auto_started
-        )
+        return cls(motor_id=motor_id, calib_started=calib_started, auto_started=auto_started)
 
 
 class ObjectUpAxisChanged(Packet):
@@ -5081,9 +5047,7 @@ class FallingStopped(Packet):
         unknown = reader.read("L")
         duration_ms = reader.read("L")
         impact_intensity = reader.read("f")
-        return cls(
-            unknown=unknown, duration_ms=duration_ms, impact_intensity=impact_intensity
-        )
+        return cls(unknown=unknown, duration_ms=duration_ms, impact_intensity=impact_intensity)
 
 
 class BodyInfo(Packet):
@@ -5114,9 +5078,7 @@ class BodyInfo(Packet):
 
     @body_hw_version.setter
     def body_hw_version(self, value):
-        self._body_hw_version = validate_integer(
-            "body_hw_version", value, 0, 4294967295
-        )
+        self._body_hw_version = validate_integer("body_hw_version", value, 0, 4294967295)
 
     @property
     def body_color(self) -> BodyColor:
@@ -5264,12 +5226,7 @@ class FirmwareUpdateResult(Packet):
         return 4 + 2 + 1
 
     def __repr__(self):
-        return (
-            f"{type(self).__name__}("
-            f"byte_count={self._byte_count}, "
-            f"chunk_id={self._chunk_id}, "
-            f"status={self._status})"
-        )
+        return f"{type(self).__name__}(byte_count={self._byte_count}, chunk_id={self._chunk_id}, status={self._status})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -5552,9 +5509,7 @@ class RobotState(Packet):
 
     @backpack_touch_sensor_raw.setter
     def backpack_touch_sensor_raw(self, value):
-        self._backpack_touch_sensor_raw = validate_integer(
-            "backpack_touch_sensor_raw", value, 0, 65535
-        )
+        self._backpack_touch_sensor_raw = validate_integer("backpack_touch_sensor_raw", value, 0, 65535)
 
     @property
     def curr_path_segment(self):
@@ -5565,31 +5520,7 @@ class RobotState(Packet):
         self._curr_path_segment = validate_integer("curr_path_segment", value, 0, 255)
 
     def __len__(self):
-        return (
-            4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 4
-            + 8
-            + 2
-            + 1
-        )
+        return 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4 + 8 + 2 + 1
 
     def __repr__(self):
         return (
@@ -5749,9 +5680,7 @@ class AnimationState(Packet):
 
     @num_anim_bytes_played.setter
     def num_anim_bytes_played(self, value):
-        self._num_anim_bytes_played = validate_integer(
-            "num_anim_bytes_played", value, -2147483648, 2147483647
-        )
+        self._num_anim_bytes_played = validate_integer("num_anim_bytes_played", value, -2147483648, 2147483647)
 
     @property
     def num_audio_frames_played(self):
@@ -5759,9 +5688,7 @@ class AnimationState(Packet):
 
     @num_audio_frames_played.setter
     def num_audio_frames_played(self, value):
-        self._num_audio_frames_played = validate_integer(
-            "num_audio_frames_played", value, -2147483648, 2147483647
-        )
+        self._num_audio_frames_played = validate_integer("num_audio_frames_played", value, -2147483648, 2147483647)
 
     @property
     def enabled_anim_tracks(self):
@@ -5769,9 +5696,7 @@ class AnimationState(Packet):
 
     @enabled_anim_tracks.setter
     def enabled_anim_tracks(self, value):
-        self._enabled_anim_tracks = validate_integer(
-            "enabled_anim_tracks", value, 0, 255
-        )
+        self._enabled_anim_tracks = validate_integer("enabled_anim_tracks", value, 0, 255)
 
     @property
     def tag(self):
@@ -5882,9 +5807,7 @@ class ImageChunk(Packet):
 
     @frame_timestamp.setter
     def frame_timestamp(self, value):
-        self._frame_timestamp = validate_integer(
-            "frame_timestamp", value, 0, 4294967295
-        )
+        self._frame_timestamp = validate_integer("frame_timestamp", value, 0, 4294967295)
 
     @property
     def image_id(self):
@@ -6063,10 +5986,7 @@ class ObjectAvailable(Packet):
 
     def __repr__(self):
         return (
-            f"{type(self).__name__}("
-            f"factory_id={self._factory_id}, "
-            f"object_type={self._object_type}, "
-            f"rssi={self._rssi})"
+            f"{type(self).__name__}(factory_id={self._factory_id}, object_type={self._object_type}, rssi={self._rssi})"
         )
 
     def to_bytes(self):

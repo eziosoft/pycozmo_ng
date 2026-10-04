@@ -27,9 +27,7 @@ def render(image: bytes) -> None:
         for x in range(128):
             if ((x + 1) % 10) == 1:
                 sys.stdout.write(" ")
-            sys.stdout.write(chr(ord("0") + image[y * 128 + x])) if image[
-                y * 128 + x
-            ] else sys.stdout.write("..")
+            sys.stdout.write(chr(ord("0") + image[y * 128 + x])) if image[y * 128 + x] else sys.stdout.write("..")
         sys.stdout.write("\n")
 
 

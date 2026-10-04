@@ -29,11 +29,7 @@ class AnimationQueue:
 
     def is_empty(self):
         with self.lock:
-            return (
-                not len(self.audio_queue)
-                and not len(self.image_queue)
-                and not len(self.pkt_queue)
-            )
+            return not len(self.audio_queue) and not len(self.image_queue) and not len(self.pkt_queue)
 
     def put_audio(self, pkts: list[protocol_encoder.OutputAudio]) -> None:
         with self.lock:
@@ -120,17 +116,11 @@ class AnimationController:
         self.thread.start()
         self.cli.add_handler(protocol_encoder.AnimationState, self._on_animation_state)
         self.cli.add_handler(protocol_encoder.Keyframe, self._on_keyframe)
-        self.cli.add_handler(
-            protocol_encoder.AnimationStarted, self._on_animation_started
-        )
+        self.cli.add_handler(protocol_encoder.AnimationStarted, self._on_animation_started)
         self.cli.add_handler(protocol_encoder.AnimationEnded, self._on_animation_ended)
         self.cli.add_handler(event.EvtRobotAnimatingChange, self._on_animating_change)
-        self.cli.add_handler(
-            event.EvtRobotAnimBufferFullChange, self._on_anim_buffer_full_change
-        )
-        self.cli.add_handler(
-            event.EvtRobotAnimatingIdleChange, self._on_amimating_idle_change
-        )
+        self.cli.add_handler(event.EvtRobotAnimBufferFullChange, self._on_anim_buffer_full_change)
+        self.cli.add_handler(event.EvtRobotAnimatingIdleChange, self._on_amimating_idle_change)
 
     def stop(self):
         self.stop_flag = True
@@ -204,11 +194,7 @@ class AnimationController:
                         self.cli.conn.post_event(event.EvtAudioCompleted, self.cli)
                 self.cli.conn.send(audio_pkt)
 
-                if (
-                    not image_pkt
-                    and self.procedural_face_enabled
-                    and not self.playing_animation
-                ):
+                if not image_pkt and self.procedural_face_enabled and not self.playing_animation:
                     image_pkt = self._get_face_image()
 
                 if image_pkt:

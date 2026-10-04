@@ -97,9 +97,7 @@ class CubeFusionTracker:
             )
 
             # Store which face was used for rotation (useful for debugging)
-            best_face_info = (
-                f"{best_detection['face_type']}_{best_detection['rotation']}deg"
-            )
+            best_face_info = f"{best_detection['face_type']}_{best_detection['rotation']}deg"
 
             # Weighted confidence: each face's score is weighted by its own score,
             # which gives the dominant face a quadratic influence and matches
@@ -133,9 +131,7 @@ class CubeFusionTracker:
 
         return face_position + offset
 
-    def _calculate_cube_rotation_from_face(
-        self, face_rotation, face_type, face_rotation_deg
-    ):
+    def _calculate_cube_rotation_from_face(self, face_rotation, face_type, face_rotation_deg):
         """
         Calculate the cube's canonical rotation from a detected face rotation
         :param face_rotation: 3x3 rotation matrix of the detected face
@@ -173,9 +169,7 @@ class CubeFusionTracker:
 
             cos_a = np.cos(angle_rad)
             sin_a = np.sin(angle_rad)
-            R_cube_to_face = np.array(
-                [[cos_a, 0, sin_a], [0, 1, 0], [-sin_a, 0, cos_a]], dtype=np.float32
-            )
+            R_cube_to_face = np.array([[cos_a, 0, sin_a], [0, 1, 0], [-sin_a, 0, cos_a]], dtype=np.float32)
 
             cube_rotation = face_rotation @ R_cube_to_face.T
 
@@ -187,31 +181,23 @@ class CubeFusionTracker:
             # Top face: cube's +Y (up) points toward camera
             # The top marker is rotated 180° relative to cube frame
             # Transform: pitch -90° around X (Y->Z, Z->-Y)
-            R_cube_to_face = np.array(
-                [[1, 0, 0], [0, 0, 1], [0, -1, 0]], dtype=np.float32
-            )
+            R_cube_to_face = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], dtype=np.float32)
 
             cube_rotation = face_rotation @ R_cube_to_face.T
 
             # Top marker is mounted upside-down: rotate 180° around Z-axis
-            R_flip_marker = np.array(
-                [[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32
-            )
+            R_flip_marker = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32)
             cube_rotation = cube_rotation @ R_flip_marker
 
         elif face_type == "bottom":
             # Bottom face: cube's -Y (bottom) points toward camera
             # Transform: pitch +90° around X (Y->-Z, Z->Y)
-            R_cube_to_face = np.array(
-                [[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float32
-            )
+            R_cube_to_face = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float32)
 
             cube_rotation = face_rotation @ R_cube_to_face.T
 
             # Bottom marker orientation correction
-            R_flip_marker = np.array(
-                [[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32
-            )
+            R_flip_marker = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=np.float32)
             cube_rotation = cube_rotation @ R_flip_marker
 
         else:
@@ -260,15 +246,11 @@ class CozmoCubeDetector:
         self.min_area = min_area
         self.max_area_ratio = max_area_ratio
         self.denoise_strength = denoise_strength
-        self.clahe = (
-            cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)) if use_clahe else None
-        )
+        self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)) if use_clahe else None
 
         # Define 3D object points for Pose Estimation (SolvePnP)
         s = self.square_size / 2.0
-        self.obj_points = np.array(
-            [[-s, s, 0], [s, s, 0], [s, -s, 0], [-s, -s, 0]], dtype=np.float32
-        )
+        self.obj_points = np.array([[-s, s, 0], [s, s, 0], [s, -s, 0], [-s, -s, 0]], dtype=np.float32)
 
         # Pre-compute all rotations of target markers and normalize them once
         self.rotated_markers = []
@@ -327,9 +309,7 @@ class CozmoCubeDetector:
         """Internal detection logic for a single enhanced grayscale image."""
         # Binary threshold with blur
         blurred = cv2.GaussianBlur(img, (5, 5), 0)
-        _, binary = cv2.threshold(
-            blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
-        )
+        _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
         # Find contours
         contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
@@ -337,9 +317,7 @@ class CozmoCubeDetector:
         # Filter and sort contours by area
         h, w = img.shape[:2]
         max_area = w * h * self.max_area_ratio
-        contours = [
-            c for c in contours if self.min_area < cv2.contourArea(c) < max_area
-        ]
+        contours = [c for c in contours if self.min_area < cv2.contourArea(c) < max_area]
         contours.sort(key=cv2.contourArea, reverse=True)
 
         results = []
@@ -363,12 +341,7 @@ class CozmoCubeDetector:
                     # Drop clips: a quad touching the image border is truncated
                     # and its solvePnP pose is garbage.
                     px, py = pts[:, 0], pts[:, 1]
-                    if (
-                        px.min() < 2
-                        or py.min() < 2
-                        or px.max() > w - 3
-                        or py.max() > h - 3
-                    ):
+                    if px.min() < 2 or py.min() < 2 or px.max() > w - 3 or py.max() > h - 3:
                         continue
 
                     # Sub-pixel corner refinement: contour corners are integer
@@ -418,9 +391,7 @@ class CozmoCubeDetector:
                     success, rvec, tvec = self._solve_pose(ordered_pts)
                     if success:
                         # Get cube orientation info
-                        cube_index, face_type, rotation_deg = (
-                            self._get_cube_orientation(marker_id)
-                        )
+                        cube_index, face_type, rotation_deg = self._get_cube_orientation(marker_id)
 
                         # Convert to position and rotation matrix
                         position = tvec.flatten()
@@ -444,10 +415,7 @@ class CozmoCubeDetector:
                         )
 
                         # Early exit if we found enough markers
-                        if (
-                            self.max_detections is not None
-                            and len(results) >= self.max_detections
-                        ):
+                        if self.max_detections is not None and len(results) >= self.max_detections:
                             return results
         return results
 
@@ -479,9 +447,7 @@ class CozmoCubeDetector:
             errors = result[3] if len(result) >= 4 else None
         except (cv2.error, TypeError, ValueError):
             # Old/limited OpenCV build: fall back to the iterative solver.
-            success, rvec, tvec = cv2.solvePnP(
-                self.obj_points, image_points, self.camera_matrix, self.dist_coeffs
-            )
+            success, rvec, tvec = cv2.solvePnP(self.obj_points, image_points, self.camera_matrix, self.dist_coeffs)
             return bool(success), rvec, tvec
 
         if not retval or not rvecs:
@@ -492,12 +458,8 @@ class CozmoCubeDetector:
             if errors is not None:
                 err = float(np.ravel(errors)[i])
             else:
-                proj, _ = cv2.projectPoints(
-                    self.obj_points, rvec, tvec, self.camera_matrix, self.dist_coeffs
-                )
-                err = float(
-                    np.mean(np.linalg.norm(proj.reshape(4, 2) - image_points, axis=1))
-                )
+                proj, _ = cv2.projectPoints(self.obj_points, rvec, tvec, self.camera_matrix, self.dist_coeffs)
+                err = float(np.mean(np.linalg.norm(proj.reshape(4, 2) - image_points, axis=1)))
             candidates.append((err, rvec, tvec))
 
         candidates.sort(key=lambda c: c[0])
@@ -532,9 +494,7 @@ class CozmoCubeDetector:
         # Scale ROI to a larger size to preserve quality after warp
         scale = 4
         roi_h, roi_w = roi.shape[:2]
-        scaled_roi = cv2.resize(
-            roi, (roi_w * scale, roi_h * scale), interpolation=cv2.INTER_LINEAR
-        )
+        scaled_roi = cv2.resize(roi, (roi_w * scale, roi_h * scale), interpolation=cv2.INTER_LINEAR)
         scaled_pts = offset_pts * scale
         M = cv2.getPerspectiveTransform(scaled_pts.astype(np.float32), self.dst_pts)
         patch = cv2.warpPerspective(scaled_roi, M, (32, 32), flags=cv2.INTER_LINEAR)

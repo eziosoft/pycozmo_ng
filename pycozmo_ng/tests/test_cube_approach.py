@@ -102,9 +102,7 @@ class TestVerifyGrabAlignment:
             move_forward=lambda d: True,
             spawn=_MOTION.spawn,
         )
-        (passed, msgs, _facing_err, _forward, _lateral, centered, fresh) = (
-            ca._verify_grab_alignment(0)
-        )
+        (passed, msgs, _facing_err, _forward, _lateral, centered, fresh) = ca._verify_grab_alignment(0)
         assert passed
         assert centered
         assert fresh
@@ -127,9 +125,7 @@ class TestVerifyGrabAlignment:
         cli, _ = _make_mock_cli()
         ca = CubeApproach(
             cli,
-            get_cube_state=lambda i: _make_cube_state(
-                x=0.0, y=80.0, updated_at=time.monotonic() - 10.0
-            ),
+            get_cube_state=lambda i: _make_cube_state(x=0.0, y=80.0, updated_at=time.monotonic() - 10.0),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
             spawn=_MOTION.spawn,
@@ -386,10 +382,7 @@ class TestApproachThread:
 
         release_lookup.set()
         deadline = time.monotonic() + 2.0
-        while (
-            CubeApproach.JOB_APPROACH in _MOTION.active_names
-            and time.monotonic() < deadline
-        ):
+        while CubeApproach.JOB_APPROACH in _MOTION.active_names and time.monotonic() < deadline:
             time.sleep(0.01)
         assert CubeApproach.JOB_APPROACH not in _MOTION.active_names
         assert ca.approach_lock.acquire(blocking=False)

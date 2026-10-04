@@ -19,9 +19,7 @@ class TestCoords:
 
     def test_camera_to_world_robot_translation(self):
         p_cam = np.array([0.0, 0.0, 200.0])
-        pw, _ = coords.camera_to_world(
-            p_cam, np.eye(3), 0.0, np.array([100.0, 0.0, 0.0]), 0.0
-        )
+        pw, _ = coords.camera_to_world(p_cam, np.eye(3), 0.0, np.array([100.0, 0.0, 0.0]), 0.0)
         np.testing.assert_allclose(pw, [330.0, 0.0, 38.0], atol=1e-9)
 
     def test_camera_to_world_robot_yaw(self):
@@ -69,9 +67,7 @@ class TestCoords:
         # level cube then came out tilted by roughly the head angle.
         for theta in (0.0, np.pi / 6, -np.pi / 6, np.pi / 3):
             M = coords._head_tilt_matrix(theta)
-            np.testing.assert_allclose(
-                M @ M.T, np.eye(3), atol=1e-9, err_msg=f"theta={theta}"
-            )
+            np.testing.assert_allclose(M @ M.T, np.eye(3), atol=1e-9, err_msg=f"theta={theta}")
             np.testing.assert_allclose(np.linalg.det(M), 1.0, atol=1e-9)
 
     def test_cube_orientation_invariant_to_head_tilt(self):
@@ -87,9 +83,7 @@ class TestCoords:
             # Inverse of the pipeline, all the way back to camera frame.
             r_cam = np.linalg.inv(coords._head_tilt_matrix(head)) @ r_world
             _, rot_world = coords.camera_to_world(p_cam, r_cam, head, np.zeros(3), 0.0)
-            np.testing.assert_allclose(
-                rot_world, r_world, atol=1e-9, err_msg=f"head={head}"
-            )
+            np.testing.assert_allclose(rot_world, r_world, atol=1e-9, err_msg=f"head={head}")
 
 
 class TestWorldMapFusion:
@@ -156,9 +150,7 @@ class TestWorldMapRotationAlpha:
         """Angle (degrees) between two rotation matrices."""
         from scipy.spatial.transform import Rotation as R
 
-        return float(
-            np.degrees((R.from_matrix(r1) * R.from_matrix(r2).inv()).magnitude())
-        )
+        return float(np.degrees((R.from_matrix(r1) * R.from_matrix(r2).inv()).magnitude()))
 
     def test_first_measurement_no_smoothing(self):
         """First measurement is stored as-is (after world transform)."""
@@ -168,12 +160,8 @@ class TestWorldMapRotationAlpha:
         wm.update_cube_measurement(0, [0.0, 0.0, 200.0], r, 0.9, 0.0)
         # Expected world-frame rotation for identity camera rotation at
         # head=0, robot at origin, yaw=0.
-        _, rot_world = coords.camera_to_world(
-            [0.0, 0.0, 200.0], r, 0.0, np.zeros(3), 0.0
-        )
-        np.testing.assert_allclose(
-            wm.get_cubes()[0].rotation_matrix, rot_world, atol=1e-6
-        )
+        _, rot_world = coords.camera_to_world([0.0, 0.0, 200.0], r, 0.0, np.zeros(3), 0.0)
+        np.testing.assert_allclose(wm.get_cubes()[0].rotation_matrix, rot_world, atol=1e-6)
 
     def test_rotation_uses_rotation_alpha(self):
         """Rotation blend uses rotation_alpha, not smoothing_alpha."""
@@ -203,9 +191,7 @@ class TestWorldMapRotationAlpha:
             wm_high_pos.get_cubes()[0].rotation_matrix,
             wm_low_rot.get_cubes()[0].rotation_matrix,
         )
-        assert err < 0.01, (
-            f"rotation mismatch with different smoothing_alpha: {err:.3f}°"
-        )
+        assert err < 0.01, f"rotation mismatch with different smoothing_alpha: {err:.3f}°"
 
     def test_lower_rotation_alpha_slower_convergence(self):
         """Lower rotation_alpha produces slower rotation convergence."""
@@ -227,15 +213,10 @@ class TestWorldMapRotationAlpha:
             wm_fast.update_cube_measurement(0, [0.0, 0.0, 200.0], r_new, 0.9, 0.0)
             wm_slow.update_cube_measurement(0, [0.0, 0.0, 200.0], r_new, 0.9, 0.0)
 
-        err_fast = self._rotation_angle_error(
-            wm_fast.get_cubes()[0].rotation_matrix, r_new
-        )
-        err_slow = self._rotation_angle_error(
-            wm_slow.get_cubes()[0].rotation_matrix, r_new
-        )
+        err_fast = self._rotation_angle_error(wm_fast.get_cubes()[0].rotation_matrix, r_new)
+        err_slow = self._rotation_angle_error(wm_slow.get_cubes()[0].rotation_matrix, r_new)
         assert err_fast < err_slow, (
-            f"higher alpha should converge faster: fast_err={err_fast:.2f}° "
-            f">= slow_err={err_slow:.2f}°"
+            f"higher alpha should converge faster: fast_err={err_fast:.2f}° >= slow_err={err_slow:.2f}°"
         )
 
     def test_position_still_uses_smoothing_alpha(self):

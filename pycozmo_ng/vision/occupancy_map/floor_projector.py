@@ -122,10 +122,7 @@ class FloorProjector:
         of which are constant for a given configuration, so this is typically
         called once at startup or whenever the head angle changes.
         """
-        if (
-            self._last_head_angle is not None
-            and abs(head_angle_rad - self._last_head_angle) < 1e-4
-        ):
+        if self._last_head_angle is not None and abs(head_angle_rad - self._last_head_angle) < 1e-4:
             return  # no change
 
         R_body2cam = _head_tilt_matrix(head_angle_rad).T  # body -> camera
@@ -154,13 +151,7 @@ class FloorProjector:
 
         # Mark out-of-bounds or near-edge pixels (edge noise) as invalid
         m = self._edge_margin_px
-        in_bounds = (
-            valid
-            & (u >= m)
-            & (u < self._image_width - m)
-            & (v >= m)
-            & (v < self._image_height - m)
-        )
+        in_bounds = valid & (u >= m) & (u < self._image_width - m) & (v >= m) & (v < self._image_height - m)
         u[~in_bounds] = -1.0
         v[~in_bounds] = -1.0
 

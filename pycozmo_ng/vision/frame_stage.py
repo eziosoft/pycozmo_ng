@@ -119,9 +119,7 @@ class FrameStage:
 
         try:
             # Get current head angle from robot state
-            head_angle_rad = (
-                cli.head_angle.radians if hasattr(cli, "head_angle") else 0.0
-            )
+            head_angle_rad = cli.head_angle.radians if hasattr(cli, "head_angle") else 0.0
 
             # Single PIL→numpy→BGR conversion (reused by all downstream)
             img_array = np.array(image)
@@ -137,22 +135,16 @@ class FrameStage:
                 )
 
             # Convert to PIL for annotation (only one conversion needed)
-            undistorted_image = Image.fromarray(
-                cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-            )
+            undistorted_image = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
 
             # Detect cubes — pass BGR numpy directly (avoids re-conversion)
-            cube_detections = self.detection_pipeline.detect_cubes(
-                img_bgr, head_angle_rad
-            )
+            cube_detections = self.detection_pipeline.detect_cubes(img_bgr, head_angle_rad)
 
             # Detect faces (every Nth processed frame)
             self._face_frame_counter += 1
             face_due = self._face_frame_counter % self.face_detect_every_n_frames == 0
             if face_due:
-                face_detections = self.detection_pipeline.detect_faces(
-                    img_bgr, head_angle_rad
-                )
+                face_detections = self.detection_pipeline.detect_faces(img_bgr, head_angle_rad)
             else:
                 face_detections = []
 
@@ -174,9 +166,7 @@ class FrameStage:
             # Dispatch cube/face events
             if self.event_dispatcher is not None:
                 self.event_dispatcher.dispatch_cube_events(cli, cube_detections)
-                self.event_dispatcher.dispatch_face_events(
-                    cli, face_detections, face_frame
-                )
+                self.event_dispatcher.dispatch_face_events(cli, face_detections, face_frame)
 
             # Set face expression based on detection
             self._update_face_expression(cli, face_detections, face_due)
@@ -307,9 +297,7 @@ class FrameStage:
             return
 
         robot_pose = cli.pose if hasattr(cli, "pose") else None
-        floor_img, occ_grid, occ_map_image = self.floor_pipeline.process(
-            img_bgr, head_angle_rad, robot_pose
-        )
+        floor_img, occ_grid, occ_map_image = self.floor_pipeline.process(img_bgr, head_angle_rad, robot_pose)
         if floor_img is None:
             return
 
@@ -318,14 +306,8 @@ class FrameStage:
 
         # Publish the occupancy map image for the browser overlay
         occ = self.floor_pipeline.occupancy_map
-        if (
-            occ_map_image is not None
-            and self.floor_pipeline.occupancy_enabled
-            and occ is not None
-        ):
-            self.web_viewer.push_occupancy_grid(
-                occ_map_image, occ.origin[0], occ.origin[1]
-            )
+        if occ_map_image is not None and self.floor_pipeline.occupancy_enabled and occ is not None:
+            self.web_viewer.push_occupancy_grid(occ_map_image, occ.origin[0], occ.origin[1])
 
         # Sync floor grid dimensions to browser on first frame
         fp = self.floor_pipeline.floor_projector

@@ -60,6 +60,4 @@ def vision(cozmo: Cozmo):
 def motion_ok() -> None:
     """Gate for tests that physically move the robot."""
     if os.environ.get("PYCOZMO_NG_LIVE_MOTION") != "1":
-        pytest.skip(
-            "set PYCOZMO_NG_LIVE_MOTION=1 (and clear floor space) to allow motion"
-        )
+        pytest.skip("set PYCOZMO_NG_LIVE_MOTION=1 (and clear floor space) to allow motion")

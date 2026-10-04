@@ -29,9 +29,7 @@ def test_navigate_cancel_single_none_arg(cozmo):
 def test_approach_cube_resolves_id(cozmo, monkeypatch):
     nav = cozmo._brain.navigator
     calls = []
-    monkeypatch.setattr(
-        nav, "approach_cube_at", lambda idx, x, y: calls.append((idx, x, y))
-    )
+    monkeypatch.setattr(nav, "approach_cube_at", lambda idx, x, y: calls.append((idx, x, y)))
 
     result = cozmo.navigator.approach_cube(1)
 

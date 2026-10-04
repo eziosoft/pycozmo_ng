@@ -73,9 +73,7 @@ class PathRobot(Protocol):
 
     def stop_all_motors(self) -> None: ...
 
-    def add_handler(
-        self, event: Any, f: Callable[..., None], one_shot: bool = False
-    ) -> Handler: ...
+    def add_handler(self, event: Any, f: Callable[..., None], one_shot: bool = False) -> Handler: ...
 
     def del_handler(self, event: Any, handler: Handler) -> None: ...
 
@@ -373,8 +371,7 @@ class PathExecutor:
                 dist = math.hypot(dx, dy)
                 angle_err = abs(
                     math.remainder(
-                        robot.pose.rotation.angle_z.radians
-                        - pose.rotation.angle_z.radians,
+                        robot.pose.rotation.angle_z.radians - pose.rotation.angle_z.radians,
                         2 * math.pi,
                     )
                 )
@@ -532,9 +529,7 @@ class PathExecutor:
                 speed_mmps=speed_mmps,
                 accel_mmps2=accel_mmps2,
                 decel_mmps2=decel_mmps2,
-                final_heading_rad=final_heading_rad
-                if index == len(chunks) - 1
-                else None,
+                final_heading_rad=final_heading_rad if index == len(chunks) - 1 else None,
             )
             if not packets:
                 continue
@@ -641,9 +636,6 @@ class PathExecutor:
         robot.stop_all_motors()
         deadline = time.perf_counter() + timeout_s
         while time.perf_counter() < deadline:
-            if (
-                abs(robot.left_wheel_speed.mmps) < 5.0
-                and abs(robot.right_wheel_speed.mmps) < 5.0
-            ):
+            if abs(robot.left_wheel_speed.mmps) < 5.0 and abs(robot.right_wheel_speed.mmps) < 5.0:
                 return
             time.sleep(0.05)

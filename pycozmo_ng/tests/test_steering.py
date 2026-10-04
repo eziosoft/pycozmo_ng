@@ -29,9 +29,7 @@ def _advance(x, y, yaw, vl, vr):
     return x, y, yaw
 
 
-def _simulate(
-    x0, y0, yaw0, tx, ty, *, align_to=None, stop_mm=STOP_MM, timeout_s=TIMEOUT_S
-):
+def _simulate(x0, y0, yaw0, tx, ty, *, align_to=None, stop_mm=STOP_MM, timeout_s=TIMEOUT_S):
     """Mirror ``Navigator.drive_to_point``: drive closed-loop to the target,
     then turn in place to ``align_to`` (if given). Returns
     ``(arrived, t_s, end_pose, min_dist)``."""

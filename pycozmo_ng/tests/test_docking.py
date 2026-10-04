@@ -49,9 +49,7 @@ def _make_docking(x: float = 0.0, y: float = 0.0, with_pose: bool = True):
 
 class TestDockGuards:
     def test_no_client_starts_nothing(self):
-        docking = Docking(
-            dock_state=DockState(), motion=MotionController(), reset_origin=MagicMock()
-        )
+        docking = Docking(dock_state=DockState(), motion=MotionController(), reset_origin=MagicMock())
         docking.dock()
         assert docking.motion.active_names == ()
 

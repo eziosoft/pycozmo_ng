@@ -34,8 +34,7 @@ def load_wav(filename: str) -> list[protocol_encoder.OutputAudio]:
         framerate = w.getframerate()
         if sampwidth != 2 or (framerate != 22050 and framerate != 48000):
             raise ValueError(
-                "Invalid audio format, only 16 bit samples are supported, "
-                + "with 22050Hz or 48000Hz frame rates."
+                "Invalid audio format, only 16 bit samples are supported, " + "with 22050Hz or 48000Hz frame rates."
             )
 
         ratediv = 2 if framerate == 48000 else 1
@@ -55,9 +54,7 @@ def load_wav(filename: str) -> list[protocol_encoder.OutputAudio]:
     return pkts
 
 
-def bytes_to_cozmo(
-    byte_string: bytes, rate_correction: int, channels: int
-) -> bytearray:
+def bytes_to_cozmo(byte_string: bytes, rate_correction: int, channels: int) -> bytearray:
     """Convert a 744 sample, 16-bit audio frame into a U-law encoded frame."""
     out = bytearray(744)
     n = channels * rate_correction

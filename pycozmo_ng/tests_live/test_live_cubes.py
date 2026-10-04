@@ -31,10 +31,5 @@ def test_discovery_finds_cubes(cozmo, cubes_started):
 def test_connected_returns_ble_ids(cozmo, cubes_started):
     if not _factory_map(cozmo):
         pytest.skip("no cubes discovered")
-    assert wait_for(lambda: len(cubes_started.connected) > 0, timeout=8.0), (
-        "no cube connected over BLE within 8 s"
-    )
-    assert all(
-        isinstance(cube_id, int) and 1 <= cube_id <= 3
-        for cube_id in cubes_started.connected
-    )
+    assert wait_for(lambda: len(cubes_started.connected) > 0, timeout=8.0), "no cube connected over BLE within 8 s"
+    assert all(isinstance(cube_id, int) and 1 <= cube_id <= 3 for cube_id in cubes_started.connected)

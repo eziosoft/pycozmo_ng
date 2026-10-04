@@ -64,9 +64,7 @@ class CameraCalibration:
             [[self.fx, 0.0, self.cx], [0.0, self.fy, self.cy], [0.0, 0.0, 1.0]],
             dtype=np.float64,
         )
-        self._distortion_coefficients = np.array(
-            [self.k1, self.k2, self.p1, self.p2, self.k3], dtype=np.float64
-        )
+        self._distortion_coefficients = np.array([self.k1, self.k2, self.p1, self.p2, self.k3], dtype=np.float64)
 
     @property
     def camera_matrix(self) -> np.ndarray:
@@ -95,9 +93,7 @@ class CameraCalibrationRetriever:
         self._event.clear()
         self._success = False
 
-        self.client.add_handler(
-            protocol_encoder.NvStorageOpResult, self._on_nv_storage_op_result
-        )
+        self.client.add_handler(protocol_encoder.NvStorageOpResult, self._on_nv_storage_op_result)
 
         try:
             pkt = protocol_encoder.NvStorageOp(
@@ -143,19 +139,13 @@ class CameraCalibrationRetriever:
                 if 100 < fx < 1000 and 100 < fy < 1000:
                     # For Cozmo, the stored distortion coefficients are unreliable
                     # and often contain garbage values. Use zero distortion for better results.
-                    logger.info(
-                        f"Cozmo calibration data parsed: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}"
-                    )
-                    logger.info(
-                        f"Raw distortion values: {v1}, {v2}, {v3}, {v4}, {v5} (using zeros for reliability)"
-                    )
+                    logger.info(f"Cozmo calibration data parsed: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}")
+                    logger.info(f"Raw distortion values: {v1}, {v2}, {v3}, {v4}, {v5} (using zeros for reliability)")
 
                     # Use zero distortion coefficients for Cozmo
                     k1 = k2 = k3 = p1 = p2 = 0.0
 
-                    return CameraCalibration(
-                        fx=fx, fy=fy, cx=cx, cy=cy, k1=k1, k2=k2, k3=k3, p1=p1, p2=p2
-                    )
+                    return CameraCalibration(fx=fx, fy=fy, cx=cx, cy=cy, k1=k1, k2=k2, k3=k3, p1=p1, p2=p2)
             except (struct.error, ValueError):
                 pass
 
@@ -169,15 +159,11 @@ class CameraCalibrationRetriever:
                     logger.info(
                         f"Cozmo calibration data parsed (float64): fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}"
                     )
-                    logger.info(
-                        "Using zero distortion coefficients for Cozmo reliability"
-                    )
+                    logger.info("Using zero distortion coefficients for Cozmo reliability")
 
                     k1 = k2 = k3 = p1 = p2 = 0.0
 
-                    return CameraCalibration(
-                        fx=fx, fy=fy, cx=cx, cy=cy, k1=k1, k2=k2, k3=k3, p1=p1, p2=p2
-                    )
+                    return CameraCalibration(fx=fx, fy=fy, cx=cx, cy=cy, k1=k1, k2=k2, k3=k3, p1=p1, p2=p2)
             except (struct.error, ValueError):
                 pass
 

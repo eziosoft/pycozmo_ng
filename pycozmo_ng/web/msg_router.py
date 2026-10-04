@@ -40,9 +40,7 @@ class MsgRouter:
 
     def __init__(self, world_map=None):
         self._world_map = world_map
-        self._actions: dict[str, Callable[..., None] | None] = {
-            name: None for name in self.ACTIONS
-        }
+        self._actions: dict[str, Callable[..., None] | None] = {name: None for name in self.ACTIONS}
 
     # -- listener registration -----------------------------------------------
 
@@ -131,9 +129,7 @@ class MsgRouter:
                 pos = cube.position
                 listener(cube_index, float(pos[0]), float(pos[1]))
             else:
-                logger.warning(
-                    "approach_cube: %s not in world map", msg.get("cube_id", "")
-                )
+                logger.warning("approach_cube: %s not in world map", msg.get("cube_id", ""))
         except Exception as e:  # noqa: BLE001
             logger.warning("approach listener failed: %s", e)
 

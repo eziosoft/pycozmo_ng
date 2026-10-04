@@ -251,16 +251,12 @@ class CarryDetector:
                     self._resolved = True
                 if newly_resolved:
                     logger.info(
-                        "Carry: cube %d seen after the grab - resolved, "
-                        "not carrying until the next grab",
+                        "Carry: cube %d seen after the grab - resolved, not carrying until the next grab",
                         cube_id,
                     )
                 return (
                     CarryState.NOT_CARRYING,
-                    (
-                        f"cube {cube_id} still in frame {age:.1f}s after the grab"
-                        f" (lift {lift:.1f}mm)"
-                    ),
+                    (f"cube {cube_id} still in frame {age:.1f}s after the grab (lift {lift:.1f}mm)"),
                 )
             with self._lock:
                 resolved = self._resolved
@@ -277,10 +273,7 @@ class CarryDetector:
                 )
             return (
                 CarryState.CARRYING,
-                (
-                    f"cube {cube_id} out of frame for {age:.1f}s with forks up"
-                    f" (lift {lift:.1f}mm)"
-                ),
+                (f"cube {cube_id} out of frame for {age:.1f}s with forks up (lift {lift:.1f}mm)"),
             )
 
         if now - grabbed_at < self.LIFT_TRANSIT_S:
@@ -296,10 +289,7 @@ class CarryDetector:
         self.clear()
         return (
             CarryState.NOT_CARRYING,
-            (
-                f"forks still down {now - grabbed_at:.1f}s after the grab"
-                f" (lift {lift:.1f}mm), observation cleared"
-            ),
+            (f"forks still down {now - grabbed_at:.1f}s after the grab (lift {lift:.1f}mm), observation cleared"),
         )
 
     def _log_transition(self, state: CarryState, detail: str) -> None:

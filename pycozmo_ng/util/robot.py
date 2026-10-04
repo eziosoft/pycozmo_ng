@@ -44,13 +44,9 @@ LIFT_ARM_LENGTH = util.Distance(mm=66.0)
 LIFT_PIVOT_HEIGHT = util.Distance(mm=45.0)
 
 #: Minimum lift arm angle.
-MIN_LIFT_ANGLE = util.Angle(
-    radians=math.asin((MIN_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm)
-)
+MIN_LIFT_ANGLE = util.Angle(radians=math.asin((MIN_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm))
 #: Maximum lift arm angle.
-MAX_LIFT_ANGLE = util.Angle(
-    radians=math.asin((MAX_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm)
-)
+MAX_LIFT_ANGLE = util.Angle(radians=math.asin((MAX_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm))
 
 #: Maximum wheel speed.
 MAX_WHEEL_SPEED = util.Speed(mmps=200.0)
@@ -138,27 +134,19 @@ class LiftPosition:
 
         num_provided_args = _count_arg(height) + _count_arg(ratio) + _count_arg(angle)
         if num_provided_args != 1:
-            raise ValueError(
-                "Expected one, and only one, of the distance, ratio or angle keyword arguments"
-            )
+            raise ValueError("Expected one, and only one, of the distance, ratio or angle keyword arguments")
 
         if height is not None:
             if not isinstance(height, util.Distance):
-                raise TypeError(
-                    "Unsupported type for distance - expected util.Distance"
-                )
+                raise TypeError("Unsupported type for distance - expected util.Distance")
             self._height = height
         elif ratio is not None:
-            height_mm = MIN_LIFT_HEIGHT.mm + (
-                ratio * (MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm)
-            )
+            height_mm = MIN_LIFT_HEIGHT.mm + (ratio * (MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm))
             self._height = util.Distance(mm=height_mm)
         elif angle is not None:
             if not isinstance(angle, util.Angle):
                 raise TypeError("Unsupported type for angle - expected util.Angle")
-            height_mm = (
-                math.sin(angle.radians) * LIFT_ARM_LENGTH.mm
-            ) + LIFT_PIVOT_HEIGHT.mm
+            height_mm = (math.sin(angle.radians) * LIFT_ARM_LENGTH.mm) + LIFT_PIVOT_HEIGHT.mm
             self._height = util.Distance(mm=height_mm)
 
     def __repr__(self):
@@ -172,9 +160,7 @@ class LiftPosition:
     @property
     def ratio(self) -> float:
         """The ratio from 0 to 1 that the lift is raised, 0 at the bottom, 1 at the top."""
-        ratio = (self._height.mm - MIN_LIFT_HEIGHT.mm) / (
-            MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm
-        )
+        ratio = (self._height.mm - MIN_LIFT_HEIGHT.mm) / (MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm)
         return ratio
 
     @property

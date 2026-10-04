@@ -30,7 +30,9 @@ __all__ = ["FaceDetection", "FaceDetector"]
 REAL_FACE_WIDTH_M: float = 0.155
 
 # Haar cascade download URL (OpenCV official repo).
-_HAARCASCADE_URL = "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+_HAARCASCADE_URL = (
+    "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml"
+)
 _HAARCASCADE_NAME = "haarcascade_frontalface_default.xml"
 
 
@@ -52,8 +54,7 @@ def _ensure_cascade() -> str:
         logger.info("Downloaded %s (%d bytes)", path, os.path.getsize(path))
     except Exception as exc:
         raise RuntimeError(
-            f"Cannot download Haar cascade to {path}: {exc}. "
-            "Install opencv-contrib-python or place the XML manually."
+            f"Cannot download Haar cascade to {path}: {exc}. Install opencv-contrib-python or place the XML manually."
         ) from exc
 
     return path

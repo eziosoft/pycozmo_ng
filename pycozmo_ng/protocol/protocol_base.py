@@ -87,9 +87,7 @@ class Packet(Struct, ABC):
         if self.id is not None:
             res = self.id >= FIRST_ROBOT_PACKET_ID
         else:
-            res = self.type == PacketType.CONNECT or (
-                self.type == PacketType.PING and self.seq > 0
-            )
+            res = self.type == PacketType.CONNECT or (self.type == PacketType.PING and self.seq > 0)
         return res
 
     def is_from_engine(self) -> bool:
@@ -99,9 +97,7 @@ class Packet(Struct, ABC):
 class UnknownPacket(Packet):
     __slots__ = ("_data",)
 
-    def __init__(
-        self, packet_type: PacketType, data: bytes, packet_id: int | None = None
-    ):
+    def __init__(self, packet_type: PacketType, data: bytes, packet_id: int | None = None):
         super().__init__(packet_type, packet_id)
         self.data = data
 
@@ -117,9 +113,7 @@ class UnknownPacket(Packet):
         return len(self._data)
 
     def __repr__(self):
-        return (
-            f"{type(self).__name__}({self.type.value:02x}, {hex_dump(data=self._data)})"
-        )
+        return f"{type(self).__name__}({self.type.value:02x}, {hex_dump(data=self._data)})"
 
     def to_bytes(self):
         writer = BinaryWriter()

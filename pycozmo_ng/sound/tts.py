@@ -59,9 +59,7 @@ class TTS:
             try:
                 import pyttsx3
             except ImportError:
-                raise TTSNotInstalledError(
-                    "pyttsx3 is not installed. Install it with: pip install pyttsx3"
-                )
+                raise TTSNotInstalledError("pyttsx3 is not installed. Install it with: pip install pyttsx3")
             self._engine = pyttsx3.init()
             self._engine.setProperty("rate", self._rate)
         return self._engine
@@ -90,9 +88,7 @@ class TTS:
                     self.engine.save_to_file(text, path)
                     self.engine.runAndWait()
                 except Exception as exc:  # noqa: BLE001
-                    raise TTSGenerationError(
-                        f"Failed to synthesize '{text[:40]}...': {exc}"
-                    )
+                    raise TTSGenerationError(f"Failed to synthesize '{text[:40]}...': {exc}")
                 self._cache[text] = path
                 logger.debug(f"TTS: generated '{path}' for '{text[:40]}'")
         return path

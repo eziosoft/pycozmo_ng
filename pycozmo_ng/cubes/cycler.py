@@ -34,9 +34,7 @@ class CubeCycler:
         with self._lock:
             self._cube_map = dict(cube_map)
         self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._loop, args=(cli,), name="CubeCycler", daemon=True
-        )
+        self._thread = threading.Thread(target=self._loop, args=(cli,), name="CubeCycler", daemon=True)
         self._thread.start()
 
     def stop(self):
@@ -76,9 +74,7 @@ class CubeCycler:
         try:
             # Connect
             cli.conn.send(pe.ObjectConnect(factory_id=factory_id, connect=True))
-            confirmations = cli.wait_for_factory_ids(
-                [factory_id], connect=True, timeout=1.0
-            )
+            confirmations = cli.wait_for_factory_ids([factory_id], connect=True, timeout=1.0)
             if factory_id not in confirmations:
                 self._stats["errors"] += 1
                 return

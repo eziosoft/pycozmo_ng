@@ -53,23 +53,17 @@ class TestPickFaceNormal:
     @pytest.mark.parametrize("yaw_deg", [0, 23, 77, 130])
     def test_returns_a_true_wall_normal_for_any_resting_face(self, up_axis, yaw_deg):
         rot = _on_face(up_axis, yaw_deg)
-        face = Navigator._pick_face_normal(
-            CUBE, rot, (float(CUBE[0]) + 200.0, float(CUBE[1]) + 60.0), 0.5
-        )
+        face = Navigator._pick_face_normal(CUBE, rot, (float(CUBE[0]) + 200.0, float(CUBE[1]) + 60.0), 0.5)
         assert face is not None
         nx, ny, _ = face
-        distances = [
-            np.linalg.norm([nx - w[0], ny - w[1]]) for w in _true_wall_normals(rot)
-        ]
+        distances = [np.linalg.norm([nx - w[0], ny - w[1]]) for w in _true_wall_normals(rot)]
         assert min(distances) < 1e-6
 
     def test_flat_cube_robot_due_east_approaches_x_wall(self):
         """Cube resting flat (body Y up), robot due +X: the wall facing the
         robot is the +X wall — never a 45° direction."""
         rot = _on_face(1, 0.0)  # up_axis=1 => Y vertical
-        face = Navigator._pick_face_normal(
-            CUBE, rot, (float(CUBE[0]) + 200.0, float(CUBE[1])), 0.0
-        )
+        face = Navigator._pick_face_normal(CUBE, rot, (float(CUBE[0]) + 200.0, float(CUBE[1])), 0.0)
         assert face is not None
         nx, ny, _ = face
         assert (nx, ny) == pytest.approx((1.0, 0.0), abs=1e-6)
@@ -85,9 +79,7 @@ class TestPickFaceNormal:
         rot[2, 1] = math.sqrt(max(0.0, 1.0 - 0.02**2 - 0.03**2))
         # Robot at 45° NE of the cube: both true walls score ~0.707, so the
         # old code's noisy normal (0.55, 0.83) could win.
-        face = Navigator._pick_face_normal(
-            CUBE, rot, (float(CUBE[0]) + 200.0, float(CUBE[1]) + 200.0), 0.0
-        )
+        face = Navigator._pick_face_normal(CUBE, rot, (float(CUBE[0]) + 200.0, float(CUBE[1]) + 200.0), 0.0)
         assert face is not None
         nx, ny, _ = face
         true_walls = _true_wall_normals(rot)
@@ -96,13 +88,9 @@ class TestPickFaceNormal:
 
     def test_degenerate_rotation_returns_none(self):
         rot = np.zeros((3, 3))
-        face = Navigator._pick_face_normal(
-            CUBE, rot, (float(CUBE[0]) + 100.0, float(CUBE[1])), 0.0
-        )
+        face = Navigator._pick_face_normal(CUBE, rot, (float(CUBE[0]) + 100.0, float(CUBE[1])), 0.0)
         assert face is None
 
     def test_cube_at_robot_returns_none(self):
-        face = Navigator._pick_face_normal(
-            CUBE, np.eye(3), (float(CUBE[0]), float(CUBE[1])), 0.0
-        )
+        face = Navigator._pick_face_normal(CUBE, np.eye(3), (float(CUBE[0]), float(CUBE[1])), 0.0)
         assert face is None

@@ -87,33 +87,21 @@ class FakeRobot:
 
     def fire(self, event_type: protocol_encoder.PathEventType, event_id: int) -> None:
         """Deliver a PathFollowingEvent to the registered waiter(s)."""
-        pkt = protocol_encoder.PathFollowingEvent(
-            event_id=event_id, event_type=event_type
-        )
-        for handler in list(
-            self._handlers.get(protocol_encoder.PathFollowingEvent, [])
-        ):
+        pkt = protocol_encoder.PathFollowingEvent(event_id=event_id, event_type=event_type)
+        for handler in list(self._handlers.get(protocol_encoder.PathFollowingEvent, [])):
             handler.f(self, pkt)
 
     @property
     def execute_ids(self) -> list[int]:
-        return [
-            p.event_id for p in self.sent if isinstance(p, protocol_encoder.ExecutePath)
-        ]
+        return [p.event_id for p in self.sent if isinstance(p, protocol_encoder.ExecutePath)]
 
     @property
     def lines(self) -> list:
-        return [
-            p for p in self.sent if isinstance(p, protocol_encoder.AppendPathSegLine)
-        ]
+        return [p for p in self.sent if isinstance(p, protocol_encoder.AppendPathSegLine)]
 
     @property
     def turns(self) -> list:
-        return [
-            p
-            for p in self.sent
-            if isinstance(p, protocol_encoder.AppendPathSegPointTurn)
-        ]
+        return [p for p in self.sent if isinstance(p, protocol_encoder.AppendPathSegPointTurn)]
 
     @property
     def handler_count(self) -> int:
@@ -189,9 +177,7 @@ class TestGoToPose:
 
         def hook(pkt) -> None:
             if isinstance(pkt, protocol_encoder.ExecutePath):
-                robot.fire(
-                    protocol_encoder.PathEventType.PATH_INTERRUPTED, pkt.event_id
-                )
+                robot.fire(protocol_encoder.PathEventType.PATH_INTERRUPTED, pkt.event_id)
 
         robot.on_send = hook
         executor = PathExecutor(robot)
@@ -357,9 +343,7 @@ class TestExecutePolyline:
 
         def hook(pkt) -> None:
             if isinstance(pkt, protocol_encoder.ExecutePath):
-                robot.fire(
-                    protocol_encoder.PathEventType.PATH_INTERRUPTED, pkt.event_id
-                )
+                robot.fire(protocol_encoder.PathEventType.PATH_INTERRUPTED, pkt.event_id)
 
         robot.on_send = hook
         assert executor.execute_polyline([(400.0, 0.0)]) is False

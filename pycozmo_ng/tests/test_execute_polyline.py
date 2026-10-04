@@ -26,9 +26,7 @@ from pycozmo_ng.vision.occupancy_map import FREE, OCCUPIED, OccupancyMap
 
 class TestBuildPolylinePackets:
     def test_basic_sequence(self):
-        pkts = build_polyline_packets(
-            [(100.0, 0.0), (100.0, 100.0)], start=(0.0, 0.0), event_id=7
-        )
+        pkts = build_polyline_packets([(100.0, 0.0), (100.0, 100.0)], start=(0.0, 0.0), event_id=7)
         assert isinstance(pkts[0], protocol_encoder.ClearPath)
         assert isinstance(pkts[-1], protocol_encoder.ExecutePath)
         assert pkts[-1].event_id == 7
@@ -43,9 +41,7 @@ class TestBuildPolylinePackets:
     def test_degenerate_points_dropped(self):
         # First point is within 10 mm of the start — skipped; the line
         # starts from the robot and goes straight to the real waypoint.
-        pkts = build_polyline_packets(
-            [(5.0, 0.0), (400.0, 0.0)], start=(0.0, 0.0), event_id=1
-        )
+        pkts = build_polyline_packets([(5.0, 0.0), (400.0, 0.0)], start=(0.0, 0.0), event_id=1)
         lines = [p for p in pkts if isinstance(p, protocol_encoder.AppendPathSegLine)]
         assert len(lines) == 1
         assert (lines[0].from_x, lines[0].to_x) == (0.0, 400.0)
@@ -57,9 +53,7 @@ class TestBuildPolylinePackets:
             event_id=1,
             final_heading_rad=1.5,
         )
-        turns = [
-            p for p in pkts if isinstance(p, protocol_encoder.AppendPathSegPointTurn)
-        ]
+        turns = [p for p in pkts if isinstance(p, protocol_encoder.AppendPathSegPointTurn)]
         assert len(turns) == 1
         assert (turns[0].x, turns[0].y) == (400.0, 0.0)
         assert turns[0].angle_rad == 1.5
@@ -77,9 +71,7 @@ class TestBuildPolylinePackets:
             final_heading_rad=0.5,
         )
         lines = [p for p in pkts if isinstance(p, protocol_encoder.AppendPathSegLine)]
-        turns = [
-            p for p in pkts if isinstance(p, protocol_encoder.AppendPathSegPointTurn)
-        ]
+        turns = [p for p in pkts if isinstance(p, protocol_encoder.AppendPathSegPointTurn)]
         assert lines == []
         assert len(turns) == 1
         assert (turns[0].x, turns[0].y) == (0.0, 0.0)  # in place, at start
@@ -94,9 +86,7 @@ class TestBuildPolylinePackets:
             accel_mmps2=30.0,
             decel_mmps2=25.0,
         )
-        line = next(
-            p for p in pkts if isinstance(p, protocol_encoder.AppendPathSegLine)
-        )
+        line = next(p for p in pkts if isinstance(p, protocol_encoder.AppendPathSegLine))
         assert line.speed_mmps == 55.0
         assert line.accel_mmps2 == 30.0
         assert line.decel_mmps2 == 25.0

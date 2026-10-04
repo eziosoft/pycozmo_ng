@@ -373,8 +373,10 @@ ROBOT_FORMAT_IDS = {
         1,
     ),
     9: (
-        ('Failed "_lastBufferPos >= 0 && _lastBufferPos < KEYFRAME_BUFFER_SIZE" in file '
-        '"supervisor/src/animationController.cpp" line %d'),
+        (
+            'Failed "_lastBufferPos >= 0 && _lastBufferPos < KEYFRAME_BUFFER_SIZE" in file '
+            '"supervisor/src/animationController.cpp" line %d'
+        ),
         1,
     ),
     11: (
@@ -435,8 +437,10 @@ ROBOT_FORMAT_IDS = {
     94: ("(fixedDuration): SetDesiredAngle %f rads (duration %f)", 2),
     95: ("(fixedDuration): Already at desired position", 0),
     616: (
-        ("startVel %f, startPos %f, acc_start_frac %f, acc_end_frac %f, endPos %f, duration %f. "
-        "Trying VPG without fixed duration."),
+        (
+            "startVel %f, startPos %f, acc_start_frac %f, acc_end_frac %f, endPos %f, duration %f. "
+            "Trying VPG without fixed duration."
+        ),
         6,
     ),
     97: (
@@ -566,8 +570,10 @@ ROBOT_FORMAT_IDS = {
     587: ("New closest seg: %d, distToSegment %f (res=%d)", 3),
     588: ("Start segment %d, speed = %f, accel = %f, decel = %f", 4),
     287: (
-        ('Failed "Planning::PST_LINE == path_(currPathSegment_).GetType() || Planning::PST_ARC == '
-        'path_(currPathSegment_).GetType()" in file "supervisor/src/pathFollower.cpp" line %d'),
+        (
+            'Failed "Planning::PST_LINE == path_(currPathSegment_).GetType() || Planning::PST_ARC == '
+            'path_(currPathSegment_).GetType()" in file "supervisor/src/pathFollower.cpp" line %d'
+        ),
         1,
     ),
     219: (
@@ -631,14 +637,18 @@ ROBOT_FORMAT_IDS = {
         5,
     ),
     535: (
-        ("currAngle %f, currDesired %f, currVel %f, distTraversed %f, distExpected %f, "
-        "wheelSpeeds %f %f, desSpeeds %f %f"),
+        (
+            "currAngle %f, currDesired %f, currVel %f, distTraversed %f, distExpected %f, "
+            "wheelSpeeds %f %f, desSpeeds %f %f"
+        ),
         9,
     ),
     536: ("currAngle %f, currDesired %f", 2),
     643: (
-        ("timestamp %d, currAngle %.1f, desAngle %.1f, currSpeed %.1f, desSpeed %.1f, "
-        "arcVel %d, ff %.1f, p %.1f, i %.1f, d %.1f, errSum %.1f"),
+        (
+            "timestamp %d, currAngle %.1f, desAngle %.1f, currSpeed %.1f, desSpeed %.1f, "
+            "arcVel %d, ff %.1f, p %.1f, i %.1f, d %.1f, errSum %.1f"
+        ),
         11,
     ),
     377: ("des %f deg/s, meas: %f deg/s, arcVel %d mm/s, errorSum %f", 4),

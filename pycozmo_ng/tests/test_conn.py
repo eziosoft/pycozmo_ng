@@ -15,13 +15,9 @@ class TestConnection(unittest.TestCase):
         self.s_e = Event()
         self.c_e = Event()
         self.s = pycozmo_ng.conn.Connection(server=True)
-        self.s.add_handler(
-            pycozmo_ng.protocol_encoder.Connect, lambda cli, pkt: self.s_conn_e.set()
-        )
+        self.s.add_handler(pycozmo_ng.protocol_encoder.Connect, lambda cli, pkt: self.s_conn_e.set())
         self.c = pycozmo_ng.conn.Connection(("127.0.0.1", 5551))
-        self.c.add_handler(
-            pycozmo_ng.protocol_encoder.Connect, lambda cli, pkt: self.c_conn_e.set()
-        )
+        self.c.add_handler(pycozmo_ng.protocol_encoder.Connect, lambda cli, pkt: self.c_conn_e.set())
 
     def start(self):
         self.s.start()
@@ -46,12 +42,8 @@ class TestConnection(unittest.TestCase):
         self.stop()
 
     def test_ping(self):
-        self.s.add_handler(
-            pycozmo_ng.protocol_encoder.Ping, lambda cli, pkt: self.s_e.set()
-        )
-        self.c.add_handler(
-            pycozmo_ng.protocol_encoder.Ping, lambda cli, pkt: self.c_e.set()
-        )
+        self.s.add_handler(pycozmo_ng.protocol_encoder.Ping, lambda cli, pkt: self.s_e.set())
+        self.c.add_handler(pycozmo_ng.protocol_encoder.Ping, lambda cli, pkt: self.c_e.set())
         self.start()
         self.connect()
         self.assertTrue(self.c_e.wait(20000.0))

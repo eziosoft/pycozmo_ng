@@ -45,9 +45,7 @@ class SendThread(Thread):
     COLLECT_INTERVAL = 1 / 30 / 3
     ACK_TIMEOUT = 3 * 1 / 30
 
-    def __init__(
-        self, sock: socket.socket, receiver_address: tuple[str, int] | None
-    ) -> None:
+    def __init__(self, sock: socket.socket, receiver_address: tuple[str, int] | None) -> None:
         super().__init__(daemon=True, name=type(self).__name__)
         self.sock = sock
         self.lock = Lock()
@@ -99,11 +97,7 @@ class SendThread(Thread):
             is_full = self.window.is_full()
         pkts = []
         start = time.perf_counter()
-        while (
-            not is_full
-            and not self.disconnected
-            and time.perf_counter() - start < self.COLLECT_INTERVAL
-        ):
+        while not is_full and not self.disconnected and time.perf_counter() - start < self.COLLECT_INTERVAL:
             try:
                 pkt = self.queue.get(timeout=self.COLLECT_INTERVAL)
             except Empty:
@@ -127,11 +121,7 @@ class SendThread(Thread):
         with self.lock:
             pkts = self.window.get()
             last_ack_time = self.last_ack_time
-        if (
-            pkts
-            and last_ack_time
-            and time.perf_counter() - last_ack_time > self.ACK_TIMEOUT
-        ):
+        if pkts and last_ack_time and time.perf_counter() - last_ack_time > self.ACK_TIMEOUT:
             with self.lock:
                 self.last_ack_time = time.perf_counter()
         else:
@@ -170,9 +160,7 @@ class SendThread(Thread):
 
     def _send_ping(self, pkt) -> None:
         self.sent_packets += 1
-        raw_frame = Frame(
-            protocol_declaration.FrameType.PING, OOB_SEQ, OOB_SEQ, self.last_ack, [pkt]
-        ).to_bytes()
+        raw_frame = Frame(protocol_declaration.FrameType.PING, OOB_SEQ, OOB_SEQ, self.last_ack, [pkt]).to_bytes()
         self._send_raw_frame(raw_frame)
 
     def _send_frame(self, pkts, first_seq: int, seq: int, ack: int) -> None:
@@ -183,9 +171,7 @@ class SendThread(Thread):
     @staticmethod
     def _build_frame(pkts, first_seq: int, seq: int, ack: int) -> bytes:
         try:
-            frame = Frame(
-                protocol_declaration.FrameType.ENGINE, first_seq, seq, ack, pkts
-            )
+            frame = Frame(protocol_declaration.FrameType.ENGINE, first_seq, seq, ack, pkts)
             return frame.to_bytes()
         except Exception as e:
             logger.error(f"Failed to serialize frame. {e}")
@@ -296,9 +282,7 @@ class ReceiveThread(Thread):
                     self.handle_reset(address)
                 elif self.sender_address:
                     if self.sender_address != address:
-                        logger_protocol.debug(
-                            f"Received a UDP datagram from unexpected address {address}."
-                        )
+                        logger_protocol.debug(f"Received a UDP datagram from unexpected address {address}.")
                     elif frame.type == protocol_declaration.FrameType.FIN:
                         self.handle_fin()
                     else:
@@ -509,9 +493,7 @@ class Connection(Thread, event.Dispatcher):
 
     def connect(self) -> None:
         if self.server:
-            raise exception.InvalidOperation(
-                "connect() not available on server connections."
-            )
+            raise exception.InvalidOperation("connect() not available on server connections.")
 
         logger_protocol.debug("Connecting...")
         self.state = self.CONNECTING
@@ -528,9 +510,7 @@ class Connection(Thread, event.Dispatcher):
     def send(self, pkt: Packet) -> None:
         self.send_last = time.perf_counter()
         self.send_thread.send(pkt)
-        if not self.packet_type_filter.filter(
-            pkt.type.value
-        ) and not self.packet_id_filter.filter(pkt.id):
+        if not self.packet_type_filter.filter(pkt.type.value) and not self.packet_id_filter.filter(pkt.id):
             logger_protocol.debug("Sent %s", pkt)
 
     def post_event(self, evt, *args, **kwargs) -> None:
@@ -538,9 +518,7 @@ class Connection(Thread, event.Dispatcher):
 
     def disconnect(self) -> None:
         if self.server:
-            raise exception.InvalidOperation(
-                "disconnect() not available on server connections."
-            )
+            raise exception.InvalidOperation("disconnect() not available on server connections.")
         logger_protocol.debug("Disconnecting...")
         if self.state != self.CONNECTED:
             return
@@ -554,9 +532,7 @@ class Connection(Thread, event.Dispatcher):
         self.ping_counter += 1
 
     def _on_packet_received(self, pkt):
-        if not self.packet_type_filter.filter(
-            pkt.type.value
-        ) and not self.packet_id_filter.filter(pkt.id):
+        if not self.packet_type_filter.filter(pkt.type.value) and not self.packet_id_filter.filter(pkt.id):
             logger_protocol.debug("Got  %s", pkt)
         self.dispatch(pkt.__class__, self, pkt)
 
@@ -580,23 +556,6 @@ class Connection(Thread, event.Dispatcher):
 
     def log_stats(self):
         logger_protocol.info(
-            "Recv: {}B, {}F (disc.), {}F, {}P, {}P ({:.02f}%); "
-            "Sent: {}P, {}P ({:.02f}%), {}F, {}F (disc.), {}B;".format(
-                self.recv_thread.received_bytes,
-                self.recv_thread.discarded_frames,
-                self.recv_thread.received_frames,
-                self.recv_thread.received_packets,
-                self.recv_thread.delivered_packets,
-                self.recv_thread.delivered_packets
-                / (self.recv_thread.received_packets or 1)
-                * 100.0,
-                self.send_thread.outgoing_packets,
-                self.send_thread.sent_packets,
-                self.send_thread.outgoing_packets
-                / (self.send_thread.sent_packets or 1)
-                * 100.0,
-                self.send_thread.sent_frames,
-                self.send_thread.discarded_frames,
-                self.send_thread.sent_bytes,
-            )
+            f"Recv: {self.recv_thread.received_bytes}B, {self.recv_thread.discarded_frames}F (disc.), {self.recv_thread.received_frames}F, {self.recv_thread.received_packets}P, {self.recv_thread.delivered_packets}P ({self.recv_thread.delivered_packets / (self.recv_thread.received_packets or 1) * 100.0:.02f}%); "
+            f"Sent: {self.send_thread.outgoing_packets}P, {self.send_thread.sent_packets}P ({self.send_thread.outgoing_packets / (self.send_thread.sent_packets or 1) * 100.0:.02f}%), {self.send_thread.sent_frames}F, {self.send_thread.discarded_frames}F (disc.), {self.send_thread.sent_bytes}B;"
         )

@@ -256,12 +256,8 @@ PATH_SEGMENT_SPEED = Struct(
     "PathSegmentSpeed",
     arguments=[
         FloatArgument("speed_mmps", description="Speed in millimeters per second."),
-        FloatArgument(
-            "accel_mmps2", description="Acceleration in millimeters per second squared."
-        ),
-        FloatArgument(
-            "decel_mmps2", description="Deceleration in millimeters per second squared."
-        ),
+        FloatArgument("accel_mmps2", description="Acceleration in millimeters per second squared."),
+        FloatArgument("decel_mmps2", description="Deceleration in millimeters per second squared."),
     ],
 )
 
@@ -334,9 +330,7 @@ PROTOCOL = Protocol(
             group="objects",
             arguments=[BoolArgument("enable")],
         ),
-        Command(
-            0x0B, "SetHeadLight", group="camera", arguments=[BoolArgument("enable")]
-        ),
+        Command(0x0B, "SetHeadLight", group="camera", arguments=[BoolArgument("enable")]),
         Command(
             0x10,
             "CubeId",
@@ -407,9 +401,7 @@ PROTOCOL = Protocol(
                 FloatArgument("max_speed_rad_per_sec", default=3.0),
                 FloatArgument("accel_rad_per_sec2", default=20.0),
                 FloatArgument("duration_sec"),
-                UInt8Argument(
-                    "action_id", description="Not present in v2214 and older."
-                ),
+                UInt8Argument("action_id", description="Not present in v2214 and older."),
             ],
         ),
         Command(
@@ -421,9 +413,7 @@ PROTOCOL = Protocol(
                 FloatArgument("max_speed_rad_per_sec", default=15.0),
                 FloatArgument("accel_rad_per_sec2", default=20.0),
                 FloatArgument("duration_sec"),
-                UInt8Argument(
-                    "action_id", description="Not present in v2214 and older."
-                ),
+                UInt8Argument("action_id", description="Not present in v2214 and older."),
             ],
         ),
         Command(
@@ -592,9 +582,7 @@ PROTOCOL = Protocol(
             "NvStorageOp",
             group="nv",
             arguments=[
-                EnumArgument(
-                    "tag", NV_ENTRY_TAG, data_type=UInt32Argument(), default=0xFFFFFFFF
-                ),
+                EnumArgument("tag", NV_ENTRY_TAG, data_type=UInt32Argument(), default=0xFFFFFFFF),
                 Int32Argument("length"),
                 EnumArgument("op", NV_OPERATION, data_type=UInt8Argument()),
                 UInt8Argument("unknown"),
@@ -664,9 +652,7 @@ PROTOCOL = Protocol(
             ],
         ),
         Command(0x9A, "EndAnimation", group="anim"),
-        Command(
-            0x9B, "StartAnimation", group="anim", arguments=[UInt8Argument("anim_id")]
-        ),
+        Command(0x9B, "StartAnimation", group="anim", arguments=[UInt8Argument("anim_id")]),
         Command(0x9F, "EnableAnimationState", group="system"),
         Command(0xA9, "ShutdownRobot", group="system"),
         Command(
@@ -688,19 +674,11 @@ PROTOCOL = Protocol(
             "DebugData",
             group="debug",
             arguments=[
-                UInt16Argument(
-                    "format_id", description="AnkiLogStringTables.json formatTable key."
-                ),
+                UInt16Argument("format_id", description="AnkiLogStringTables.json formatTable key."),
                 UInt16Argument("unused", description="Always 0."),
-                UInt16Argument(
-                    "name_id", description="AnkiLogStringTables.json nameTable key."
-                ),
-                Int8Argument(
-                    "level", description="Log level. Observed: -1, 1, 2, 3, 5."
-                ),
-                VArrayArgument(
-                    "args", data_type=UInt32Argument(), length_type=UInt8Argument()
-                ),
+                UInt16Argument("name_id", description="AnkiLogStringTables.json nameTable key."),
+                Int8Argument("level", description="Log level. Observed: -1, 1, 2, 3, 5."),
+                VArrayArgument("args", data_type=UInt32Argument(), length_type=UInt8Argument()),
             ],
         ),
         Command(
@@ -713,9 +691,7 @@ PROTOCOL = Protocol(
                 FloatArgument("active_accel_x"),
                 FloatArgument("active_accel_y"),
                 FloatArgument("active_accel_z"),
-                EnumArgument(
-                    "axis_of_accel", UP_AXIS, data_type=UInt8Argument(), default=7
-                ),
+                EnumArgument("axis_of_accel", UP_AXIS, data_type=UInt8Argument(), default=7),
             ],
         ),
         Command(
@@ -780,20 +756,14 @@ PROTOCOL = Protocol(
                 UInt8Argument("unknown2"),
             ],
         ),
-        Command(
-            0xCA, "AnimationStarted", group="anim", arguments=[UInt8Argument("anim_id")]
-        ),
-        Command(
-            0xCB, "AnimationEnded", group="anim", arguments=[UInt8Argument("anim_id")]
-        ),
+        Command(0xCA, "AnimationStarted", group="anim", arguments=[UInt8Argument("anim_id")]),
+        Command(0xCB, "AnimationEnded", group="anim", arguments=[UInt8Argument("anim_id")]),
         Command(
             0xCD,
             "NvStorageOpResult",
             group="nv",
             arguments=[
-                EnumArgument(
-                    "tag", NV_ENTRY_TAG, data_type=UInt32Argument(), default=0xFFFFFFFF
-                ),
+                EnumArgument("tag", NV_ENTRY_TAG, data_type=UInt32Argument(), default=0xFFFFFFFF),
                 Int32Argument("length"),
                 EnumArgument("op", NV_OPERATION, data_type=UInt8Argument()),
                 EnumArgument("result", NV_RESULT, data_type=Int8Argument()),
@@ -817,9 +787,7 @@ PROTOCOL = Protocol(
             arguments=[
                 UInt32Argument("object_id"),
                 UInt32Argument("factory_id"),
-                EnumArgument(
-                    "object_type", OBJECT_TYPE, data_type=Int32Argument(), default=-1
-                ),
+                EnumArgument("object_type", OBJECT_TYPE, data_type=Int32Argument(), default=-1),
                 BoolArgument("connected"),
             ],
         ),
@@ -879,9 +847,7 @@ PROTOCOL = Protocol(
                     "body_hw_version",
                     description="Production units report 5. Development units report 7.",
                 ),
-                EnumArgument(
-                    "body_color", BODY_COLOR, data_type=Int32Argument(), default=-1
-                ),
+                EnumArgument("body_color", BODY_COLOR, data_type=Int32Argument(), default=-1),
             ],
         ),
         Command(
@@ -943,9 +909,7 @@ PROTOCOL = Protocol(
                 Int32Argument("num_audio_frames_played"),
                 UInt8Argument("enabled_anim_tracks"),
                 UInt8Argument("tag"),
-                UInt8Argument(
-                    "client_drop_count", description="Not present in v2214 and older."
-                ),
+                UInt8Argument("client_drop_count", description="Not present in v2214 and older."),
             ],
         ),
         Event(
@@ -970,9 +934,7 @@ PROTOCOL = Protocol(
             group="state",
             arguments=[
                 UInt32Argument("factory_id"),
-                EnumArgument(
-                    "object_type", OBJECT_TYPE, data_type=Int32Argument(), default=-1
-                ),
+                EnumArgument("object_type", OBJECT_TYPE, data_type=Int32Argument(), default=-1),
                 Int8Argument("rssi"),
             ],
         ),

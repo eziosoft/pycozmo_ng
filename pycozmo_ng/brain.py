@@ -77,9 +77,7 @@ class Brain:
         # Per-frame vision stage — owns the whole camera-frame sequence
         # (convert → detect → annotate → publish → events → world map).
         # Configured by setup_vision() once the detectors exist.
-        self.frame_stage = FrameStage(
-            self.frame_state, self.cube_tracking, self.world_map, self.web_viewer
-        )
+        self.frame_stage = FrameStage(self.frame_state, self.cube_tracking, self.world_map, self.web_viewer)
 
         # Domain sub-components — each receives the state it needs.
         # One motion seam (cancellation + driver lease) shared by the
@@ -90,13 +88,8 @@ class Brain:
         # rising, then let visibility decide (see cubes/carry_state.py).
         self.carry = CarryDetector(
             get_cube_state=self.world_map.get_cube,
-            get_lift_height=lambda: (
-                self.cli.lift_position.height.mm if self.cli is not None else 0.0
-            ),
-            get_lift_in_pos=lambda: (
-                self.cli is None
-                or bool(self.cli.robot_status & RobotStatusFlag.LIFT_IN_POS)
-            ),
+            get_lift_height=lambda: self.cli.lift_position.height.mm if self.cli is not None else 0.0,
+            get_lift_in_pos=lambda: self.cli is None or bool(self.cli.robot_status & RobotStatusFlag.LIFT_IN_POS),
         )
         self.navigator = Navigator(
             self.dock_state,
@@ -167,9 +160,7 @@ class Brain:
                 is usually sufficient.
         """
         if self.cli is None:
-            raise RuntimeError(
-                "Not connected - call Cozmo.connect() before setup_vision"
-            )
+            raise RuntimeError("Not connected - call Cozmo.connect() before setup_vision")
 
         if camera_calibration is None:
             from pycozmo_ng.vision.calibration.camera_calibration import (
@@ -230,23 +221,15 @@ class Brain:
         # Expose occupancy map to web viewer for A* pathfinding
         if self.floor_pipeline and self.floor_pipeline.occupancy_map is not None:
             self.web_viewer.occupancy_map = self.floor_pipeline.occupancy_map
-            self.astar_planner = AStarPlanner(
-                self.floor_pipeline.occupancy_map, allow_unknown=True
-            )
+            self.astar_planner = AStarPlanner(self.floor_pipeline.occupancy_map, allow_unknown=True)
             self.navigator.set_astar_planner(self.astar_planner)
             self.navigator.set_astar_enabled(False)
 
         # Subsystem event handlers (vision, navigation, cubes, web trail,
         # pick-up)
-        self.cli.add_handler(
-            event.EvtNewRawCameraImage, self.frame_stage.on_camera_image
-        )
-        self.cli.add_handler(
-            event.EvtRobotOnChargerChange, self.navigator.on_charger_change
-        )
-        self.cli.add_handler(
-            event.EvtRobotChargingChange, self.navigator.on_charging_change
-        )
+        self.cli.add_handler(event.EvtNewRawCameraImage, self.frame_stage.on_camera_image)
+        self.cli.add_handler(event.EvtRobotOnChargerChange, self.navigator.on_charger_change)
+        self.cli.add_handler(event.EvtRobotChargingChange, self.navigator.on_charging_change)
         self.cli.add_handler(
             protocol_encoder.ObjectConnectionState,
             self.cubes.on_object_connection_state,
@@ -317,9 +300,7 @@ class Brain:
             pose = c.pose
             pos = pose.position.x_y_z
             yaw = pose.rotation.angle_z.radians
-            self.world_map.update_robot_pose(
-                pos, yaw, origin_id=pose.origin_id, record_path=True
-            )
+            self.world_map.update_robot_pose(pos, yaw, origin_id=pose.origin_id, record_path=True)
         except (AttributeError, ValueError) as e:
             logger.debug(f"Failed to update robot pose: {e}")
 
@@ -385,16 +366,11 @@ class Brain:
                 fs.running = False
                 break
 
-            if (
-                self.camera.active
-                and self.camera.enabled_at is not None
-                and time.time() - self.camera.enabled_at > 5.0
-            ):
+            if self.camera.active and self.camera.enabled_at is not None and time.time() - self.camera.enabled_at > 5.0:
                 stale_for = time.time() - fs.last_frame_time
                 if stale_for > 5.0:
                     logger_cubes.warning(
-                        "No camera frames for %.1fs - assuming Wi-Fi drop, "
-                        "exiting main loop",
+                        "No camera frames for %.1fs - assuming Wi-Fi drop, exiting main loop",
                         stale_for,
                     )
                     fs.running = False

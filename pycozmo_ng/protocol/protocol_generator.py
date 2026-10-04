@@ -104,21 +104,13 @@ class ProtocolGenerator:
                 type_hint = ""
             self.f.write(f'        "_{argument.name}",{type_hint}\n')
 
-    def generate_farray_validation(
-        self, argument: protocol_declaration.FArrayArgument
-    ) -> None:
+    def generate_farray_validation(self, argument: protocol_declaration.FArrayArgument) -> None:
         if isinstance(argument.data_type, (protocol_declaration.FloatArgument, protocol_declaration.DoubleArgument)):
-            element_validation = (
-                "lambda name, value_inner: validate_float(name, value_inner)"
-            )
+            element_validation = "lambda name, value_inner: validate_float(name, value_inner)"
         elif isinstance(argument.data_type, protocol_declaration.BoolArgument):
-            element_validation = (
-                "lambda name, value_inner: validate_bool(name, value_inner)"
-            )
+            element_validation = "lambda name, value_inner: validate_bool(name, value_inner)"
         elif isinstance(argument.data_type, protocol_declaration.UInt8Argument):
-            element_validation = (
-                "lambda name, value_inner: validate_integer(name, value_inner, 0, 255)"
-            )
+            element_validation = "lambda name, value_inner: validate_integer(name, value_inner, 0, 255)"
         elif isinstance(argument.data_type, protocol_declaration.UInt16Argument):
             element_validation = "lambda name, value_inner: validate_integer(name, value_inner, 0, 65535)"
         elif isinstance(argument.data_type, protocol_declaration.UInt32Argument):
@@ -128,9 +120,13 @@ class ProtocolGenerator:
         elif isinstance(argument.data_type, protocol_declaration.Int16Argument):
             element_validation = "lambda name, value_inner: validate_integer(name, value_inner, -32768, 32767)"
         elif isinstance(argument.data_type, protocol_declaration.Int32Argument):
-            element_validation = "lambda name, value_inner: validate_integer(name, value_inner, -2147483648, 2147483647)"
+            element_validation = (
+                "lambda name, value_inner: validate_integer(name, value_inner, -2147483648, 2147483647)"
+            )
         elif isinstance(argument.data_type, protocol_declaration.Struct):
-            element_validation = f"lambda name, value_inner: validate_object(name, value_inner, {argument.data_type.name})"
+            element_validation = (
+                f"lambda name, value_inner: validate_object(name, value_inner, {argument.data_type.name})"
+            )
         else:
             raise NotImplementedError(
                 f"Unexpected farray data type '{argument.data_type.__class__.__name__}' for '{argument.name}'"
@@ -140,9 +136,7 @@ class ProtocolGenerator:
             f'validate_farray(\n            "{argument.name}", value, {argument.length}, {element_validation})\n'
         )
 
-    def generate_varray_validation(
-        self, argument: protocol_declaration.VArrayArgument
-    ) -> None:
+    def generate_varray_validation(self, argument: protocol_declaration.VArrayArgument) -> None:
         if isinstance(argument.length_type, protocol_declaration.UInt8Argument):
             maximum_length = 255
         elif isinstance(argument.length_type, protocol_declaration.UInt16Argument):
@@ -153,17 +147,11 @@ class ProtocolGenerator:
             )
 
         if isinstance(argument.data_type, (protocol_declaration.FloatArgument, protocol_declaration.DoubleArgument)):
-            element_validation = (
-                "lambda name, value_inner: validate_float(name, value_inner)"
-            )
+            element_validation = "lambda name, value_inner: validate_float(name, value_inner)"
         elif isinstance(argument.data_type, protocol_declaration.BoolArgument):
-            element_validation = (
-                "lambda name, value_inner: validate_bool(name, value_inner)"
-            )
+            element_validation = "lambda name, value_inner: validate_bool(name, value_inner)"
         elif isinstance(argument.data_type, protocol_declaration.UInt8Argument):
-            element_validation = (
-                "lambda name, value_inner: validate_integer(name, value_inner, 0, 255)"
-            )
+            element_validation = "lambda name, value_inner: validate_integer(name, value_inner, 0, 255)"
         elif isinstance(argument.data_type, protocol_declaration.UInt16Argument):
             element_validation = "lambda name, value_inner: validate_integer(name, value_inner, 0, 65535)"
         elif isinstance(argument.data_type, protocol_declaration.UInt32Argument):
@@ -173,7 +161,9 @@ class ProtocolGenerator:
         elif isinstance(argument.data_type, protocol_declaration.Int16Argument):
             element_validation = "lambda name, value_inner: validate_integer(name, value_inner, -32768, 32767)"
         elif isinstance(argument.data_type, protocol_declaration.Int32Argument):
-            element_validation = "lambda name, value_inner: validate_integer(name, value_inner, -2147483648, 2147483647)"
+            element_validation = (
+                "lambda name, value_inner: validate_integer(name, value_inner, -2147483648, 2147483647)"
+            )
         else:
             raise NotImplementedError(
                 f"Unexpected varray data type '{argument.data_type.__class__.__name__}' for '{argument.name}'"
@@ -183,9 +173,7 @@ class ProtocolGenerator:
             f'validate_varray(\n            "{argument.name}", value, {maximum_length}, {element_validation})\n'
         )
 
-    def generate_string_validation(
-        self, argument: protocol_declaration.StringArgument
-    ) -> None:
+    def generate_string_validation(self, argument: protocol_declaration.StringArgument) -> None:
         if isinstance(argument.length_type, protocol_declaration.UInt8Argument):
             maximum_length = 255
         elif isinstance(argument.length_type, protocol_declaration.UInt16Argument):
@@ -197,31 +185,19 @@ class ProtocolGenerator:
 
         self.f.write(f'validate_string("{argument.name}", value, {maximum_length})\n')
 
-    def generate_enum_validation(
-        self, argument: protocol_declaration.EnumArgument
-    ) -> None:
+    def generate_enum_validation(self, argument: protocol_declaration.EnumArgument) -> None:
         if isinstance(argument.data_type, protocol_declaration.UInt8Argument):
             self.f.write(f'validate_integer("{argument.name}", value.value, 0, 255)\n')
         elif isinstance(argument.data_type, protocol_declaration.UInt16Argument):
-            self.f.write(
-                f'validate_integer("{argument.name}", value.value, 0, 65535)\n'
-            )
+            self.f.write(f'validate_integer("{argument.name}", value.value, 0, 65535)\n')
         elif isinstance(argument.data_type, protocol_declaration.UInt32Argument):
-            self.f.write(
-                f'validate_integer("{argument.name}", value.value, 0, 4294967295)\n'
-            )
+            self.f.write(f'validate_integer("{argument.name}", value.value, 0, 4294967295)\n')
         elif isinstance(argument.data_type, protocol_declaration.Int8Argument):
-            self.f.write(
-                f'validate_integer("{argument.name}", value.value, -128, 127)\n'
-            )
+            self.f.write(f'validate_integer("{argument.name}", value.value, -128, 127)\n')
         elif isinstance(argument.data_type, protocol_declaration.Int16Argument):
-            self.f.write(
-                f'validate_integer("{argument.name}", value.value, -32768, 32767)\n'
-            )
+            self.f.write(f'validate_integer("{argument.name}", value.value, -32768, 32767)\n')
         elif isinstance(argument.data_type, protocol_declaration.Int32Argument):
-            self.f.write(
-                f'validate_integer("{argument.name}", value.value, -2147483648, 2147483647)\n'
-            )
+            self.f.write(f'validate_integer("{argument.name}", value.value, -2147483648, 2147483647)\n')
         else:
             raise NotImplementedError(
                 f"Unexpected enum data type '{argument.data_type.__class__.__name__}' for '{argument.name}'"
@@ -258,29 +234,17 @@ class ProtocolGenerator:
                 elif isinstance(argument, protocol_declaration.BoolArgument):
                     self.f.write(f'validate_bool("{argument.name}", value)\n')
                 elif isinstance(argument, protocol_declaration.UInt8Argument):
-                    self.f.write(
-                        f'validate_integer("{argument.name}", value, 0, 255)\n'
-                    )
+                    self.f.write(f'validate_integer("{argument.name}", value, 0, 255)\n')
                 elif isinstance(argument, protocol_declaration.UInt16Argument):
-                    self.f.write(
-                        f'validate_integer("{argument.name}", value, 0, 65535)\n'
-                    )
+                    self.f.write(f'validate_integer("{argument.name}", value, 0, 65535)\n')
                 elif isinstance(argument, protocol_declaration.UInt32Argument):
-                    self.f.write(
-                        f'validate_integer("{argument.name}", value, 0, 4294967295)\n'
-                    )
+                    self.f.write(f'validate_integer("{argument.name}", value, 0, 4294967295)\n')
                 elif isinstance(argument, protocol_declaration.Int8Argument):
-                    self.f.write(
-                        f'validate_integer("{argument.name}", value, -128, 127)\n'
-                    )
+                    self.f.write(f'validate_integer("{argument.name}", value, -128, 127)\n')
                 elif isinstance(argument, protocol_declaration.Int16Argument):
-                    self.f.write(
-                        f'validate_integer("{argument.name}", value, -32768, 32767)\n'
-                    )
+                    self.f.write(f'validate_integer("{argument.name}", value, -32768, 32767)\n')
                 elif isinstance(argument, protocol_declaration.Int32Argument):
-                    self.f.write(
-                        f'validate_integer("{argument.name}", value, -2147483648, 2147483647)\n'
-                    )
+                    self.f.write(f'validate_integer("{argument.name}", value, -2147483648, 2147483647)\n')
                 elif isinstance(argument, protocol_declaration.FArrayArgument):
                     self.generate_farray_validation(argument)
                 elif isinstance(argument, protocol_declaration.VArrayArgument):
@@ -320,28 +284,16 @@ class ProtocolGenerator:
                     statements.append(str(protocol_utils.get_size("l")))
                 elif isinstance(argument, protocol_declaration.FArrayArgument):
                     if isinstance(argument.data_type, protocol_declaration.Struct):
-                        statements.append(
-                            f"get_object_farray_size(self._{argument.name}, {argument.length})"
-                        )
+                        statements.append(f"get_object_farray_size(self._{argument.name}, {argument.length})")
                     else:
                         data_fmt = get_farray_fmt(argument)
-                        statements.append(
-                            str(
-                                protocol_utils.get_farray_size(
-                                    data_fmt, argument.length
-                                )
-                            )
-                        )
+                        statements.append(str(protocol_utils.get_farray_size(data_fmt, argument.length)))
                 elif isinstance(argument, protocol_declaration.VArrayArgument):
                     length_fmt, data_fmt = get_varray_fmts(argument)
-                    statements.append(
-                        f"get_varray_size(self._{argument.name}, '{length_fmt}', '{data_fmt}')"
-                    )
+                    statements.append(f"get_varray_size(self._{argument.name}, '{length_fmt}', '{data_fmt}')")
                 elif isinstance(argument, protocol_declaration.StringArgument):
                     length_fmt = get_string_fmt(argument)
-                    statements.append(
-                        f"get_string_size(self._{argument.name}, '{length_fmt}')"
-                    )
+                    statements.append(f"get_string_size(self._{argument.name}, '{length_fmt}')")
                 elif isinstance(argument, protocol_declaration.EnumArgument):
                     data_fmt = get_enum_fmt(argument)
                     statements.append(str(protocol_utils.get_size(data_fmt)))
@@ -375,35 +327,25 @@ class ProtocolGenerator:
     def generate_argument_defaults(self, struct: protocol_declaration.Struct) -> None:
         for argument in struct.arguments:
             if isinstance(argument.default, str):
-                self.f.write(
-                    f",\n                 {argument.name}='{argument.default}'"
-                )
+                self.f.write(f",\n                 {argument.name}='{argument.default}'")
             else:
                 self.f.write(f",\n                 {argument.name}={argument.default}")
 
-    def generate_argument_assignments(
-        self, struct: protocol_declaration.Struct
-    ) -> None:
+    def generate_argument_assignments(self, struct: protocol_declaration.Struct) -> None:
         if struct.arguments:
             for argument in struct.arguments:
                 if argument.description:
                     self.f.write(f"        # {argument.description}\n")
                 if isinstance(argument, protocol_declaration.EnumArgument):
-                    self.f.write(
-                        f"        self.{argument.name} = {argument.enum_type.name}({argument.name})\n"
-                    )
+                    self.f.write(f"        self.{argument.name} = {argument.enum_type.name}({argument.name})\n")
                 else:
                     self.f.write(f"        self.{argument.name} = {argument.name}\n")
         else:
             self.f.write("        pass\n")
 
-    def generate_packet_argument_assignments(
-        self, packet: protocol_declaration.Packet
-    ) -> None:
+    def generate_packet_argument_assignments(self, packet: protocol_declaration.Packet) -> None:
         packet_id = f"0x{packet.id:02x}" if packet.id is not None else None
-        self.f.write(
-            f"        super().__init__({packet.type}, packet_id={packet_id})\n"
-        )
+        self.f.write(f"        super().__init__({packet.type}, packet_id={packet_id})\n")
         self.generate_argument_assignments(packet)
 
     def generate_packet_encoding(self, struct: protocol_declaration.Struct) -> None:
@@ -422,9 +364,7 @@ class ProtocolGenerator:
                 elif isinstance(argument, protocol_declaration.DoubleArgument):
                     self.f.write(f'        writer.write(self._{argument.name}, "d")\n')
                 elif isinstance(argument, protocol_declaration.BoolArgument):
-                    self.f.write(
-                        f'        writer.write(int(self._{argument.name}), "b")\n'
-                    )
+                    self.f.write(f'        writer.write(int(self._{argument.name}), "b")\n')
                 elif isinstance(argument, protocol_declaration.UInt8Argument):
                     self.f.write(f'        writer.write(self._{argument.name}, "B")\n')
                 elif isinstance(argument, protocol_declaration.UInt16Argument):
@@ -439,9 +379,7 @@ class ProtocolGenerator:
                     self.f.write(f'        writer.write(self._{argument.name}, "l")\n')
                 elif isinstance(argument, protocol_declaration.FArrayArgument):
                     if isinstance(argument.data_type, protocol_declaration.Struct):
-                        self.f.write(
-                            f"        writer.write_object_farray(self._{argument.name}, {argument.length})\n"
-                        )
+                        self.f.write(f"        writer.write_object_farray(self._{argument.name}, {argument.length})\n")
                     else:
                         data_fmt = get_farray_fmt(argument)
                         self.f.write(
@@ -449,19 +387,13 @@ class ProtocolGenerator:
                         )
                 elif isinstance(argument, protocol_declaration.VArrayArgument):
                     length_fmt, data_fmt = get_varray_fmts(argument)
-                    self.f.write(
-                        f'        writer.write_varray(self._{argument.name}, "{data_fmt}", "{length_fmt}")\n'
-                    )
+                    self.f.write(f'        writer.write_varray(self._{argument.name}, "{data_fmt}", "{length_fmt}")\n')
                 elif isinstance(argument, protocol_declaration.StringArgument):
                     length_fmt = get_string_fmt(argument)
-                    self.f.write(
-                        f'        writer.write_string(self._{argument.name}, "{length_fmt}")\n'
-                    )
+                    self.f.write(f'        writer.write_string(self._{argument.name}, "{length_fmt}")\n')
                 elif isinstance(argument, protocol_declaration.EnumArgument):
                     data_fmt = get_enum_fmt(argument)
-                    self.f.write(
-                        f'        writer.write(self._{argument.name}.value, "{data_fmt}")\n'
-                    )
+                    self.f.write(f'        writer.write(self._{argument.name}.value, "{data_fmt}")\n')
                 else:
                     raise NotImplementedError(
                         f"Unexpected argument type '{argument.__class__.__name__}' for '{argument.name}'"
@@ -507,24 +439,16 @@ class ProtocolGenerator:
                         )
                     else:
                         data_fmt = get_farray_fmt(argument)
-                        self.f.write(
-                            f'        {argument.name} = reader.read_farray("{data_fmt}", {argument.length})\n'
-                        )
+                        self.f.write(f'        {argument.name} = reader.read_farray("{data_fmt}", {argument.length})\n')
                 elif isinstance(argument, protocol_declaration.VArrayArgument):
                     length_fmt, data_fmt = get_varray_fmts(argument)
-                    self.f.write(
-                        f'        {argument.name} = reader.read_varray("{data_fmt}", "{length_fmt}")\n'
-                    )
+                    self.f.write(f'        {argument.name} = reader.read_varray("{data_fmt}", "{length_fmt}")\n')
                 elif isinstance(argument, protocol_declaration.StringArgument):
                     length_fmt = get_string_fmt(argument)
-                    self.f.write(
-                        f'        {argument.name} = reader.read_string("{length_fmt}")\n'
-                    )
+                    self.f.write(f'        {argument.name} = reader.read_string("{length_fmt}")\n')
                 elif isinstance(argument, protocol_declaration.EnumArgument):
                     data_fmt = get_enum_fmt(argument)
-                    self.f.write(
-                        f'        {argument.name} = reader.read("{data_fmt}")\n'
-                    )
+                    self.f.write(f'        {argument.name} = reader.read("{data_fmt}")\n')
                 else:
                     raise NotImplementedError(
                         f"Unexpected argument type '{argument.__class__.__name__}' for '{argument.name}'"
@@ -552,9 +476,7 @@ class {enum_type.name}(enum.Enum):
         for member in enum_type.members:
             if member.description:
                 self.f.write(f"    # {member.description}\n")
-            self.f.write(
-                f"    {member.name} = {int_to_str(member.value, enum_type.base)}\n"
-            )
+            self.f.write(f"    {member.name} = {int_to_str(member.value, enum_type.base)}\n")
 
     def generate_struct(self, struct: protocol_declaration.Struct) -> None:
         self.f.write(

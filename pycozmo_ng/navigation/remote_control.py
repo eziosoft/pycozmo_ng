@@ -148,9 +148,7 @@ class RemoteControl:
             return
         self._stop_event.clear()
         self._prev_drive = set()
-        self._thread = threading.Thread(
-            target=self._run, name="RemoteControl", daemon=True
-        )
+        self._thread = threading.Thread(target=self._run, name="RemoteControl", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:

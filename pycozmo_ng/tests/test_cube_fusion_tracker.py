@@ -66,12 +66,8 @@ class TestCubeFusionTrackerFusion:
 
     def test_multiple_detections_same_cube(self):
         tracker = CubeFusionTracker()
-        d1 = _make_detection(
-            cube_index=0, score=0.9, position=np.array([10.0, 0.0, 300.0])
-        )
-        d2 = _make_detection(
-            cube_index=0, score=0.7, position=np.array([-10.0, 0.0, 300.0])
-        )
+        d1 = _make_detection(cube_index=0, score=0.9, position=np.array([10.0, 0.0, 300.0]))
+        d2 = _make_detection(cube_index=0, score=0.7, position=np.array([-10.0, 0.0, 300.0]))
         fused = tracker.update([d1, d2])
         assert 0 in fused
         assert fused[0]["num_faces"] == 2

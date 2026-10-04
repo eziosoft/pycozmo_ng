@@ -57,9 +57,7 @@ CAMERA_TO_BODY_OFFSET: np.ndarray = np.array([30.0, 0.0, 38.0], dtype=np.float64
 # must be a rotation, NOT a reflection. A reflection (det = -1) would flip
 # chirality and make every turn/circle render mirrored (a real-world
 # clockwise drive-out looks anticlockwise in the top-down 3D view).
-WORLD_TO_SCENE_MATRIX: np.ndarray = np.array(
-    [[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], dtype=np.float64
-)
+WORLD_TO_SCENE_MATRIX: np.ndarray = np.array([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], dtype=np.float64)
 
 
 def R_yaw(yaw_rad: float) -> np.ndarray:
@@ -157,9 +155,7 @@ def camera_to_world(
     camera_lateral_offset_mm: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Convenience: camera frame -> world frame in one step."""
-    p_body, r_body = camera_to_body(
-        position_cam, rotation_cam, head_angle_rad, camera_lateral_offset_mm
-    )
+    p_body, r_body = camera_to_body(position_cam, rotation_cam, head_angle_rad, camera_lateral_offset_mm)
     return body_to_world(p_body, r_body, robot_position, robot_yaw_rad)
 
 

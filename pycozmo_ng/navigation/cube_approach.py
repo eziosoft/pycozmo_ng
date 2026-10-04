@@ -68,9 +68,7 @@ class CubeApproach:
     ARRIVE_POS_MM = 8.0
     ARRIVE_ANG_RAD = math.radians(2.0)
 
-    def __init__(
-        self, cli, get_cube_state, drive_to_point, move_forward, spawn, carry=None
-    ):
+    def __init__(self, cli, get_cube_state, drive_to_point, move_forward, spawn, carry=None):
         self.cli = cli
         self._get_cube_state = get_cube_state
         self._drive_to_point = drive_to_point
@@ -217,9 +215,7 @@ class CubeApproach:
                         accel=30.0,
                         max_speed=30.0,
                     )
-                    logger.info(
-                        "Head tilt %.0f deg (dist %.0fmm)", self.NEAR_TILT_DEG, d
-                    )
+                    logger.info("Head tilt %.0f deg (dist %.0fmm)", self.NEAR_TILT_DEG, d)
                     return
             time.sleep(0.05)
 
@@ -242,23 +238,15 @@ class CubeApproach:
 
         age = time.monotonic() - s.updated_at
         fresh = age <= self.FRESH_TOL_S
-        msgs.append(
-            f"fresh={'ok' if fresh else 'STALE'} "
-            f"(age {age:.1f}s, conf {s.confidence:.2f})"
-        )
+        msgs.append(f"fresh={'ok' if fresh else 'STALE'} (age {age:.1f}s, conf {s.confidence:.2f})")
 
         f = self.pick_face_normal(s.position, s.rotation_matrix, rpos, ryaw)
         facing_err_rad = None if f is None else abs(wrap_pi(f[2] - ryaw))
-        facing = (
-            facing_err_rad is not None and facing_err_rad <= self.GRAB_HEADING_TOL_RAD
-        )
+        facing = facing_err_rad is not None and facing_err_rad <= self.GRAB_HEADING_TOL_RAD
         if facing_err_rad is None:
             msgs.append("facing=FAIL (no face normal resolved)")
         else:
-            msgs.append(
-                f"facing={'ok' if facing else 'WRONG'} "
-                f"(err {math.degrees(facing_err_rad):.1f} deg)"
-            )
+            msgs.append(f"facing={'ok' if facing else 'WRONG'} (err {math.degrees(facing_err_rad):.1f} deg)")
 
         dx = s.position[0] - rpos[0]
         dy = s.position[1] - rpos[1]
@@ -299,9 +287,7 @@ class CubeApproach:
         progress, the request is ignored.
         """
         if not self.approach_lock.acquire(blocking=False):
-            logger.warning(
-                "Approach busy - ignoring request for cube %d", to_cube_id(cube_idx)
-            )
+            logger.warning("Approach busy - ignoring request for cube %d", to_cube_id(cube_idx))
             return
 
         def _run_guarded(job: MotionToken) -> None:
@@ -316,14 +302,10 @@ class CubeApproach:
             self.approach_lock.release()
             raise
 
-    def _run(
-        self, job: MotionToken, cube_idx: int, cube_x: float, cube_y: float
-    ) -> None:
+    def _run(self, job: MotionToken, cube_idx: int, cube_x: float, cube_y: float) -> None:
         """Blocking implementation — runs inside the ``approach`` job."""
         try:
-            aligned = self.drive_and_align(
-                job, cube_idx, cube_x, cube_y, lower_forks=True
-            )
+            aligned = self.drive_and_align(job, cube_idx, cube_x, cube_y, lower_forks=True)
             if job.cancelled:
                 logger.info("Approach cancelled - not grabbing")
                 self.cli.stop_all_motors()
@@ -364,9 +346,7 @@ class CubeApproach:
         rx, ry = robot_pose.position.x, robot_pose.position.y
         robot_yaw = robot_pose.rotation.angle_z.radians
 
-        face = self.pick_face_normal(
-            state.position, state.rotation_matrix, (rx, ry), robot_yaw
-        )
+        face = self.pick_face_normal(state.position, state.rotation_matrix, (rx, ry), robot_yaw)
         if face is None:
             logger.warning("Could not determine approach face")
             return False
@@ -393,9 +373,7 @@ class CubeApproach:
                 # Forks down: nothing rides them — forget any carry state.
                 self.carry.clear()
 
-        self.cli.set_head_angle(
-            math.radians(self.HEAD_TILT_DEG), accel=30.0, max_speed=30.0
-        )
+        self.cli.set_head_angle(math.radians(self.HEAD_TILT_DEG), accel=30.0, max_speed=30.0)
         logger.info("Head tilt %.0f deg", self.HEAD_TILT_DEG)
 
         # Back away if too close
@@ -475,9 +453,7 @@ class CubeApproach:
         # Alignment verification with retry
         attempts = 0
         while not job.cancelled:
-            (aligned, checks, facing_err_rad, forward, lateral, _, fresh) = (
-                self._verify_grab_alignment(cube_idx)
-            )
+            (aligned, checks, facing_err_rad, forward, lateral, _, fresh) = self._verify_grab_alignment(cube_idx)
             for msg in checks:
                 logger.info("check: %s", msg)
 

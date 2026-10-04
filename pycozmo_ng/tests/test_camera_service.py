@@ -21,9 +21,7 @@ class FakeCli:
         self.calls.append(("enable_camera", enable, color, resolution))
 
     def set_camera_params(self, gain=0.0, exposure_ms=0, auto_exposure_enabled=False):
-        self.calls.append(
-            ("set_camera_params", gain, exposure_ms, auto_exposure_enabled)
-        )
+        self.calls.append(("set_camera_params", gain, exposure_ms, auto_exposure_enabled))
 
     def set_head_light(self, enable):
         self.calls.append(("set_head_light", enable))
@@ -183,9 +181,7 @@ class TestCalibrationFlow:
         """Robot-centre calibration: manual exposure, then restore."""
         service = make_service()
         service.enable()
-        service.apply_settings(
-            {"gain": 8.0, "exposure_ms": 300, "auto_exposure_enabled": False}
-        )
+        service.apply_settings({"gain": 8.0, "exposure_ms": 300, "auto_exposure_enabled": False})
         assert service.settings["gain"] == 8.0
         assert service.settings["auto_exposure_enabled"] is False
 

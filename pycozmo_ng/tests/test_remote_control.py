@@ -28,15 +28,11 @@ def _wait_until(predicate, timeout: float = 3.0) -> bool:
     return predicate()
 
 
-def _make(
-    motion: MotionController | None = None, **kwargs
-) -> tuple[RemoteControl, MagicMock]:
+def _make(motion: MotionController | None = None, **kwargs) -> tuple[RemoteControl, MagicMock]:
     cli = MagicMock()
     kwargs.setdefault("tick_hz", 100.0)
     kwargs.setdefault("idle_stop_sec", 1.0)
-    rc = RemoteControl(
-        cli, motion=motion if motion is not None else MotionController(), **kwargs
-    )
+    rc = RemoteControl(cli, motion=motion if motion is not None else MotionController(), **kwargs)
     return rc, cli
 
 

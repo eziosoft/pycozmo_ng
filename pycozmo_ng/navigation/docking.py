@@ -155,9 +155,7 @@ class Docking:
         except Exception as e:  # noqa: BLE001
             logger.exception("Dock error: %s", e)
 
-    def _reverse_until_contact(
-        self, job: MotionToken, aim_x: float, aim_y: float
-    ) -> bool:
+    def _reverse_until_contact(self, job: MotionToken, aim_x: float, aim_y: float) -> bool:
         """Reverse toward the aim point until charging starts or progress stalls.
 
         Returns True when the charger reports contact, False on cancel,

@@ -91,9 +91,7 @@ class CubeMoveDetector:
         if abs(deviation) < self.deviation:
             # At rest (or near it): blend the baseline toward the reading and
             # cancel any pending trigger.
-            self._baseline = (
-                self.alpha * accel_magnitude + (1.0 - self.alpha) * self._baseline
-            )
+            self._baseline = self.alpha * accel_magnitude + (1.0 - self.alpha) * self._baseline
             self._over_count = 0
             return False
 

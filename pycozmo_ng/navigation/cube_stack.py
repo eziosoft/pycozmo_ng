@@ -109,9 +109,7 @@ class CubeStack:
 
         lock = self._approach.approach_lock
         if not lock.acquire(blocking=False):
-            logger.warning(
-                "Stack busy - ignoring request for cube %d", to_cube_id(cube_idx)
-            )
+            logger.warning("Stack busy - ignoring request for cube %d", to_cube_id(cube_idx))
             return
 
         def _run_guarded(job: MotionToken) -> None:
@@ -130,9 +128,7 @@ class CubeStack:
     # Internal
     # ------------------------------------------------------------------
 
-    def _run(
-        self, job: MotionToken, cube_idx: int, cube_x: float, cube_y: float
-    ) -> None:
+    def _run(self, job: MotionToken, cube_idx: int, cube_x: float, cube_y: float) -> None:
         """Blocking implementation — runs inside the ``stack`` job."""
         try:
             carried_id = self.carry.cube_id if self.carry is not None else None
@@ -141,19 +137,13 @@ class CubeStack:
                 carried_id,
                 to_cube_id(cube_idx),
             )
-            aligned = self._approach.drive_and_align(
-                job, cube_idx, cube_x, cube_y, lower_forks=False
-            )
+            aligned = self._approach.drive_and_align(job, cube_idx, cube_x, cube_y, lower_forks=False)
             if not aligned:
                 if job.cancelled:
-                    logger.info(
-                        "Stack cancelled - cube %s stays on the forks", carried_id
-                    )
+                    logger.info("Stack cancelled - cube %s stays on the forks", carried_id)
                     self.cli.stop_all_motors()
                 else:
-                    logger.warning(
-                        "Stack aborted - cube %s stays on the forks", carried_id
-                    )
+                    logger.warning("Stack aborted - cube %s stays on the forks", carried_id)
                 return
             if job.cancelled:
                 logger.info("Stack cancelled - not placing")

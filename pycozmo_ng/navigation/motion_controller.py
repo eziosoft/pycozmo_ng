@@ -147,9 +147,7 @@ class MotionController:
     # Implementation hooks (used by MotionToken)
     # ------------------------------------------------------------------
 
-    def _start(
-        self, token: MotionToken, target: Callable[[MotionToken], None]
-    ) -> MotionToken:
+    def _start(self, token: MotionToken, target: Callable[[MotionToken], None]) -> MotionToken:
         def _run() -> None:
             with token:
                 target(token)
@@ -178,8 +176,6 @@ class MotionController:
             if (
                 token._parent is None
                 and self._lease == token.name
-                and not any(
-                    t.name == token.name and t._parent is None for t in self._jobs
-                )
+                and not any(t.name == token.name and t._parent is None for t in self._jobs)
             ):
                 self._lease = None

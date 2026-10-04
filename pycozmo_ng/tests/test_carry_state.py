@@ -193,9 +193,7 @@ class TestWaitForFork:
         # Regression: lift_height_mm can lag or read low while the fork is
         # physically up. Motion + settle is the "fork is up" signal; the
         # height reading must not disarm the observation.
-        det, clock, lift_mm, _, in_pos_flag = _detector(
-            lift=LIFT_DOWN, seen_age_s=0.0, in_pos=False
-        )
+        det, clock, lift_mm, _, in_pos_flag = _detector(lift=LIFT_DOWN, seen_age_s=0.0, in_pos=False)
         det.note_grab(0)
         clock.advance(0.1)
         assert det.state is CarryState.UNKNOWN  # lift travelling
@@ -209,9 +207,7 @@ class TestWaitForFork:
 
     def test_missed_grab_with_stale_lift_feedback_reads_not_carrying(self):
         # Same as above, but the cube stayed in view: the grab missed.
-        det, clock, _, cube, in_pos_flag = _detector(
-            lift=LIFT_DOWN, seen_age_s=0.0, in_pos=False
-        )
+        det, clock, _, cube, in_pos_flag = _detector(lift=LIFT_DOWN, seen_age_s=0.0, in_pos=False)
         det.note_grab(0)
         assert det.state is CarryState.UNKNOWN  # lift travelling
 

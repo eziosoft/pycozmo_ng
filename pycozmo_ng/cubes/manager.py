@@ -27,8 +27,7 @@ class CubeManager:
         cube_id = self._cube_id_for_factory(pkt.factory_id)
         if cube_id is None:
             logger_cubes.warning(
-                "ObjectConnectionState for unknown factory_id 0x%08x "
-                "(connected=%s, object_id=%s)",
+                "ObjectConnectionState for unknown factory_id 0x%08x (connected=%s, object_id=%s)",
                 pkt.factory_id,
                 pkt.connected,
                 pkt.object_id,
@@ -36,9 +35,7 @@ class CubeManager:
             return
         if pkt.connected:
             self.ct.object_id_map[cube_id] = pkt.object_id
-            self.ct.move_detectors.setdefault(
-                cube_id, CubeMoveDetector()
-            ).on_connection(time.time())
+            self.ct.move_detectors.setdefault(cube_id, CubeMoveDetector()).on_connection(time.time())
             logger_cubes.debug(
                 "Cube %d connected: object_id=%s",
                 cube_id,

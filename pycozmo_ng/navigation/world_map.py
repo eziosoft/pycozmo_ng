@@ -224,11 +224,7 @@ class WorldMap:
         """
         pos = np.asarray(position, dtype=np.float64).reshape(3)
         with self._lock:
-            if (
-                origin_id is not None
-                and self._robot_origin_id is not None
-                and origin_id != self._robot_origin_id
-            ):
+            if origin_id is not None and self._robot_origin_id is not None and origin_id != self._robot_origin_id:
                 logger.info("WorldMap: localization origin changed — resetting map")
                 self._cubes.clear()
                 self._path_points.clear()
@@ -246,9 +242,7 @@ class WorldMap:
     def add_path_point(self, position: np.ndarray) -> None:
         """Append a world-frame position (mm) to the path trail."""
         with self._lock:
-            self._path_points.append(
-                np.asarray(position, dtype=np.float64).reshape(3).copy()
-            )
+            self._path_points.append(np.asarray(position, dtype=np.float64).reshape(3).copy())
 
     def reset_map(self) -> None:
         """Clear all entities and the path (fresh world)."""
@@ -299,9 +293,7 @@ class WorldMap:
         if confidence < self.confidence_floor:
             return
 
-        face_idx, face_rotation = (
-            _parse_rotation_source(rotation_source) if rotation_source else (-1, 0)
-        )
+        face_idx, face_rotation = _parse_rotation_source(rotation_source) if rotation_source else (-1, 0)
 
         with self._lock:
             pos_world, rot_world = camera_to_world(
@@ -466,10 +458,7 @@ class WorldMap:
     def get_cubes(self) -> dict[int, CubeState]:
         """Return a copy of the fused cube states, keyed by cube index (0-2)."""
         with self._lock:
-            return {
-                cube_index: self._copy_cube_state(cube_state)
-                for cube_index, cube_state in self._cubes.items()
-            }
+            return {cube_index: self._copy_cube_state(cube_state) for cube_index, cube_state in self._cubes.items()}
 
     def get_cube(self, cube_index: int) -> CubeState | None:
         """Return a copy of one fused cube state, or None if unknown.

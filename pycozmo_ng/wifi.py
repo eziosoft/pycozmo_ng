@@ -66,9 +66,7 @@ def connect_to_cozmo_wifi():
             time.sleep(2)  # Wait for DHCP
             return True
         else:
-            logger.warning(
-                "Wi-Fi connect to %s failed: %s", ssid, result.stderr.strip()
-            )
+            logger.warning("Wi-Fi connect to %s failed: %s", ssid, result.stderr.strip())
             return False
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         logger.warning("Wi-Fi connect to %s error: %s", ssid, e)

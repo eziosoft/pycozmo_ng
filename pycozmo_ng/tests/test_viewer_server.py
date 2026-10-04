@@ -83,9 +83,7 @@ class TestStateBuilderOptimization:
 
         wm = WorldMap()
         wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=True)
-        wm.update_cube_measurement(
-            0, [0.0, 0.0, 200.0], __import__("numpy").eye(3), 0.9, 0.0
-        )
+        wm.update_cube_measurement(0, [0.0, 0.0, 200.0], __import__("numpy").eye(3), 0.9, 0.0)
 
         state1 = wm.get_world_state()
         state2 = wm.get_world_state()
@@ -129,10 +127,7 @@ class TestWebViewerServerInit:
         # Simulate interval elapsed
         server._last_broadcast_time = 0.0
         now = time.time()
-        if (
-            now - server._last_broadcast_time >= server.broadcast_interval_s
-            and server._dirty
-        ):
+        if now - server._last_broadcast_time >= server.broadcast_interval_s and server._dirty:
             server._dirty = False
         assert server._dirty is False
 

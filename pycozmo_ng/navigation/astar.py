@@ -92,14 +92,10 @@ class AStarPlanner:
         start_col, start_row = self._world_to_grid(start_x, start_y)
         goal_col, goal_row = self._world_to_grid(goal_x, goal_y)
 
-        if not self._in_bounds(start_col, start_row) or not self._in_bounds(
-            goal_col, goal_row
-        ):
+        if not self._in_bounds(start_col, start_row) or not self._in_bounds(goal_col, goal_row):
             return None
 
-        if not self._is_traversable(start_row, start_col) or not self._is_traversable(
-            goal_row, goal_col
-        ):
+        if not self._is_traversable(start_row, start_col) or not self._is_traversable(goal_row, goal_col):
             return None
 
         # Early exit: direct line of sight
@@ -215,9 +211,7 @@ class AStarPlanner:
         heapq.heappush(open_set, (0, 0, start_col, start_row))
 
         g_score: dict[tuple[int, int], float] = {(start_col, start_row): 0.0}
-        came_from: dict[tuple[int, int], tuple[int, int] | None] = {
-            (start_col, start_row): None
-        }
+        came_from: dict[tuple[int, int], tuple[int, int] | None] = {(start_col, start_row): None}
         closed: set[tuple[int, int]] = set()
 
         while open_set:

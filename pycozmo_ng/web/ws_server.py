@@ -61,8 +61,7 @@ class WSServer:
     ) -> None:
         if not HAS_WEBSOCKETS:
             raise ImportError(
-                "The 'websockets' package is required for WebViewerServer. "
-                "Install it with: pip install websockets"
+                "The 'websockets' package is required for WebViewerServer. Install it with: pip install websockets"
             )
         self.host = host
         self.port = port
@@ -117,9 +116,7 @@ class WSServer:
             logger.info("Web viewer HTTP at http://%s:%s", self.host, self.port + 1)
         else:
             logger.warning("aiohttp not installed — HTTP serving disabled")
-            logger.warning(
-                "Open the HTML file directly or install aiohttp: pip install aiohttp"
-            )
+            logger.warning("Open the HTML file directly or install aiohttp: pip install aiohttp")
 
         bind_note = " (all interfaces)" if self.host == "0.0.0.0" else ""
         logger.info("Web viewer WS at ws://%s:%s%s", self.host, self.port, bind_note)

@@ -48,9 +48,7 @@ class Angle:
         if radians is None and degrees is None:
             raise ValueError("Expected either the degrees or radians keyword argument")
         if radians and degrees:
-            raise ValueError(
-                "Expected either the degrees or radians keyword argument, not both"
-            )
+            raise ValueError("Expected either the degrees or radians keyword argument, not both")
 
         if degrees is not None:
             radians = degrees * math.pi / 180
@@ -140,9 +138,7 @@ class Distance:
         if mm is None and inches is None:
             raise ValueError("Expected either the mm or inches keyword argument")
         if mm and inches:
-            raise ValueError(
-                "Expected either the mm or inches keyword argument, not both"
-            )
+            raise ValueError("Expected either the mm or inches keyword argument, not both")
 
         if inches is not None:
             mm = inches * 25.4
@@ -384,7 +380,9 @@ class Matrix44:
         return (
             "<{}: "
             "{:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} "
-            "{:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}>".format(self.__class__.__name__, *self.in_row_order)
+            "{:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}>".format(
+                self.__class__.__name__, *self.in_row_order
+            )
         )
 
     @property
@@ -560,21 +558,12 @@ class Quaternion:
         angle_z: Angle | None = None,
     ):
 
-        is_quaternion = (
-            (q0 is not None)
-            and (q1 is not None)
-            and (q2 is not None)
-            and (q3 is not None)
-        )
+        is_quaternion = (q0 is not None) and (q1 is not None) and (q2 is not None) and (q3 is not None)
 
         if not is_quaternion and angle_z is None:
-            raise ValueError(
-                "Expected either the q0 q1 q2 and q3 or angle_z keyword arguments"
-            )
+            raise ValueError("Expected either the q0 q1 q2 and q3 or angle_z keyword arguments")
         if is_quaternion and angle_z:
-            raise ValueError(
-                "Expected either the q0 q1 q2 and q3 or angle_z keyword argument, not both"
-            )
+            raise ValueError("Expected either the q0 q1 q2 and q3 or angle_z keyword argument, not both")
         if angle_z is not None:
             if not isinstance(angle_z, Angle):
                 raise TypeError("Unsupported type for angle_z expected Angle")
@@ -588,9 +577,7 @@ class Quaternion:
     def __repr__(self):
         return f"<{self.__class__.__name__} q0: {self.q0:.2f} q1: {self.q1:.2f} q2: {self.q2:.2f} q3: {self.q3:.2f} (angle_z: {self.angle_z})>"
 
-    def to_matrix(
-        self, pos_x: float = 0.0, pos_y: float = 0.0, pos_z: float = 0.0
-    ) -> Matrix44:
+    def to_matrix(self, pos_x: float = 0.0, pos_y: float = 0.0, pos_z: float = 0.0) -> Matrix44:
         """
         Convert the Quaternion to a 4x4 matrix representing this rotation.
 
@@ -838,11 +825,7 @@ class Pose:
 
         Poses are comparable if they're valid and having matching origin IDs.
         """
-        return (
-            self.is_valid
-            and other_pose.is_valid
-            and (self.origin_id == other_pose.origin_id)
-        )
+        return self.is_valid and other_pose.is_valid and (self.origin_id == other_pose.origin_id)
 
     @property
     def is_valid(self) -> bool:

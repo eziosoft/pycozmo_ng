@@ -57,11 +57,7 @@ class MjpegEndpoint:
 
                 last_frame_id = frame_id
                 jpeg = await asyncio.to_thread(encode_jpeg, image, self._encode_quality)
-                header = (
-                    f"--{boundary}\r\n"
-                    f"Content-Type: image/jpeg\r\n"
-                    f"Content-Length: {len(jpeg)}\r\n\r\n"
-                ).encode()
+                header = (f"--{boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpeg)}\r\n\r\n").encode()
                 await response.write(header + jpeg + b"\r\n")
             except (ConnectionResetError, ConnectionError, asyncio.CancelledError):
                 break

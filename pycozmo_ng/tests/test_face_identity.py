@@ -110,9 +110,7 @@ class TestFaceEvents:
             frame = ident.update([det])
             dispatcher.dispatch_face_events(cli, [det], frame)
 
-        observed = [
-            c for c in cli.dispatch.call_args_list if c.args[0] is event.EvtFaceObserved
-        ]
+        observed = [c for c in cli.dispatch.call_args_list if c.args[0] is event.EvtFaceObserved]
         assert len(observed) == 1
 
     def test_reset_clears_throttle(self):

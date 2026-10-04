@@ -18,9 +18,7 @@ class TestMsgRouterDispatch:
         self.wm = MagicMock()
         # Only world-map key 0 ("cube_1") exists.
         self.wm.get_cube.side_effect = lambda idx: (
-            SimpleNamespace(position=np.array([100.0, 200.0, 0.0]))
-            if idx == 0
-            else None
+            SimpleNamespace(position=np.array([100.0, 200.0, 0.0])) if idx == 0 else None
         )
         self.router = MsgRouter(world_map=self.wm)
 

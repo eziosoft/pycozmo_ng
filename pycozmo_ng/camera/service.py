@@ -77,9 +77,7 @@ class CameraService:
         self.cli: Any = None  # pycozmo_ng Client, injected by Brain once connected
         self._lock = threading.Lock()
         self._settings: dict[str, Any] = dict(self.DEFAULTS)
-        self._resolution: protocol_encoder.ImageResolution = self.RESOLUTIONS[
-            self.DEFAULTS["resolution"]
-        ]
+        self._resolution: protocol_encoder.ImageResolution = self.RESOLUTIONS[self.DEFAULTS["resolution"]]
         self._active = False
         self._enabled_at: float | None = None
 
@@ -157,9 +155,7 @@ class CameraService:
         known = {key: value for key, value in settings.items() if key in self.DEFAULTS}
         unknown = set(settings) - set(self.DEFAULTS)
         if unknown:
-            logger.debug(
-                "Ignoring unknown camera setting(s): %s", ", ".join(sorted(unknown))
-            )
+            logger.debug("Ignoring unknown camera setting(s): %s", ", ".join(sorted(unknown)))
         merged = {**self.DEFAULTS, **base, **known}
         merged["auto_exposure_enabled"] = bool(merged["auto_exposure_enabled"])
         merged["gain"] = float(merged["gain"])
@@ -191,8 +187,7 @@ class CameraService:
             self._active = True
             self._enabled_at = time.time()
         logger.info(
-            "Camera configured: %s, %s, gain=%s, exposure=%sms, auto_exposure=%s, "
-            "head_light=%s",
+            "Camera configured: %s, %s, gain=%s, exposure=%sms, auto_exposure=%s, head_light=%s",
             settings["resolution"],
             "color" if settings["color"] else "grayscale",
             settings["gain"],

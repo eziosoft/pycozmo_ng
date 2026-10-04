@@ -76,9 +76,9 @@ class TestStop:
 
         nav.stop()
 
-        assert _wait_until(
-            lambda: Navigator.JOB_TEST_MODE not in nav.motion.active_names
-        ), "test-mode job kept running after stop()"
+        assert _wait_until(lambda: Navigator.JOB_TEST_MODE not in nav.motion.active_names), (
+            "test-mode job kept running after stop()"
+        )
 
     def test_stop_interrupts_active_closed_loop_drive(self):
         nav, cli = _make_nav()  # pose at origin, target 1000 mm away
@@ -116,9 +116,7 @@ class TestStop:
         nav.ds.dock_pose = cli.pose
 
         nav.dock()
-        assert _wait_until(lambda: Docking.JOB_DOCK in nav.motion.active_names), (
-            "dock job never registered"
-        )
+        assert _wait_until(lambda: Docking.JOB_DOCK in nav.motion.active_names), "dock job never registered"
 
         nav.stop()
 
@@ -158,15 +156,13 @@ class TestNavigateCancel:
         cli.go_to_pose.side_effect = lambda *a, **k: time.sleep(0.5) or True
 
         nav.navigate_to(100.0, 0.0)
-        assert _wait_until(lambda: Navigator.JOB_NAVIGATE in nav.motion.active_names), (
-            "navigate job never registered"
-        )
+        assert _wait_until(lambda: Navigator.JOB_NAVIGATE in nav.motion.active_names), "navigate job never registered"
 
         nav.navigate_to(None)
 
-        assert _wait_until(
-            lambda: Navigator.JOB_NAVIGATE not in nav.motion.active_names
-        ), "navigate job kept running after navigate-cancel"
+        assert _wait_until(lambda: Navigator.JOB_NAVIGATE not in nav.motion.active_names), (
+            "navigate job kept running after navigate-cancel"
+        )
 
     def test_router_cancel_reaches_navigator(self):
         """End-to-end: navigate_cancel message stops the motors.

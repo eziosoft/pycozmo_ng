@@ -68,10 +68,7 @@ class FloorPipeline:
                 mm_per_pixel=mm_per_pixel,
                 edge_margin_px=floor_edge_margin_px,
             )
-            logger.info(
-                f"Floor projection enabled: "
-                f"{floor_size_mm[0]}x{floor_size_mm[1]}mm @ {mm_per_pixel} mm/px"
-            )
+            logger.info(f"Floor projection enabled: {floor_size_mm[0]}x{floor_size_mm[1]}mm @ {mm_per_pixel} mm/px")
 
         # Occupancy map
         self.occupancy_map: OccupancyMap | None = None

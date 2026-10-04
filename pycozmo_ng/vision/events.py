@@ -59,9 +59,7 @@ class DetectionEventDispatcher:
         if self._obs_frame_counter % self._obs_throttle == 0:
             cli.dispatch(event.EvtCubeObserved, cli, detections)
 
-    def dispatch_face_events(
-        self, cli, detections: list[FaceDetection], face_frame: FaceFrame
-    ) -> None:
+    def dispatch_face_events(self, cli, detections: list[FaceDetection], face_frame: FaceFrame) -> None:
         """Dispatch face detection events (detected, observed, lost).
 
         Args:

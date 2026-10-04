@@ -165,9 +165,7 @@ class DetectionPipeline:
         WorldMap, so there is nothing to do here.
         """
 
-    def detect_cubes(
-        self, img_bgr: np.ndarray, head_angle_rad: float = 0.0
-    ) -> list[CubeDetection]:
+    def detect_cubes(self, img_bgr: np.ndarray, head_angle_rad: float = 0.0) -> list[CubeDetection]:
         """
         Detect cubes in the given camera image.
 
@@ -189,9 +187,7 @@ class DetectionPipeline:
 
         return detections
 
-    def _detect_cubes(
-        self, img_bgr: np.ndarray, head_angle_rad: float = 0.0
-    ) -> list[CubeDetection]:
+    def _detect_cubes(self, img_bgr: np.ndarray, head_angle_rad: float = 0.0) -> list[CubeDetection]:
         """
         Detect cubes using the injected detector with 3D tracking.
 
@@ -209,19 +205,11 @@ class DetectionPipeline:
             # Robot center detection: measured exactly once during startup
             # calibration (head at max-down). Once a measurement succeeds the
             # value is remembered and detection never runs again.
-            if (
-                not self._robot_center_measured
-                and self.robot_center_detector is not None
-            ):
+            if not self._robot_center_measured and self.robot_center_detector is not None:
                 self.robot_center_detector.head_angle_rad = head_angle_rad
                 self.robot_center_result = self.robot_center_detector.detect(img_bgr)
-                if (
-                    self.robot_center_result is not None
-                    and self.robot_center_result.detected
-                ):
-                    self._camera_lateral_offset_mm = (
-                        self.robot_center_result.lateral_offset_mm
-                    )
+                if self.robot_center_result is not None and self.robot_center_result.detected:
+                    self._camera_lateral_offset_mm = self.robot_center_result.lateral_offset_mm
                     self._robot_center_measured = True
 
             # Detect marker faces
@@ -324,9 +312,7 @@ def load_marker_templates(marker_dir: str | None = None) -> list[np.ndarray]:
         offset = 18
         img = img[offset : h - offset, offset : w - offset]
         img = cv2.resize(img, (26, 26), interpolation=cv2.INTER_AREA)
-        img_with_border = cv2.copyMakeBorder(
-            img, 3, 3, 3, 3, cv2.BORDER_CONSTANT, value=255
-        )
+        img_with_border = cv2.copyMakeBorder(img, 3, 3, 3, 3, cv2.BORDER_CONSTANT, value=255)
         target_markers.append(img_with_border)
 
     if not target_markers:

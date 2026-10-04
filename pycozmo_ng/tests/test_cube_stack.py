@@ -180,9 +180,7 @@ class TestStackPlacement:
 
         release_lookup.set()
         deadline = time.monotonic() + 2.0
-        while (
-            CubeStack.JOB_STACK in _MOTION.active_names and time.monotonic() < deadline
-        ):
+        while CubeStack.JOB_STACK in _MOTION.active_names and time.monotonic() < deadline:
             time.sleep(0.01)
         assert CubeStack.JOB_STACK not in _MOTION.active_names
 
@@ -226,9 +224,7 @@ class TestStackEntry:
 
     def test_refuses_while_another_visit_is_in_flight(self):
         calls, spawn = self._recording_spawn()
-        stack, approach = _make_stack(
-            carry=_fake_carry(on_forks=True, cube_id=1), spawn=spawn
-        )
+        stack, approach = _make_stack(carry=_fake_carry(on_forks=True, cube_id=1), spawn=spawn)
         approach.approach_lock.acquire(blocking=False)  # simulate in-flight
         try:
             stack.stack(1, 0.0, 300.0)
@@ -238,9 +234,7 @@ class TestStackEntry:
 
     def test_starts_as_a_stack_job_and_holds_the_visit_lock(self):
         calls, spawn = self._recording_spawn()
-        stack, approach = _make_stack(
-            carry=_fake_carry(on_forks=True, cube_id=1), spawn=spawn
-        )
+        stack, approach = _make_stack(carry=_fake_carry(on_forks=True, cube_id=1), spawn=spawn)
         stack.stack(1, 0.0, 300.0)
         assert [name for name, _ in calls] == [CubeStack.JOB_STACK]
         # The visit lock is held for the (not yet run) job...
@@ -310,9 +304,7 @@ class TestNavigatorRouting:
 
     def test_stack_cube_resolves_and_routes(self):
         nav = self._nav(self._carry(on_forks=True, cube_id=1))
-        nav.world_map.get_cube.return_value = SimpleNamespace(
-            position=np.array([50.0, 300.0, 0.0])
-        )
+        nav.world_map.get_cube.return_value = SimpleNamespace(position=np.array([50.0, 300.0, 0.0]))
         assert nav.stack_cube(2) is True
         nav.world_map.get_cube.assert_called_once_with(1)  # world index
         nav._cube_stack.stack.assert_called_once_with(1, 50.0, 300.0)

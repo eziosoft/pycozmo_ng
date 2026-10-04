@@ -150,9 +150,7 @@ class Navigator:
     # Click-to-navigate (COZMO-28 / COZMO-30)
     # ------------------------------------------------------------------
 
-    def navigate_to(
-        self, world_forward: float | None, world_left: float | None = None
-    ) -> None:
+    def navigate_to(self, world_forward: float | None, world_left: float | None = None) -> None:
         """Navigate to a world position — or cancel the active navigation.
 
         ``world_forward`` = X (Anki frame), ``world_left`` = Y (Anki frame).
@@ -194,9 +192,7 @@ class Navigator:
         dy = world_left - robot_y
         dist = math.sqrt(dx * dx + dy * dy)
 
-        logger.info(
-            "Navigating to (%.0f, %.0f) - dist=%.0fmm", world_forward, world_left, dist
-        )
+        logger.info("Navigating to (%.0f, %.0f) - dist=%.0fmm", world_forward, world_left, dist)
 
         def _navigate(job: MotionToken) -> None:
             try:
@@ -396,9 +392,7 @@ class Navigator:
             world_map = self.world_map
             self._cube_approach = CubeApproach(
                 cli=self.cli,
-                get_cube_state=lambda idx: (
-                    world_map.get_cubes().get(idx) if world_map is not None else None
-                ),
+                get_cube_state=lambda idx: world_map.get_cubes().get(idx) if world_map is not None else None,
                 drive_to_point=self.drive_to_point,
                 move_forward=self._move_forward,
                 spawn=self.motion.spawn,
@@ -472,11 +466,7 @@ class Navigator:
             logger.warning("Approach: no robot connected")
             return
         carry = self.carry
-        if (
-            carry is not None
-            and carry.on_forks
-            and to_cube_id(cube_idx) != carry.cube_id
-        ):
+        if carry is not None and carry.on_forks and to_cube_id(cube_idx) != carry.cube_id:
             self._get_cube_stack().stack(cube_idx, cube_x, cube_y)
             return
         ca = self._get_cube_approach()

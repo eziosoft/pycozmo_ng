@@ -51,9 +51,7 @@ class TestGetWorldStateEfficiency:
         """Path points should respect max_path_points."""
         wm = WorldMap(max_path_points=10)
         for i in range(100):
-            wm.update_robot_pose(
-                [float(i), 0.0, 0.0], 0.0, origin_id=1, record_path=True
-            )
+            wm.update_robot_pose([float(i), 0.0, 0.0], 0.0, origin_id=1, record_path=True)
 
         result = wm.get_world_state()
         assert len(result["path_points"]) == 10
@@ -62,9 +60,7 @@ class TestGetWorldStateEfficiency:
         """get_world_state should complete quickly even with many path points."""
         wm = WorldMap(max_path_points=5000)
         for i in range(5000):
-            wm.update_robot_pose(
-                [float(i), 0.0, 0.0], 0.0, origin_id=1, record_path=True
-            )
+            wm.update_robot_pose([float(i), 0.0, 0.0], 0.0, origin_id=1, record_path=True)
         wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
 
         start = time.perf_counter()
@@ -72,9 +68,7 @@ class TestGetWorldStateEfficiency:
             wm.get_world_state()
         elapsed = time.perf_counter() - start
 
-        print(
-            f"100 calls to get_world_state took {elapsed:.3f}s ({elapsed / 100 * 1000:.1f}ms each)"
-        )
+        print(f"100 calls to get_world_state took {elapsed:.3f}s ({elapsed / 100 * 1000:.1f}ms each)")
         assert elapsed < 5.0, f"Too slow: {elapsed:.2f}s for 100 calls"
 
 

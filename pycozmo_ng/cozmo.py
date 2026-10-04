@@ -248,10 +248,7 @@ class WorldMapAPI:
     @property
     def cubes(self) -> dict[int, CubeState]:
         """Get all known cube poses, keyed by cube ID (1-3)."""
-        return {
-            to_cube_id(cube_index): state
-            for cube_index, state in self._world_map.get_cubes().items()
-        }
+        return {to_cube_id(cube_index): state for cube_index, state in self._world_map.get_cubes().items()}
 
     @property
     def path(self):
@@ -481,9 +478,7 @@ class Cozmo:
 
     def set_head_angle(self, angle_deg: float, **kwargs):
         """Set head angle in degrees."""
-        self._cli.set_head_angle(
-            pycozmo_ng.util.Angle(degrees=angle_deg).radians, **kwargs
-        )
+        self._cli.set_head_angle(pycozmo_ng.util.Angle(degrees=angle_deg).radians, **kwargs)
 
     def set_lift_height(self, height_mm: float, **kwargs):
         """Set lift height in mm."""
@@ -590,14 +585,10 @@ class Cozmo:
         logger.info("Calibrating robot center (head to max-down)...")
 
         # Temporarily switch to manual exposure for calibration
-        self._brain.camera.apply_settings(
-            {"gain": 8.0, "exposure_ms": 300, "auto_exposure_enabled": False}
-        )
+        self._brain.camera.apply_settings({"gain": 8.0, "exposure_ms": 300, "auto_exposure_enabled": False})
         time.sleep(2.0)
 
-        self._cli.set_head_angle(
-            pycozmo_ng.robot.MIN_HEAD_ANGLE.radians, accel=30.0, max_speed=30.0
-        )
+        self._cli.set_head_angle(pycozmo_ng.robot.MIN_HEAD_ANGLE.radians, accel=30.0, max_speed=30.0)
         time.sleep(3.0)
 
         # Collect multiple detections and average them

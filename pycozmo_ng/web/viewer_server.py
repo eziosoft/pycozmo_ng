@@ -168,9 +168,7 @@ class WebViewerServer:
         self._latest_floor_image = Image.fromarray(rgb)
         self._floor_image_id += 1
 
-    def push_occupancy_grid(
-        self, grid_image, origin_x: float = 0.0, origin_y: float = 0.0
-    ) -> None:
+    def push_occupancy_grid(self, grid_image, origin_x: float = 0.0, origin_y: float = 0.0) -> None:
         """Publish the occupancy grid as a base64-encoded PNG for WebSocket."""
         import base64
 
@@ -209,9 +207,7 @@ class WebViewerServer:
         """Stop the background server."""
         if self._ws_server.loop and self._ws_server.loop.is_running():
             try:
-                asyncio.run_coroutine_threadsafe(
-                    self._ws_server.shutdown(), self._ws_server.loop
-                )
+                asyncio.run_coroutine_threadsafe(self._ws_server.shutdown(), self._ws_server.loop)
             except RuntimeError:
                 pass
 

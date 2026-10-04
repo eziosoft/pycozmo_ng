@@ -55,9 +55,7 @@ class Client(event.Dispatcher):
         self.conn.add_child_dispatcher(self)
         self.anim_controller = anim_controller.AnimationController(self)
         self.anim_controller.enable_animations(auto_initialize and enable_animations)
-        self.anim_controller.enable_procedural_face(
-            auto_initialize and enable_animations and enable_procedural_face
-        )
+        self.anim_controller.enable_procedural_face(auto_initialize and enable_animations and enable_procedural_face)
 
         self.serial_number_head = None
         self.robot_fw_sig: dict[str, Any] | None = None
@@ -67,9 +65,7 @@ class Client(event.Dispatcher):
         # Robot state
         # Heading in X-Y plane.
         self.pose_frame_id = 0
-        self.pose = util.Pose(
-            0.0, 0.0, 0.0, angle_z=util.Angle(radians=0.0), origin_id=1
-        )
+        self.pose = util.Pose(0.0, 0.0, 0.0, angle_z=util.Angle(radians=0.0), origin_id=1)
         self.pose_pitch = util.Angle(radians=0.0)
         # Firmware path execution — the path state machine (settle, event-id
         # allocation, ClearPath → Append… → ExecutePath, build-and-wait) and
@@ -111,17 +107,13 @@ class Client(event.Dispatcher):
     def start(self) -> None:
         logger.debug("Starting client...")
         self.add_handler(protocol_encoder.HardwareInfo, self._on_hardware_info)
-        self.add_handler(
-            protocol_encoder.FirmwareSignature, self._on_firmware_signature
-        )
+        self.add_handler(protocol_encoder.FirmwareSignature, self._on_firmware_signature)
         self.add_handler(protocol_encoder.BodyInfo, self._on_body_info)
         self.add_handler(protocol_encoder.ImageChunk, self._on_image_chunk)
         self.add_handler(protocol_encoder.RobotState, self._on_robot_state)
         self.add_handler(protocol_encoder.AnimationState, self._on_animation_state)
         self.add_handler(protocol_encoder.ObjectAvailable, self._on_object_available)
-        self.add_handler(
-            protocol_encoder.ObjectConnectionState, self._on_object_connection_state
-        )
+        self.add_handler(protocol_encoder.ObjectConnectionState, self._on_object_connection_state)
         self.add_handler(protocol_encoder.DebugData, self._on_debug_data)
         self.add_handler(event.EvtRobotPickedUpChange, self._on_robot_picked_up)
         self.add_handler(event.EvtRobotWheelsMovingChange, self._on_robot_moving)
@@ -172,9 +164,7 @@ class Client(event.Dispatcher):
         self.robot_fw_sig = sig
         logger.info("Firmware version %s.", sig["version"])
         if sig.get("build") == "FACTORY":
-            logger.warning(
-                "Factory/recovery firmware detected. Functionality is degraded."
-            )
+            logger.warning("Factory/recovery firmware detected. Functionality is degraded.")
         elif sig["version"] < protocol_declaration.FIRMWARE_VERSION:
             logger.warning(
                 f"Old firmware detected. PyCozmo-NG works best with v{protocol_declaration.FIRMWARE_VERSION}. Functionality may be degraded."
@@ -236,9 +226,7 @@ class Client(event.Dispatcher):
         try:
             if not done.wait(timeout):
                 raise exception.Timeout(
-                    "Timed out waiting for factory_ids: {}".format(
-                        ", ".join(f"0x{f:08x}" for f in remaining)
-                    )
+                    "Timed out waiting for factory_ids: {}".format(", ".join(f"0x{f:08x}" for f in remaining))
                 )
         finally:
             self.del_handler(protocol_encoder.ObjectConnectionState, _handler)
@@ -284,22 +272,15 @@ class Client(event.Dispatcher):
             self._reset_partial_state()
             self._partial_image_timestamp = pkt.frame_timestamp
             self._partial_image_id = pkt.image_id
-            self._partial_image_encoding = protocol_encoder.ImageEncoding(
-                pkt.image_encoding
-            )
-            self._partial_image_resolution = protocol_encoder.ImageResolution(
-                pkt.image_resolution
-            )
+            self._partial_image_encoding = protocol_encoder.ImageEncoding(pkt.image_encoding)
+            self._partial_image_resolution = protocol_encoder.ImageResolution(pkt.image_resolution)
 
             image_resolution = protocol_encoder.ImageResolution(pkt.image_resolution)
             width, height = camera.RESOLUTIONS[image_resolution]
             max_size = width * height * 3  # 3 bytes per pixel (RGB)
             self._partial_data = np.empty(max_size, dtype=np.uint8)
 
-        if (
-            pkt.chunk_id != (self._last_chunk_id + 1)
-            or pkt.image_id != self._partial_image_id
-        ):
+        if pkt.chunk_id != (self._last_chunk_id + 1) or pkt.image_id != self._partial_image_id:
             logger.debug(
                 "Image missing chunks - discarding (last_chunk_id=%d partial_image_id=%s).",
                 self._last_chunk_id,
@@ -309,9 +290,7 @@ class Client(event.Dispatcher):
             return
 
         offset = self._partial_size
-        self._partial_data[offset : offset + len(pkt.data)] = np.frombuffer(
-            pkt.data, dtype=np.uint8
-        )
+        self._partial_data[offset : offset + len(pkt.data)] = np.frombuffer(pkt.data, dtype=np.uint8)
         self._partial_size += len(pkt.data)
         self._last_chunk_id = pkt.chunk_id
 
@@ -330,10 +309,7 @@ class Client(event.Dispatcher):
         # The first byte of the image is whether or not it is in color
         is_color_image = data[0] != 0
 
-        if (
-            self._partial_image_encoding
-            == protocol_encoder.ImageEncoding.JPEGMinimizedGray
-        ):
+        if self._partial_image_encoding == protocol_encoder.ImageEncoding.JPEGMinimizedGray:
             width, height = camera.RESOLUTIONS[self._partial_image_resolution]
 
             if is_color_image:
@@ -438,9 +414,7 @@ class Client(event.Dispatcher):
                 obj.factory_id,
             )
 
-    def _on_object_connection_state(
-        self, cli, pkt: protocol_encoder.ObjectConnectionState
-    ):
+    def _on_object_connection_state(self, cli, pkt: protocol_encoder.ObjectConnectionState):
         del cli
         if pkt.connected:
             # Connected
@@ -582,20 +556,14 @@ class Client(event.Dispatcher):
             should_interrupt=should_interrupt,
         )
 
-    def set_backpack_lights(
-        self, left_light, front_light, center_light, rear_light, right_light
-    ) -> None:
-        pkt: protocol_encoder.Packet = protocol_encoder.LightStateCenter(
-            states=(front_light, center_light, rear_light)
-        )
+    def set_backpack_lights(self, left_light, front_light, center_light, rear_light, right_light) -> None:
+        pkt: protocol_encoder.Packet = protocol_encoder.LightStateCenter(states=(front_light, center_light, rear_light))
         self.conn.send(pkt)
         pkt = protocol_encoder.LightStateSide(states=(left_light, right_light))
         self.conn.send(pkt)
 
     def set_center_backpack_lights(self, light) -> None:
-        self.set_backpack_lights(
-            lights.off_light, light, light, light, lights.off_light
-        )
+        self.set_backpack_lights(lights.off_light, light, light, light, lights.off_light)
 
     def set_all_backpack_lights(self, light) -> None:
         self.set_backpack_lights(light, light, light, light, light)
@@ -635,11 +603,7 @@ class Client(event.Dispatcher):
             image_send_mode = protocol_encoder.ImageSendMode.Stream
         else:
             image_send_mode = protocol_encoder.ImageSendMode.Off
-        image_resolution = (
-            resolution
-            if resolution is not None
-            else protocol_encoder.ImageResolution.QVGA
-        )
+        image_resolution = resolution if resolution is not None else protocol_encoder.ImageResolution.QVGA
         pkt: protocol_encoder.Packet = protocol_encoder.EnableCamera(
             image_send_mode=image_send_mode,
             image_resolution=image_resolution,

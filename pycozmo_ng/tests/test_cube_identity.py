@@ -58,9 +58,7 @@ class TestCubeLabel:
         assert cube_label(0) == "cube_1"
         assert cube_label(2) == "cube_3"
 
-    @pytest.mark.parametrize(
-        "label", ["cube_0", "cube_4", "cube_99", "1", "", "cube_", "cube_x"]
-    )
+    @pytest.mark.parametrize("label", ["cube_0", "cube_4", "cube_99", "1", "", "cube_", "cube_x"])
     def test_bad_labels_raise(self, label):
         with pytest.raises(ValueError):
             parse_cube_label(label)

@@ -40,9 +40,7 @@ def test_mid_range_follows_the_lift_geometry():
 
 def test_out_of_range_readings_are_clamped_to_travel():
     # Never a negative or over-tall height, whatever the firmware sends.
-    assert robot.lift_position_from_raw(-50.0).height.mm == pytest.approx(
-        32.0, abs=1e-9
-    )
+    assert robot.lift_position_from_raw(-50.0).height.mm == pytest.approx(32.0, abs=1e-9)
     assert robot.lift_position_from_raw(50.0).height.mm == pytest.approx(92.0, abs=1e-9)
 
 

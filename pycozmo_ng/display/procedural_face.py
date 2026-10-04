@@ -162,9 +162,7 @@ class ProceduralEye(ProceduralBase):
         self.x_offset = float(x_offset)
         self.corner_radius = self.width / 20 + self.height / 10
         self.lids = (
-            ProceduralLid(
-                params, offset + 13, -self.half_eye_height, 0.0, self.width, self.height
-            ),
+            ProceduralLid(params, offset + 13, -self.half_eye_height, 0.0, self.width, self.height),
             ProceduralLid(
                 params,
                 offset + 13 + 3,
@@ -280,10 +278,7 @@ class ProceduralEye(ProceduralBase):
         self.params[self.offset + 12] = value
 
     def _render_inner_rect(self, draw: ImageDraw.ImageDraw, y1: float, x2: float, y2: float) -> None:
-        x3 = x2 - int(
-            self.corner_radius
-            * max(self.upper_inner_radius_x, self.lower_inner_radius_x)
-        )
+        x3 = x2 - int(self.corner_radius * max(self.upper_inner_radius_x, self.lower_inner_radius_x))
         y3 = y1 + int(self.corner_radius * self.upper_inner_radius_y)
         x4 = x2
         y4 = y2 - int(self.corner_radius * self.lower_inner_radius_y)
@@ -293,67 +288,28 @@ class ProceduralEye(ProceduralBase):
         x3 = x1 + int(self.corner_radius * self.upper_outer_radius_x)
         y3 = y1
         x4 = x2 - int(self.corner_radius * self.upper_inner_radius_x)
-        y4 = y1 + int(
-            self.corner_radius
-            * max(self.upper_outer_radius_y, self.upper_inner_radius_y)
-        )
+        y4 = y1 + int(self.corner_radius * max(self.upper_outer_radius_y, self.upper_inner_radius_y))
         draw.rectangle(((x3, y3), (x4, y4)), fill=1)
 
     def _render_outer_rect(self, draw: ImageDraw.ImageDraw, x1: float, y1: float, y2: float) -> None:
         x3 = x1
         y3 = y1 + int(self.corner_radius * self.upper_outer_radius_y)
-        x4 = x1 + int(
-            self.corner_radius
-            * max(self.upper_outer_radius_x, self.lower_outer_radius_x)
-        )
+        x4 = x1 + int(self.corner_radius * max(self.upper_outer_radius_x, self.lower_outer_radius_x))
         y4 = y2 - int(self.corner_radius * self.lower_outer_radius_y)
         draw.rectangle(((x3, y3), (x4, y4)), fill=1)
 
     def _render_lower_rect(self, draw: ImageDraw.ImageDraw, x1: float, x2: float, y2: float) -> None:
         x3 = x1 + int(self.corner_radius * self.lower_outer_radius_x)
-        y3 = y2 - int(
-            self.corner_radius
-            * max(self.lower_outer_radius_y, self.lower_inner_radius_y)
-        )
+        y3 = y2 - int(self.corner_radius * max(self.lower_outer_radius_y, self.lower_inner_radius_y))
         x4 = x2 - int(self.corner_radius * self.lower_inner_radius_x)
         y4 = y2
         draw.rectangle(((x3, y3), (x4, y4)), fill=1)
 
-    def _render_center_rect(
-        self, draw: ImageDraw.ImageDraw, x1: float, y1: float, x2: float, y2: float
-    ) -> None:
-        x3 = (
-            x1
-            + int(
-                self.corner_radius
-                * max(self.upper_outer_radius_x, self.lower_outer_radius_x)
-            )
-            - 2
-        )
-        y3 = (
-            y1
-            + int(
-                self.corner_radius
-                * max(self.upper_outer_radius_y, self.upper_inner_radius_y)
-            )
-            - 1
-        )
-        x4 = (
-            x2
-            - int(
-                self.corner_radius
-                * max(self.upper_inner_radius_y, self.lower_inner_radius_y)
-            )
-            + 2
-        )
-        y4 = (
-            y2
-            - int(
-                self.corner_radius
-                * max(self.lower_outer_radius_y, self.lower_inner_radius_y)
-            )
-            + 1
-        )
+    def _render_center_rect(self, draw: ImageDraw.ImageDraw, x1: float, y1: float, x2: float, y2: float) -> None:
+        x3 = x1 + int(self.corner_radius * max(self.upper_outer_radius_x, self.lower_outer_radius_x)) - 2
+        y3 = y1 + int(self.corner_radius * max(self.upper_outer_radius_y, self.upper_inner_radius_y)) - 1
+        x4 = x2 - int(self.corner_radius * max(self.upper_inner_radius_y, self.lower_inner_radius_y)) + 2
+        y4 = y2 - int(self.corner_radius * max(self.lower_outer_radius_y, self.lower_inner_radius_y)) + 1
         draw.rectangle(((x3, y3), (x4, y4)), fill=1)
 
     def _render_lower_inner_pie(self, draw: ImageDraw.ImageDraw, x2: float, y2: float) -> None:
@@ -423,11 +379,7 @@ class ProceduralEye(ProceduralBase):
 
         # Translate and compose
         location = (
-            int(
-                (im.size[0] - eye.size[0]) / 2
-                + self.center_x * X_FACTOR
-                + self.x_offset
-            ),
+            int((im.size[0] - eye.size[0]) / 2 + self.center_x * X_FACTOR + self.x_offset),
             int((im.size[1] - eye.size[1]) / 2 + self.center_y * Y_FACTOR),
         )
         im.paste(eye, location, eye)
@@ -492,9 +444,7 @@ class ProceduralFace(ProceduralBase):
                 0.0,
             ]
         if not isinstance(params, list) or len(params) < 5 + 19 + 19:
-            raise ValueError(
-                "Procedural face parameters must be a list of 43 floating point values."
-            )
+            raise ValueError("Procedural face parameters must be a list of 43 floating point values.")
         super().__init__(params, 0, width, height)
         eye_offset = int(self.width / 5)
         self.eyes = (
@@ -656,27 +606,15 @@ class ProceduralFaceGenerator:
             target_face.eyes[1].center_x -= 12
 
             # Scale the eyes proportional to the offset from the center.
-            scale_1 = (
-                1.0
-                + abs(self.current_face.center_x)
-                * self.MAX_EYE_SCALE
-                / self.MAX_X_OFFSET
-            )
-            scale_2 = (
-                1.0
-                - abs(self.current_face.center_x)
-                * self.MAX_EYE_SCALE
-                / self.MAX_Y_OFFSET
-            )
+            scale_1 = 1.0 + abs(self.current_face.center_x) * self.MAX_EYE_SCALE / self.MAX_X_OFFSET
+            scale_2 = 1.0 - abs(self.current_face.center_x) * self.MAX_EYE_SCALE / self.MAX_Y_OFFSET
             i = 0 if target_face.center_x < 0 else 1
             target_face.eyes[i].scale_x = scale_1
             target_face.eyes[i].scale_y = scale_1 - 0.2
             target_face.eyes[1 - i].scale_x = scale_2
             target_face.eyes[1 - i].scale_y = scale_2 - 0.2
 
-            face_generator = interpolate(
-                self.current_face, target_face, self.SACCADE_STEPS
-            )
+            face_generator = interpolate(self.current_face, target_face, self.SACCADE_STEPS)
             for face in face_generator:
                 im = face.render()
                 np_im = np.array(im)

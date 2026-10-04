@@ -82,9 +82,7 @@ def setup_basic_logging(
         logger_behavior,
         logger_animation,
     ):
-        lg.handlers = [
-            h for h in lg.handlers if not getattr(h, "_pycozmo_basic", False)
-        ]
+        lg.handlers = [h for h in lg.handlers if not getattr(h, "_pycozmo_basic", False)]
         lg.addHandler(handler)
         # We install our own handler — don't also emit through the root
         # logger's handlers (e.g. an app's logging.basicConfig).

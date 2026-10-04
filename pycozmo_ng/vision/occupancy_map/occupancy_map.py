@@ -66,14 +66,10 @@ class OccupancyMap:
 
         # Vote accumulator: signed per-cell counter, clamped to [-cap, +cap].
         # positive = occupied, negative = free, 0 = unknown.
-        self._votes: np.ndarray = np.zeros(
-            (self._grid_cells, self._grid_cells), dtype=np.int32
-        )
+        self._votes: np.ndarray = np.zeros((self._grid_cells, self._grid_cells), dtype=np.int32)
 
         # Classified grid: -1 = unknown, 0 = occupied, 1 = free
-        self._grid: np.ndarray = np.full(
-            (self._grid_cells, self._grid_cells), UNKNOWN, dtype=np.int8
-        )
+        self._grid: np.ndarray = np.full((self._grid_cells, self._grid_cells), UNKNOWN, dtype=np.int8)
 
         # World origin (set on first update from robot position)
         self._origin_x: float = 0.0
@@ -81,9 +77,7 @@ class OccupancyMap:
         self._origin_set: bool = False
 
         # Pre-allocated buffers (avoid per-frame allocation)
-        self._vote_delta: np.ndarray = np.zeros(
-            (self._grid_cells, self._grid_cells), dtype=np.int32
-        )
+        self._vote_delta: np.ndarray = np.zeros((self._grid_cells, self._grid_cells), dtype=np.int32)
 
         # Parameters
         self._inflation_radius = inflation_radius
@@ -152,12 +146,8 @@ class OccupancyMap:
         # (dilate the invalid region then zero edges under it) before inflation.
         # Interior object edges are untouched — they sit away from the silhouette.
         if self._edge_margin_px > 0:
-            silhouette: np.ndarray = (
-                gray < self._valid_min_brightness
-            ).astype(np.uint8)
-            silhouette = cv2.dilate(
-                silhouette, np.ones((3, 3), np.uint8), iterations=self._edge_margin_px
-            )
+            silhouette: np.ndarray = (gray < self._valid_min_brightness).astype(np.uint8)
+            silhouette = cv2.dilate(silhouette, np.ones((3, 3), np.uint8), iterations=self._edge_margin_px)
             edges[(silhouette > 0)] = 0
 
         if self._inflation_radius > 0:
@@ -182,12 +172,7 @@ class OccupancyMap:
         col = ((world_x - self._origin_x + half) / self._cell_size_mm).astype(np.int32)
         row = ((world_y - self._origin_y + half) / self._cell_size_mm).astype(np.int32)
 
-        in_bounds = (
-            (col >= 0)
-            & (col < self._grid_cells)
-            & (row >= 0)
-            & (row < self._grid_cells)
-        )
+        in_bounds = (col >= 0) & (col < self._grid_cells) & (row >= 0) & (row < self._grid_cells)
 
         # --- Accumulate votes --------------------------------------------
         # Votes are never decayed — the map persists forever, and the
@@ -209,18 +194,12 @@ class OccupancyMap:
 
         self._vote_delta[:] = 0
         if np.any(occ_mask):
-            occ_counts = np.bincount(
-                flat_idx[occ_mask], minlength=self._grid_cells * self._grid_cells
-            )
+            occ_counts = np.bincount(flat_idx[occ_mask], minlength=self._grid_cells * self._grid_cells)
             self._vote_delta.ravel()[: len(occ_counts)] += occ_counts.astype(np.int32)
         if np.any(free_mask):
-            free_counts = np.bincount(
-                flat_idx[free_mask], minlength=self._grid_cells * self._grid_cells
-            )
+            free_counts = np.bincount(flat_idx[free_mask], minlength=self._grid_cells * self._grid_cells)
             # (free_counts > 0) → one vote per observed cell, not per pixel.
-            self._vote_delta.ravel()[: len(free_counts)] -= (free_counts > 0).astype(
-                np.int32
-            )
+            self._vote_delta.ravel()[: len(free_counts)] -= (free_counts > 0).astype(np.int32)
 
         np.clip(
             self._votes + self._vote_delta,
