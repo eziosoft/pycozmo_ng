@@ -55,6 +55,7 @@ pytest pycozmo_ng/tests/ -v
 ## Project Structure
 
 ```
+CHANGELOG.md      # Release changelog (fresh from v0.9.0 — keep up to date)
 pycozmo_ng/           # Main library
 ├── cozmo.py       # Cozmo — public API for library users
 ├── brain.py       # Brain — internal orchestrator (NOT public API)
@@ -241,6 +242,14 @@ This branch includes:
 - **JS**: eslint (recommended: `@eslint/js` + `eslint-plugin-unicorn`). Web viewer files live in `pycozmo_ng/web/static/`.
 - Type hints encouraged
 - Docstrings encouraged
+
+## Changelog
+
+`CHANGELOG.md` records notable changes to PyCozmo-NG, starting fresh at v0.9.0 (upstream pycozmo history is not carried over).
+
+- **Keep it up to date with every release** — when a version ships (or `pyproject.toml` `version` bumps), add a matching `## vX.Y.Z (YYYY-MM-DD)` section to `CHANGELOG.md` in the same change. Never let the changelog lag behind releases.
+- For work-in-progress changes, add bullets under a `## Unreleased` section at the top and fold them into the version section at release time.
+- Log user-visible changes: features, bug fixes, breaking changes, dependency/config changes. Skip pure refactors unless they change behavior.
 
 ## Library-First Approach
 
