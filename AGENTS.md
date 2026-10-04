@@ -12,9 +12,9 @@ Maintain a running knowledge base on the LIFIC issue tracker (project `COZMO`).
 
 ## Project Overview
 
-PyCozmo is a pure-Python library for direct Cozmo robot control over Wi-Fi, replacing the Cozmo app. This is the `develop` branch with full computer vision, navigation, and web viewer support.
+PyCozmo-NG is a pure-Python library for direct Cozmo robot control over Wi-Fi, replacing the Cozmo app. This is the `develop` branch with full computer vision, navigation, and web viewer support.
 
-**Agent is responsible for this project.** User reviews results and sets direction. Goal: extend pycozmo with new features, maintain good code quality, and upstream working features as PRs to the real pycozmo repository.
+**Agent is responsible for this project.** User reviews results and sets direction. Goal: extend pycozmo_ng with new features, maintain good code quality, and upstream working features as PRs to the real pycozmo repository.
 
 ## Quick Start
 
@@ -28,33 +28,33 @@ pip install -e .
 pip install -r requirements-dev.txt
 
 # Run linting (every Python file must pass ruff before committing)
-ruff check pycozmo/
-ruff format --check pycozmo/
+ruff check pycozmo_ng/
+ruff format --check pycozmo_ng/
 
 # Run type checking
-mypy pycozmo/
+mypy pycozmo_ng/
 
 # Run JS linting (for web_viewer JS)
-npx eslint pycozmo/web/static/
+npx eslint pycozmo_ng/web/static/
 
 # Run tests
-pytest pycozmo/tests/ -v
+pytest pycozmo_ng/tests/ -v
 ```
 
 ## Key Commands
 
 | Task | Command |
 |------|---------|
-| Lint | `ruff check pycozmo/` |
-| Format check | `ruff format --check pycozmo/` |
-| Type check | `mypy pycozmo/` |
-| Test | `pytest pycozmo/tests/ -v` |
+| Lint | `ruff check pycozmo_ng/` |
+| Format check | `ruff format --check pycozmo_ng/` |
+| Type check | `mypy pycozmo_ng/` |
+| Test | `pytest pycozmo_ng/tests/ -v` |
 | Install | `pip install -e .` |
 
 ## Project Structure
 
 ```
-pycozmo/           # Main library
+pycozmo_ng/           # Main library
 ├── cozmo.py       # Cozmo — public API for library users
 ├── brain.py       # Brain — internal orchestrator (NOT public API)
 ├── client.py      # Client class (low-level robot connection; paths → PathExecutor)
@@ -157,7 +157,7 @@ pycozmo/           # Main library
 │   ├── exception.py   # AudioKinetic and TTS exceptions
 │   └── tts.py         # TTS engine using pyttsx3 (espeak-ng backend)
 ├── not_used/      # Deprecated / moved code
-│   ├── sound/       # SoundBank parser (moved from pycozmo/sound/)
+│   ├── sound/       # SoundBank parser (moved from pycozmo_ng/sound/)
 │   │   ├── chunk.py       # Chunk reader for .bnk files
 │   │   ├── exception.py   # AudioKinetic exceptions
 │   │   ├── soundbank.py   # SoundBank (.bnk) parser
@@ -172,7 +172,7 @@ pycozmo/           # Main library
 ## Branch: develop
 
 This branch includes:
-- **Public API**: `Cozmo` class (`pycozmo/cozmo.py`) — high-level interface to all robot capabilities
+- **Public API**: `Cozmo` class (`pycozmo_ng/cozmo.py`) — high-level interface to all robot capabilities
 - **Vision pipeline**: DetectionPipeline with pluggable detectors, annotation engine, event dispatcher
 - **Floor projection**: Bird's-eye floor view with occupancy mapping
 - **Robot center calibration**: Two-ring marker detection for precise lateral offset measurement
@@ -185,7 +185,7 @@ This branch includes:
 ## Important Notes
 
 ### Public API
-- **Use `Cozmo` class** (`from pycozmo import Cozmo`) as the library entry point
+- **Use `Cozmo` class** (`from pycozmo_ng import Cozmo`) as the library entry point
 - `Brain` is an internal orchestrator — do not import or use directly
 - Subsystem APIs are accessed through `Cozmo` properties: `.vision`, `.cubes`, `.navigator`, `.world_map`, `.sensors`, `.web_viewer`
 
@@ -195,7 +195,7 @@ This branch includes:
 - Calibration is retrieved from robot NVRAM via `CameraCalibrationRetriever`
 
 ### Cube Detection
-- Marker templates are in `pycozmo/vision/cube_detector/cube_faces/*.jpg` (6 faces × 3 cubes)
+- Marker templates are in `pycozmo_ng/vision/cube_detector/cube_faces/*.jpg` (6 faces × 3 cubes)
 - Cozmo has 3 light cubes (IDs 1-3)
 - `CubeFusionTracker` fuses multiple face detections into coherent 3D poses
 - Head tilt compensation required for accurate tracking
@@ -236,18 +236,18 @@ This branch includes:
 ## Code Style
 
 - **Python**: ruff (max line length 120, PEP 8). Every `.py` file must pass `ruff check` and `ruff format --check` before committing.
-- **No `print()`** in library or entry-script code — use the loggers from `pycozmo/logger.py` (`logger`, `logger_cubes`, ...). Levels: info = progress/status, warning = recoverable problems, `logger.exception` in `except` blocks, debug = per-frame/per-packet detail. Do not embed severity (emoji, `WARNING:`, banners) in message text. `print` is allowed only in docstring usage examples, `not_used/`, and throwaway test scripts. Details: LIFIC COZMO-DOC-12.
-- **JS**: eslint (recommended: `@eslint/js` + `eslint-plugin-unicorn`). Web viewer files live in `pycozmo/web/static/`.
+- **No `print()`** in library or entry-script code — use the loggers from `pycozmo_ng/logger.py` (`logger`, `logger_cubes`, ...). Levels: info = progress/status, warning = recoverable problems, `logger.exception` in `except` blocks, debug = per-frame/per-packet detail. Do not embed severity (emoji, `WARNING:`, banners) in message text. `print` is allowed only in docstring usage examples, `not_used/`, and throwaway test scripts. Details: LIFIC COZMO-DOC-12.
+- **JS**: eslint (recommended: `@eslint/js` + `eslint-plugin-unicorn`). Web viewer files live in `pycozmo_ng/web/static/`.
 - Type hints encouraged
 - Docstrings encouraged
 
 ## Library-First Approach
 
-PyCozmo is a **library**, not a script collection. New functionality must be added inside `pycozmo/` with a clean public API so others can `import pycozmo` and use it independently. `main.py` is only a test/demo program that orchestrates and exercises library functions; it must not own reusable behavior, state, hardware integration, or workflows. When adding a feature, ask: "could someone use this without main.py?" If yes, the API is right.
+PyCozmo-NG is a **library**, not a script collection. New functionality must be added inside `pycozmo_ng/` with a clean public API so others can `import pycozmo_ng` and use it independently. `main.py` is only a test/demo program that orchestrates and exercises library functions; it must not own reusable behavior, state, hardware integration, or workflows. When adding a feature, ask: "could someone use this without main.py?" If yes, the API is right.
 
 ## Architecture & Organization
 
-The application layer — everything `main.py` drives — lives in **`pycozmo/`** subpackages. `main.py` is only an entrypoint (argparse + wiring); no logic lives in `main.py`.
+The application layer — everything `main.py` drives — lives in **`pycozmo_ng/`** subpackages. `main.py` is only an entrypoint (argparse + wiring); no logic lives in `main.py`.
 
 - **One class per file.** If a feature doesn't fit an existing class's stated job, create a *new file* — never grow an existing class.
 - **Files are grouped in folders by function.** `vision/`, `navigation/`, `web/`, `cubes/`. New functionality goes in the matching folder.
@@ -259,7 +259,7 @@ The application layer — everything `main.py` drives — lives in **`pycozmo/`*
 
 ## Testing
 
-Tests are in `pycozmo/tests/` and `pycozmo/sound/tests/`. No conftest.py or fixtures found.
+Tests are in `pycozmo_ng/tests/` and `pycozmo_ng/sound/tests/`. No conftest.py or fixtures found.
 
 ## Constraints
 
@@ -278,7 +278,7 @@ Live robot code runs on a Raspberry Pi 5, NOT on the dev Mac.
 - **Network split**:
   - `eth0` = wired LAN `192.168.10.0/24` — management path (SSH/rsync). Default route stays here (`ipv4.never-default` unset).
   - `wlan0` = Cozmo AP only. SSID **`Cozmo_7144B4`**, password **`973-37134-7253402`**. Set `ipv4.never-default yes` so robot AP never becomes gateway.
-- **Robot** = `172.31.1.1:5551` (hardcoded in `pycozmo/transport/conn.py`). Pi wlan0 usually gets `172.31.1.57/24` via DHCP.
+- **Robot** = `172.31.1.1:5551` (hardcoded in `pycozmo_ng/transport/conn.py`). Pi wlan0 usually gets `172.31.1.57/24` via DHCP.
 
 ### Syncing code to the Pi
 
@@ -302,7 +302,7 @@ rsync -avz --delete \
   --exclude='.git/' --exclude='.env' --exclude='.venv/' --exclude='venv/' \
   --exclude='__pycache__/' --exclude='*.pyc' \
   --exclude='.ruff_cache/' --exclude='.mypy_cache/' --exclude='.pytest_cache/' \
-  --exclude='pycozmo.egg-info/' \
+  --exclude='pycozmo_ng.egg-info/' \
   ./ e@192.168.10.100:~/pycozmo/
 ```
 

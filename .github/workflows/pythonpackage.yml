@@ -39,4 +39,4 @@ jobs:
       continue-on-error: true
     - name: Test with pytest
       run: |
-        pytest pycozmo/tests/
+        pytest pycozmo_ng/tests/

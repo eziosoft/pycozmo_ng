@@ -1,8 +1,8 @@
 
-PyCozmo
+PyCozmo-NG
 =======
 
-`PyCozmo` is a pure-Python communication library, alternative SDK, and application for the
+`PyCozmo-NG` is a pure-Python communication library, alternative SDK, and application for the
 [Cozmo robot](https://www.digitaldreamlabs.com/pages/cozmo) . It allows controlling a Cozmo robot directly, without
 having to go through a mobile device, running the Cozmo app.
 
@@ -20,9 +20,9 @@ Basic:
 
 ```python
 import time
-import pycozmo
+import pycozmo_ng
 
-with pycozmo.connect() as cli:
+with pycozmo_ng.connect() as cli:
     cli.set_head_angle(angle=0.6)
     time.sleep(1)
 ```
@@ -30,9 +30,9 @@ with pycozmo.connect() as cli:
 Advanced:
 
 ```python
-import pycozmo
+import pycozmo_ng
 
-cli = pycozmo.Client()
+cli = pycozmo_ng.Client()
 cli.start()
 cli.connect()
 cli.wait_for_robot()
@@ -125,7 +125,7 @@ Tools
 - [pycozmo_protocol_generator.py](not_used/tools/pycozmo_protocol_generator.py) - a tool for generating Cozmo protocol encoder
     code.
 
-**Note**: PyCozmo and `pycozmo_protocol_generator.py` in particular could be used as a base for creating a Cozmo protocol
+**Note**: PyCozmo-NG and `pycozmo_protocol_generator.py` in particular could be used as a base for creating a Cozmo protocol
 encoder code generator for languages other than Python (C/C++, Java, etc.).
  
 
@@ -133,7 +133,7 @@ Examples
 --------
 
 Basic:
-- [minimal.py](not_used/examples/minimal.py) - minimal code to communicate with Cozmo, using PyCozmo
+- [minimal.py](not_used/examples/minimal.py) - minimal code to communicate with Cozmo, using PyCozmo-NG
 - [extremes.py](not_used/examples/extremes.py) - demonstrates Cozmo lift and head control
 - [backpack_lights.py](not_used/examples/backpack_lights.py) - demonstrates Cozmo backpack LED control
 - [display_image.py](not_used/examples/display_image.py) - demonstrates visualization of image files on Cozmo's display
@@ -161,11 +161,11 @@ Advanced:
 - [anim.py](not_used/examples/anim.py) - demonstrates animating Cozmo
 
 
-PyCozmo In The Wild
+PyCozmo-NG In The Wild
 -------------------
 
 - [Expressive Eyes](https://git.brl.ac.uk/ca2-chambers/expressive-eyes) - rendering various facial expressions using
-    PyCozmo's procedural_face module
+    PyCozmo-NG's procedural_face module
 - an [application](https://github.com/paulbaumgarten/paulbaumgarten/blob/6d9025ec715e0b5f133ce9b7e39e74a5389c5334/myp/cozmo/assets/02-camera.py)
     that recognizes [ArUco markers](https://docs.opencv.org/master/d5/dae/tutorial_aruco_detection.html), using OpenCV
 - a [ROS2 driver](https://github.com/solosito/cozmo_ros2_ws/)
@@ -175,7 +175,7 @@ PyCozmo In The Wild
 Connecting to Cozmo over Wi-Fi
 ------------------------------
 
-A Wi-Fi connection needs to be established with Cozmo before using PyCozmo applications.
+A Wi-Fi connection needs to be established with Cozmo before using PyCozmo-NG applications.
 
 1. Wake up Cozmo by placing it on the charging platform
 2. Make Cozmo display it's Wi-Fi PSK by rising and lowering its lift
@@ -185,13 +185,13 @@ A Wi-Fi connection needs to be established with Cozmo before using PyCozmo appli
 [This video](https://www.youtube.com/watch?v=-k_oiQhBa5o) summarizes the connection process.
 
 
-PyCozmo vs. the Cozmo SDK
+PyCozmo-NG vs. the Cozmo SDK
 -------------------------
 
 A Cozmo SDK application (aka "game") acts as a client to the Cozmo app (aka "engine") that runs on a mobile device.
 The low-level communication happens over USB and is handled by the `cozmoclad` library.
 
-In contrast, an application using PyCozmo basically replaces the Cozmo app and acts as the "engine". PyCozmo handles
+In contrast, an application using PyCozmo-NG basically replaces the Cozmo app and acts as the "engine". PyCozmo-NG handles
 the low-level UDP communication with Cozmo.
    
 ```

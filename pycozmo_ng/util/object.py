@@ -1,0 +1,21 @@
+"""
+
+Cozmo objects (cubes, platforms, etc.).
+
+"""
+
+from pycozmo_ng.protocol import protocol_encoder
+
+__all__ = [
+    "Object",
+]
+
+
+class Object:
+    """Object representation."""
+
+    def __init__(
+        self, factory_id: int, object_type: protocol_encoder.ObjectType
+    ) -> None:
+        self.factory_id = factory_id
+        self.object_type = object_type

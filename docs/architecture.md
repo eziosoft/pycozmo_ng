@@ -1,12 +1,12 @@
 
-PyCozmo Architecture
+PyCozmo-NG Architecture
 ====================
 
 
 Overview
 --------
 
-PyCozmo is designed as a multithreaded library.
+PyCozmo-NG is designed as a multithreaded library.
 
 It is organized in three layers with each higher layer building on the ones below it: 
 - low-level connection layer
@@ -150,7 +150,7 @@ The CV module processes camera images from the robot to detect objects (cubes, f
 
 The video processing and cube detection should be implemented at the **Application Layer** as a separate module:
 
-1. **Vision Module** (`pycozmo/vision.py`) - Core computer vision functionality
+1. **Vision Module** (`pycozmo_ng/vision.py`) - Core computer vision functionality
    - Cube detection algorithms
    - Image processing utilities
    - Object tracking

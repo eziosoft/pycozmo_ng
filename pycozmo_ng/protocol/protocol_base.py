@@ -1,0 +1,176 @@
+"""
+
+Cozmo protocol implementation base.
+
+"""
+
+from abc import ABC, abstractmethod
+
+from pycozmo_ng.util import hex_dump
+
+from .protocol_ast import PacketType
+from .protocol_declaration import FIRST_ROBOT_PACKET_ID, OOB_SEQ
+from .protocol_utils import BinaryReader, BinaryWriter
+
+__all__ = [
+    "Packet",
+    "Struct",
+    "UnknownCommand",
+    "UnknownEvent",
+    "UnknownPacket",
+]
+
+
+class Struct(ABC):
+    @abstractmethod
+    def __len__(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def __repr__(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def to_bytes(self) -> bytes:
+        raise NotImplementedError
+
+    @abstractmethod
+    def to_writer(self, writer: BinaryWriter) -> None:
+        raise NotImplementedError
+
+    @classmethod
+    @abstractmethod
+    def from_bytes(cls, buffer: bytes) -> "Struct":
+        raise NotImplementedError
+
+    @classmethod
+    @abstractmethod
+    def from_reader(cls, reader: BinaryReader) -> "Struct":
+        raise NotImplementedError
+
+
+class Packet(Struct, ABC):
+    __slots__ = (
+        "_id",
+        "_type",
+        "ack",
+        "seq",
+    )
+
+    def __init__(self, packet_type: PacketType, packet_id: int | None = None):
+        self.type = packet_type
+        self.id = packet_id
+        self.seq = OOB_SEQ
+        self.ack = OOB_SEQ
+
+    @property
+    def type(self) -> PacketType:
+        return self._type
+
+    @type.setter
+    def type(self, value: PacketType) -> None:
+        self._type = PacketType(value)
+
+    @property
+    def id(self) -> int | None:
+        return self._id
+
+    @id.setter
+    def id(self, value: int | None) -> None:
+        self._id = value
+
+    def is_oob(self) -> bool:
+        res = self.type.value >= PacketType.EVENT.value  # type: bool
+        return res
+
+    def is_from_robot(self) -> bool:
+        if self.id is not None:
+            res = self.id >= FIRST_ROBOT_PACKET_ID
+        else:
+            res = self.type == PacketType.CONNECT or (
+                self.type == PacketType.PING and self.seq > 0
+            )
+        return res
+
+    def is_from_engine(self) -> bool:
+        return not self.is_from_robot()
+
+
+class UnknownPacket(Packet):
+    __slots__ = ("_data",)
+
+    def __init__(
+        self, packet_type: PacketType, data: bytes, packet_id: int | None = None
+    ):
+        super().__init__(packet_type, packet_id)
+        self.data = data
+
+    @property
+    def data(self) -> bytes:
+        return self._data
+
+    @data.setter
+    def data(self, value: bytes) -> None:
+        self._data = bytes(value)
+
+    def __len__(self):
+        return len(self._data)
+
+    def __repr__(self):
+        return (
+            f"{type(self).__name__}({self.type.value:02x}, {hex_dump(data=self._data)})"
+        )
+
+    def to_bytes(self):
+        writer = BinaryWriter()
+        self.to_writer(writer)
+        return writer.dumps()
+
+    def to_writer(self, writer):
+        writer.write_farray(self._data, "B", len(self._data))
+
+    @classmethod
+    def from_bytes(cls, buffer):
+        # The size is not known.
+        raise NotImplementedError
+
+    @classmethod
+    def from_reader(cls, reader):
+        # The size is not known.
+        raise NotImplementedError
+
+
+class UnknownCommand(UnknownPacket):
+    def __init__(self, packet_id: int, data: bytes = b""):
+        super().__init__(PacketType.COMMAND, data, packet_id=packet_id)
+
+    @classmethod
+    def from_bytes(cls, buffer):
+        # The size is not known.
+        raise NotImplementedError
+
+    @classmethod
+    def from_reader(cls, reader):
+        # The size is not known.
+        raise NotImplementedError
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.id:02x}, {hex_dump(data=self._data)})"
+
+
+class UnknownEvent(UnknownPacket):
+    def __init__(self, packet_id: int, data: bytes = b""):
+        super().__init__(PacketType.EVENT, data, packet_id=packet_id)
+
+    @classmethod
+    def from_bytes(cls, buffer):
+        # The size is not known.
+        raise NotImplementedError
+
+    @classmethod
+    def from_reader(cls, reader):
+        # The size is not known.
+        raise NotImplementedError
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.id:02x}, {hex_dump(data=self._data)})"

@@ -219,9 +219,9 @@ MARKER_SDK_{2-5}{CIRCLES,DIAMONDS,HEXAGONS,TRIANGLES}
 
 ---
 
-## Comparison with pycozmo Implementation
+## Comparison with pycozmo_ng Implementation
 
-### What pycozmo already implements
+### What pycozmo_ng already implements
 
 - VisionProcessor class with OpenCV-based marker detection
 - CubeDetector using ArUco + custom dictionary

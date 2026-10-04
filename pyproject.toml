@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pycozmo-ng"
+version = "0.9.0"
+description = "Pure-Python library for direct Cozmo robot control over Wi-Fi"
+readme = "README.md"
+license = { file = "LICENSE.md" }
+requires-python = ">=3.10"
+dependencies = [
+    "setuptools>=38.6.0",
+    "dpkt",
+    "numpy",
+    "Pillow>=9.1.0",
+    "flatbuffers",
+    "opencv-contrib-python>=4.5.0",
+    "scipy>=1.7.0",
+    "aiohttp>=3.9.0",
+    "websockets>=12.0",
+    "python-dotenv>=1.0.0",
+    "pyttsx3>=2.99",
+]
+
+[tool.setuptools.packages.find]
+include = ["pycozmo_ng*"]
+
+[tool.setuptools.package-data]
+pycozmo_ng = [
+    "assets/*.jpg",
+    "assets/*.obj",
+    "assets/*.mtl",
+    "animation/*.fbs",
+    "vision/cube_detector/cube_faces/*.jpg",
+    "web/static/*",
+]

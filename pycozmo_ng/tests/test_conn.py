@@ -1,0 +1,78 @@
+import unittest
+from threading import Event
+
+import pycozmo_ng
+
+
+class TestConnection(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        pycozmo_ng.setup_basic_logging(log_level="DEBUG", protocol_log_level="DEBUG")
+
+    def setUp(self):
+        self.s_conn_e = Event()
+        self.c_conn_e = Event()
+        self.s_e = Event()
+        self.c_e = Event()
+        self.s = pycozmo_ng.conn.Connection(server=True)
+        self.s.add_handler(
+            pycozmo_ng.protocol_encoder.Connect, lambda cli, pkt: self.s_conn_e.set()
+        )
+        self.c = pycozmo_ng.conn.Connection(("127.0.0.1", 5551))
+        self.c.add_handler(
+            pycozmo_ng.protocol_encoder.Connect, lambda cli, pkt: self.c_conn_e.set()
+        )
+
+    def start(self):
+        self.s.start()
+        self.c.start()
+
+    def stop(self):
+        self.c.stop()
+        self.s.stop()
+
+    def connect(self):
+        self.c.connect()
+        self.assertTrue(self.s_conn_e.wait(2.0))
+        self.assertTrue(self.c_conn_e.wait(2.0))
+
+    def disconnect(self):
+        self.c.disconnect()
+
+    def test_connect(self):
+        self.start()
+        self.connect()
+        self.disconnect()
+        self.stop()
+
+    def test_ping(self):
+        self.s.add_handler(
+            pycozmo_ng.protocol_encoder.Ping, lambda cli, pkt: self.s_e.set()
+        )
+        self.c.add_handler(
+            pycozmo_ng.protocol_encoder.Ping, lambda cli, pkt: self.c_e.set()
+        )
+        self.start()
+        self.connect()
+        self.assertTrue(self.c_e.wait(20000.0))
+        self.assertTrue(self.s_e.wait(2.0))
+        self.stop()
+
+    def test_send_30(self):
+        COUNT = 30
+        counts = []
+
+        def handle_volume(cli, pkt):
+            counts.append(pkt.level)
+            if pkt.level == COUNT - 1:
+                self.s_e.set()
+            return True
+
+        self.s.add_handler(pycozmo_ng.protocol_encoder.SetRobotVolume, handle_volume)
+        self.start()
+        self.connect()
+        for i in range(COUNT):
+            self.c.send(pycozmo_ng.protocol_encoder.SetRobotVolume(i))
+        self.assertTrue(self.s_e.wait(5.0))
+        self.assertEqual(counts, list(range(COUNT)))
+        self.stop()

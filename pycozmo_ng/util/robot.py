@@ -1,0 +1,200 @@
+"""
+
+Robot constants and helper code.
+
+"""
+
+import enum
+import math
+
+from pycozmo_ng import util
+
+__all__ = [
+    "FRAME_RATE",
+    "LIFT_ARM_LENGTH",
+    "LIFT_PIVOT_HEIGHT",
+    "MAX_HEAD_ANGLE",
+    "MAX_LIFT_ANGLE",
+    "MAX_LIFT_HEIGHT",
+    "MAX_WHEEL_SPEED",
+    "MIN_HEAD_ANGLE",
+    "MIN_LIFT_ANGLE",
+    "MIN_LIFT_HEIGHT",
+    "TRACK_WIDTH",
+    "LiftPosition",
+    "RobotStatusFlag",
+    "RobotStatusFlagNames",
+    "lift_position_from_raw",
+]
+
+
+#: Minimum head angle.
+MIN_HEAD_ANGLE = util.Angle(degrees=-25)
+#: Maximum head angle.
+MAX_HEAD_ANGLE = util.Angle(degrees=44.5)
+
+#: Minimum lift height.
+MIN_LIFT_HEIGHT = util.Distance(mm=32.0)
+#: Maximum lift height.
+MAX_LIFT_HEIGHT = util.Distance(mm=92.0)
+
+#: Lift arm length.
+LIFT_ARM_LENGTH = util.Distance(mm=66.0)
+#: Lift arm pivot point height.
+LIFT_PIVOT_HEIGHT = util.Distance(mm=45.0)
+
+#: Minimum lift arm angle.
+MIN_LIFT_ANGLE = util.Angle(
+    radians=math.asin((MIN_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm)
+)
+#: Maximum lift arm angle.
+MAX_LIFT_ANGLE = util.Angle(
+    radians=math.asin((MAX_LIFT_HEIGHT.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm)
+)
+
+#: Maximum wheel speed.
+MAX_WHEEL_SPEED = util.Speed(mmps=200.0)
+
+#: Track width.
+TRACK_WIDTH = util.Distance(mm=45.0)
+
+#: Number of frames per second for animations.
+FRAME_RATE = 30
+
+
+class RobotStatusFlag:
+    # Robot status flags.
+    IS_MOVING = 0x1
+    IS_CARRYING_BLOCK = 0x2
+    IS_PICKING_OR_PLACING = 0x4
+    IS_PICKED_UP = 0x8
+    IS_BODY_ACC_MODE = 0x10
+    IS_FALLING = 0x20
+    IS_ANIMATING = 0x40
+    IS_PATHING = 0x80
+    LIFT_IN_POS = 0x100
+    HEAD_IN_POS = 0x200
+    IS_ANIM_BUFFER_FULL = 0x400
+    IS_ANIMATING_IDLE = 0x800
+    IS_ON_CHARGER = 0x1000
+    IS_CHARGING = 0x2000
+    CLIFF_DETECTED = 0x4000
+    ARE_WHEELS_MOVING = 0x8000
+    IS_CHARGER_OOS = 0x10000
+
+
+#: Robot status flag names.
+RobotStatusFlagNames = {
+    RobotStatusFlag.IS_MOVING: "IS_MOVING",
+    RobotStatusFlag.IS_CARRYING_BLOCK: "IS_CARRYING_BLOCK",
+    RobotStatusFlag.IS_PICKING_OR_PLACING: "IS_PICKING_OR_PLACING",
+    RobotStatusFlag.IS_PICKED_UP: "IS_PICKED_UP",
+    RobotStatusFlag.IS_BODY_ACC_MODE: "IS_BODY_ACC_MODE",
+    RobotStatusFlag.IS_FALLING: "IS_FALLING",
+    RobotStatusFlag.IS_ANIMATING: "IS_ANIMATING",
+    RobotStatusFlag.IS_PATHING: "IS_PATHING",
+    RobotStatusFlag.LIFT_IN_POS: "LIFT_IN_POS",
+    RobotStatusFlag.HEAD_IN_POS: "HEAD_IN_POS",
+    RobotStatusFlag.IS_ANIM_BUFFER_FULL: "IS_ANIM_BUFFER_FULL",
+    RobotStatusFlag.IS_ANIMATING_IDLE: "IS_ANIMATING_IDLE",
+    RobotStatusFlag.IS_ON_CHARGER: "IS_ON_CHARGER",
+    RobotStatusFlag.IS_CHARGING: "IS_CHARGING",
+    RobotStatusFlag.CLIFF_DETECTED: "CLIFF_DETECTED",
+    RobotStatusFlag.ARE_WHEELS_MOVING: "ARE_WHEELS_MOVING",
+    RobotStatusFlag.IS_CHARGER_OOS: "IS_CHARGER_OOS",
+}
+
+
+class RobotOrientation(enum.Enum):
+    """Robot orientation enumeration."""
+
+    ON_THREADS = 0
+    ON_BACK = 1
+    ON_FACE = 2
+    ON_LEFT_SIDE = 3
+    ON_RIGHT_SIDE = 4
+
+
+class LiftPosition:
+    """
+    Represents the position of Cozmo's lift.
+
+    The class allows the position to be referred to as either absolute height
+    above the ground, as a ratio from 0.0 to 1.0, or as the angle of the lift
+    arm relative to the ground.
+
+    Args:
+        height (:class:`cozmo.util.Distance`): The height of the lift above the ground.
+        ratio (float): The ratio from 0.0 to 1.0 that the lift is raised from the ground.
+        angle (:class:`cozmo.util.Angle`): The angle of the lift arm relative to the ground.
+    """
+
+    __slots__ = ("_height",)
+
+    def __init__(self, height=None, ratio=None, angle=None):
+        def _count_arg(arg):
+            # return 1 if argument is set (not None), 0 otherwise
+            return 0 if (arg is None) else 1
+
+        num_provided_args = _count_arg(height) + _count_arg(ratio) + _count_arg(angle)
+        if num_provided_args != 1:
+            raise ValueError(
+                "Expected one, and only one, of the distance, ratio or angle keyword arguments"
+            )
+
+        if height is not None:
+            if not isinstance(height, util.Distance):
+                raise TypeError(
+                    "Unsupported type for distance - expected util.Distance"
+                )
+            self._height = height
+        elif ratio is not None:
+            height_mm = MIN_LIFT_HEIGHT.mm + (
+                ratio * (MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm)
+            )
+            self._height = util.Distance(mm=height_mm)
+        elif angle is not None:
+            if not isinstance(angle, util.Angle):
+                raise TypeError("Unsupported type for angle - expected util.Angle")
+            height_mm = (
+                math.sin(angle.radians) * LIFT_ARM_LENGTH.mm
+            ) + LIFT_PIVOT_HEIGHT.mm
+            self._height = util.Distance(mm=height_mm)
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__} height={self._height} ratio={self.ratio} angle={self.angle}>"
+
+    @property
+    def height(self) -> util.Distance:
+        """Height above the ground."""
+        return self._height
+
+    @property
+    def ratio(self) -> float:
+        """The ratio from 0 to 1 that the lift is raised, 0 at the bottom, 1 at the top."""
+        ratio = (self._height.mm - MIN_LIFT_HEIGHT.mm) / (
+            MAX_LIFT_HEIGHT.mm - MIN_LIFT_HEIGHT.mm
+        )
+        return ratio
+
+    @property
+    def angle(self) -> util.Angle:
+        """The angle of the lift arm relative to the ground."""
+        sin_angle = (self._height.mm - LIFT_PIVOT_HEIGHT.mm) / LIFT_ARM_LENGTH.mm
+        angle = math.asin(sin_angle)
+        return util.Angle(radians=angle)
+
+
+def lift_position_from_raw(raw_angle: float) -> LiftPosition:
+    """Lift position from the raw ``RobotState.lift_height_mm`` value.
+
+    The field name is a misnomer: the firmware reports the lift arm
+    **angle in radians**, not millimetres — live hardware reads ≈ -0.2
+    with the forks down and ≈ 0.8 with them up, which is exactly
+    :data:`MIN_LIFT_ANGLE` / :data:`MAX_LIFT_ANGLE` (the 66 mm arm on a
+    45 mm pivot). The angle is clamped to the arm's travel limits first,
+    so the resulting height always lies within
+    [MIN_LIFT_HEIGHT, MAX_LIFT_HEIGHT].
+    """
+    angle = max(MIN_LIFT_ANGLE.radians, min(MAX_LIFT_ANGLE.radians, raw_angle))
+    return LiftPosition(angle=util.Angle(radians=angle))

@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""Main test script for PyCozmo vision system.
+"""Main test script for PyCozmo-NG vision system.
 
 Connects to Cozmo, initializes vision processor, and runs the headless loop.
-All reusable logic lives in pycozmo; this file is only argparse + wiring.
+All reusable logic lives in pycozmo_ng; this file is only argparse + wiring.
 The interface is the web viewer (http://<machine-ip>:8765).
 
-Progress is reported through the ``pycozmo.demo`` logger (never ``print``),
+Progress is reported through the ``pycozmo_ng.demo`` logger (never ``print``),
 as numbered startup steps so it is obvious what the script is doing — and
 where it is stuck — while the robot comes up.
 """
@@ -14,13 +14,13 @@ import argparse
 import logging
 import time
 
-import pycozmo
-from pycozmo import Cozmo
-from pycozmo.logger import logger_cubes, setup_basic_logging
-from pycozmo.transport.conn import ROBOT_ADDR
-from pycozmo.wifi import connect_to_cozmo_wifi, get_local_ip
+import pycozmo_ng
+from pycozmo_ng import Cozmo
+from pycozmo_ng.logger import logger_cubes, setup_basic_logging
+from pycozmo_ng.transport.conn import ROBOT_ADDR
+from pycozmo_ng.wifi import connect_to_cozmo_wifi, get_local_ip
 
-logger = logging.getLogger("pycozmo.demo")
+logger = logging.getLogger("pycozmo_ng.demo")
 
 # Number of startup phases reported by _step().
 TOTAL_STEPS = 12
@@ -40,13 +40,13 @@ def _step(n: int, msg: str, *args: object) -> None:
 def main():
     """Main entry point."""
 
-    parser = argparse.ArgumentParser(description="PyCozmo Vision System Test")
+    parser = argparse.ArgumentParser(description="PyCozmo-NG Vision System Test")
     parser.add_argument(
         "--log-level",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
         default="WARNING",
         help=(
-            "Root log level (library pycozmo.* channels have their own "
+            "Root log level (library pycozmo_ng.* channels have their own "
             "defaults). INFO enables the cube-light worker diagnostics "
             "(cube connect/disconnect, per-tick action), DEBUG adds "
             "per-packet detail."
@@ -57,7 +57,7 @@ def main():
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
         default="INFO",
         help=(
-            "Override the log level specifically for the pycozmo.cubes "
+            "Override the log level specifically for the pycozmo_ng.cubes "
             "logger (cube-light worker diagnostics). Useful when "
             "--log-level is WARNING but you still want cube trace."
         ),
@@ -102,10 +102,10 @@ def main():
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     logger_cubes.setLevel(getattr(logging, args.cubes_log_level))
-    # Install the pycozmo channel handlers now: Cozmo.connect() calls this
+    # Install the pycozmo_ng channel handlers now: Cozmo.connect() calls this
     # again with the same defaults (idempotent), but without the early call
     # everything logged before the connection — e.g. the step-1 Wi-Fi check —
-    # would be dropped (pycozmo.* channels have no handler yet).
+    # would be dropped (pycozmo_ng.* channels have no handler yet).
     setup_basic_logging()
     # Demo progress is this script's UI — always show it at INFO, regardless
     # of --log-level (which tunes the root logger for third-party output).
@@ -132,8 +132,8 @@ def main():
 
             _step(4, "Positioning head camera to startup tilt...")
             angle = (
-                pycozmo.robot.MAX_HEAD_ANGLE.radians
-                - pycozmo.robot.MIN_HEAD_ANGLE.radians
+                pycozmo_ng.robot.MAX_HEAD_ANGLE.radians
+                - pycozmo_ng.robot.MIN_HEAD_ANGLE.radians
             ) / 80.0
             cozmo.cli.set_head_angle(angle)
             time.sleep(1.0)

@@ -1,4 +1,4 @@
-# PyCozmo World Map Context
+# PyCozmo-NG World Map Context
 
 The world-localization subsystem that fuses Cozmo's onboard pose, camera-based
 cube detection, and the driven path into one coherent map, rendered in a 3D viewer.
@@ -7,7 +7,7 @@ cube detection, and the driven path into one coherent map, rendered in a 3D view
 
 **World frame**:
 The single canonical coordinate frame for the whole map: **X forward, Y left,
-Z up**, in millimetres (**Anki convention** — verified from `pycozmo/util/coords.py`
+Z up**, in millimetres (**Anki convention** — verified from `pycozmo_ng/util/coords.py`
 `WORLD_TO_SCENE_MATRIX`, forward on the X row). Yaw is rotation about Z (CCW positive).
 Origin is the current Cozmo localization origin (re-anchored on pick-up /
 put-down). All entities (Cozmo, cubes, path) are stored in this frame.
@@ -37,7 +37,7 @@ _Avoid_: camera height, `+40` hack
 
 **World map**:
 The single source of truth holding Cozmo's pose, cube poses, and the path, all in
-world frame. Owned by the `WorldMap` class (`pycozmo/navigation/world_map.py`),
+world frame. Owned by the `WorldMap` class (`pycozmo_ng/navigation/world_map.py`),
 constructed by `Brain` (the composition root) and injected into every reader and
 writer (`Navigator`, `FrameStage`, `MsgRouter`, `WebViewerServer`,
 `Cozmo.WorldMapAPI`). The web server and viewer are thin adapters over it and
@@ -64,7 +64,7 @@ _Avoid_: callback, handler (when naming the registered seam); per-action
 
 **Frame stage**:
 The per-frame vision sequence, owned by the `FrameStage` class
-(`pycozmo/vision/frame_stage.py`): convert → detect → annotate → publish →
+(`pycozmo_ng/vision/frame_stage.py`): convert → detect → annotate → publish →
 dispatch events → feed the world map (plus floor projection and face
 expression). One small interface — `configure(...)` (once per vision setup)
 and `on_camera_image(...)` (once per frame); `Brain` only constructs and
@@ -75,7 +75,7 @@ place where frames are processed.
 
 **Camera service**:
 The single owner of the camera lifecycle, in the `CameraService` class
-(`pycozmo/camera/service.py`): enable/disable, the settings vocabulary
+(`pycozmo_ng/camera/service.py`): enable/disable, the settings vocabulary
 (`DEFAULTS` — the one defaults table), the resolution name↔enum map, and
 the one packet sequence (`enable_camera` → `set_camera_params` →
 `set_head_light`) behind `enable(...)`, `disable()`, `apply_settings(...)`.
@@ -96,7 +96,7 @@ world-frame estimate using confidence-gated, confidence-weighted exponential
 smoothing (position) and SLERP (rotation).
 _Avoid_: averaging, filtering (when it erases world-frame stability)
 
-**Coordinate transforms** (`pycozmo/util/coords.py`):
+**Coordinate transforms** (`pycozmo_ng/util/coords.py`):
 - `camera_to_body()` — applies head-tilt rotation + camera-to-body offset
 - `body_to_world()` — applies robot yaw + translation
 - `camera_to_world()` — convenience: camera → body → world in one step
@@ -115,7 +115,7 @@ events (`EvtCubeLost`), and the whole `Cozmo` facade
 The **cube index 0-2** (`cube_index` / `cube_idx`) is internal: detection
 output (`marker_id // 6`), `WorldMap` keys, `CubeTrackingState`
 suppression, and navigation's `cube_idx`, always `index = cube_id - 1`.
-All conversion lives in **one module** — `pycozmo/cubes/identity.py`
+All conversion lives in **one module** — `pycozmo_ng/cubes/identity.py`
 (`to_world_index`, `to_cube_id`, `cube_label`, `parse_cube_label`) — and
 is validated at the boundary (`cube_99` and `cube_id=0` raise). Every
 boundary (facade, `MsgRouter`, `state_builder`, event dispatch) converts
@@ -135,7 +135,7 @@ the cube index "cube ID" in public API; naming an index variable
 | 5 | top | 0° | cube{N}_face_top.jpg |
 
 **Face identity** (not the marker-face table above — that is cube surface
-geometry): `pycozmo/vision/face_identity.py`, class `FaceIdentity`.
+geometry): `pycozmo_ng/vision/face_identity.py`, class `FaceIdentity`.
 Assigns an ID to each **presence run** of a human face: one uninterrupted
 stretch of measured frames with a face in view. IDs start at 1 and are
 never reused within a session; the pipeline cannot re-identify people, so
@@ -167,7 +167,7 @@ started inside another is its child and dies with it.
 _Avoid_: an ad-hoc `bool` flag (`_path_following`, `_stop_requested`,
 `_test_mode`) for "should this keep running".
 
-**Motion controller** (`pycozmo/navigation/motion_controller.py`):
+**Motion controller** (`pycozmo_ng/navigation/motion_controller.py`):
 The single registry that knows which motion jobs are running
 (`active_names`), the only cancellation authority — `cancel(name)` kills
 jobs by name, `cancel_all()` bumps a generation counter so *everything live*
@@ -200,14 +200,14 @@ one lock (the firmware path buffer is a single resource).
 _Avoid_: a `drive_wheels` writer outside the lease; per-feature "may
 drive" flags; re-triggering the lease from a held (unchanged) key set.
 
-**Motion token** (`pycozmo/navigation/motion_token.py`):
+**Motion token** (`pycozmo_ng/navigation/motion_token.py`):
 The cancellation handle a single job polls — `token.cancelled`,
 `token.cancel()`, usable as a `with` scope. Cancellation is the token's own
 flag, a generation comparison, and its parent's answer; nesting outranks the
 generation, so a dying parent takes children begun after a `cancel_all()`.
 _Avoid_: reading the controller's internals from a job.
 
-**Path executor** (`pycozmo/navigation/path_executor.py`):
+**Path executor** (`pycozmo_ng/navigation/path_executor.py`):
 The firmware path-following state machine, owned by the `PathExecutor`
 class: settle → allocate an event id → `ClearPath` → `AppendPathSeg*` →
 `ExecutePath` → wait for a `PathFollowingEvent` **or** pose proximity
@@ -222,10 +222,10 @@ delegations, so navigation callers (`Navigator`, `AStarFollower`,
 `Docking`, `CubeApproach`) never touch it directly. The pure helpers
 (`chunk_polyline_points`, `build_polyline_packets`) live beside it.
 _Avoid_: reaching path logic through `client.py` or importing the helpers
-from `pycozmo.client` (moved); a second path lock or event-id counter
+from `pycozmo_ng.client` (moved); a second path lock or event-id counter
 outside `PathExecutor`; sending path packets without that lock.
 
-**Navigator** (`pycozmo/navigation/navigator.py`):
+**Navigator** (`pycozmo_ng/navigation/navigator.py`):
 The navigation subsystem's one entry point — `navigate_to`, `drive_to_point`,
 `approach_cube*`, `stack_cube`, `dock`, `stop`, and the A* toggle — so callers
 address navigation as a single thing. It receives `Brain`'s shared
@@ -240,7 +240,7 @@ _False friend_: "delegate" here does not mean callers reach past Navigator —
 they keep using `navigator.dock()` / `navigator.set_astar_enabled()`;
 sub-classes are reached only through `navigator.astar` and `navigator.docking`.
 
-**Carry state** (`pycozmo/cubes/carry_state.py`):
+**Carry state** (`pycozmo_ng/cubes/carry_state.py`):
 Whether a cube is riding the lift — read it whenever you want via
 `cozmo.carry.state` / `cozmo.carry.is_carrying` (`True`/`False`/`None` for
 unknown) / `cozmo.carry.cube_id`. Nothing polls: `CarryDetector.state` is
@@ -283,7 +283,7 @@ a witnessed grab); judging while the lift motor is travelling; assuming
 the heuristic survives a cube driven back into
 frame — re-`note_grab` after the next grab to resynchronise.
 
-**Lift feedback** (`pycozmo/util/robot.py`):
+**Lift feedback** (`pycozmo_ng/util/robot.py`):
 `RobotState.lift_height_mm` is misnamed — the firmware reports the lift
 arm **angle in radians** (live: ≈ -0.2 with forks down, ≈ 0.8 with them
 up = `MIN_LIFT_ANGLE`/`MAX_LIFT_ANGLE` for the 66 mm arm on a 45 mm
@@ -296,7 +296,7 @@ fallback, never the settle signal.
 _Avoid_: reading `pkt.lift_height_mm` raw (radians, not mm); using a
 height threshold as the "lift settled" signal.
 
-**Cube stacking** (`pycozmo/navigation/cube_stack.py`):
+**Cube stacking** (`pycozmo_ng/navigation/cube_stack.py`):
 Putting the carried cube on top of a second cube. Trigger: click another
 cube in the viewer while `carry.on_forks`, or the explicit
 `cozmo.navigator.stack_cube(id)` — `Navigator.approach_cube_at` is the
