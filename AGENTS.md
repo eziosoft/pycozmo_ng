@@ -99,6 +99,7 @@ pycozmo_ng/           # Main library (import name: pycozmo_ng)
 │   ├── frame_state.py       # FrameState — typed container for frame/detection state
 │   ├── image_encoder.py     # Image encoding utilities
 │   ├── interfaces.py        # Detector/tracker protocols (CubeDetector, etc.)
+│   ├── vision_setup.py      # VisionSetup — the one declaration of the vision options
 │   ├── calibration/         # camera_calibration.py (from robot NVRAM), robot_center.py (two-ring detection),
 │   │                        # robot_center_calibration.py (single owner of the measured session offset)
 │   ├── cube_detector/       # cube_detector.py (CozmoCubeDetector + CubeFusionTracker),

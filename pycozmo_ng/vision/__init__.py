@@ -27,6 +27,7 @@ from pycozmo_ng.vision.interfaces import (
     CubeFusionTracker,
     FaceDetector,
 )
+from pycozmo_ng.vision.vision_setup import VisionSetup
 
 __all__ = [
     "AnnotationEngine",
@@ -45,6 +46,7 @@ __all__ = [
     "RobotCenterCalibration",
     "RobotCenterDetector",
     "RobotCenterResult",
+    "VisionSetup",
     "create_default_detection_pipeline",
     "load_marker_templates",
 ]

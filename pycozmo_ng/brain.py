@@ -32,6 +32,7 @@ from pycozmo_ng.vision.face_identity import FaceIdentity
 from pycozmo_ng.vision.frame_stage import FrameStage
 from pycozmo_ng.vision.frame_state import FrameState
 from pycozmo_ng.vision.occupancy_map.floor_pipeline import FloorPipeline
+from pycozmo_ng.vision.vision_setup import VisionSetup
 from pycozmo_ng.web.viewer_server import WebViewerServer
 
 
@@ -118,27 +119,7 @@ class Brain:
         self.frame_stage.cli = value
         self.camera.cli = value
 
-    def setup_vision(
-        self,
-        camera_calibration=None,
-        calibration_timeout: float = 10.0,
-        process_every_n_frames: int = 1,
-        undistort: bool = False,
-        enable_floor_projection: bool = True,
-        floor_center_mm: tuple[float, float] = (200.0, 0.0),
-        floor_size_mm: tuple[float, float] = (600.0, 600.0),
-        mm_per_pixel: float = 5.0,
-        enable_occupancy_map: bool = True,
-        occupancy_grid_size_mm: float = 2000.0,
-        occupancy_cell_size_mm: float = 50.0,
-        occupancy_inflation_radius: int = 2,
-        occupancy_vote_cap: int = 10,
-        occupancy_valid_min_brightness: int = 8,
-        occupancy_edge_margin_px: int = 3,
-        floor_edge_margin_px: int = 4,
-        enable_face_detection: bool = True,
-        face_detect_every_n_frames: int = 1,
-    ):
+    def setup_vision(self, setup: VisionSetup | None = None) -> None:
         """Set up the vision pipeline components and register event handlers.
 
         This wires together DetectionPipeline, AnnotationEngine,
@@ -147,28 +128,33 @@ class Brain:
         subsystem handlers (charger state, cube connection, robot state
         trail, pick-up).
 
-        Requires a connection: if ``camera_calibration`` is None it is
+        Every option is declared once, in :class:`~pycozmo_ng.vision.vision_setup.VisionSetup`
+        (frame gating, floor projection, occupancy map, face detection);
+        the defaults apply when ``setup`` is None.
+
+        Requires a connection: if the calibration is omitted it is
         retrieved from the robot.
 
         Args:
-            camera_calibration: CameraCalibration instance. If None,
-                retrieves it from the robot (needs ``self.cli``).
-            calibration_timeout: Seconds to wait for calibration retrieval.
-            face_detect_every_n_frames: Run face detection every Nth
-                processed frame (1 = every frame). Higher values reduce
-                CPU load — faces are static enough that every 3rd frame
-                is usually sufficient.
+            setup: Vision options. Defaults to ``VisionSetup()``.
         """
+        setup = setup or VisionSetup()
+
         if self.cli is None:
             raise RuntimeError("Not connected - call Cozmo.connect() before setup_vision")
 
+        camera_calibration = setup.camera_calibration
         if camera_calibration is None:
             from pycozmo_ng.vision.calibration.camera_calibration import (
                 CameraCalibrationRetriever,
             )
 
             retriever = CameraCalibrationRetriever(self.cli)
-            camera_calibration = retriever.get_calibration(timeout=calibration_timeout)
+            camera_calibration = retriever.get_calibration(timeout=setup.calibration_timeout)
+            if camera_calibration is None:
+                raise RuntimeError(
+                    f"Camera calibration not retrieved from the robot within {setup.calibration_timeout}s"
+                )
 
         self.camera_calibration = camera_calibration
 
@@ -176,7 +162,7 @@ class Brain:
         self.detection_pipeline = create_default_detection_pipeline(
             camera_calibration=camera_calibration,
         )
-        self.detection_pipeline.enable_face_detection = enable_face_detection
+        self.detection_pipeline.enable_face_detection = setup.enable_face_detection
 
         # Annotation engine (pure drawing)
         self.annotation_engine = AnnotationEngine()
@@ -188,21 +174,21 @@ class Brain:
         self.face_identity = FaceIdentity()
 
         # Floor pipeline (optional)
-        if enable_floor_projection:
+        if setup.enable_floor_projection:
             self.floor_pipeline = FloorPipeline(
                 camera_calibration=camera_calibration,
                 enable_floor_projection=True,
-                floor_center_mm=floor_center_mm,
-                floor_size_mm=floor_size_mm,
-                mm_per_pixel=mm_per_pixel,
-                enable_occupancy_map=enable_occupancy_map,
-                occupancy_grid_size_mm=occupancy_grid_size_mm,
-                occupancy_cell_size_mm=occupancy_cell_size_mm,
-                occupancy_inflation_radius=occupancy_inflation_radius,
-                occupancy_vote_cap=occupancy_vote_cap,
-                occupancy_valid_min_brightness=occupancy_valid_min_brightness,
-                occupancy_edge_margin_px=occupancy_edge_margin_px,
-                floor_edge_margin_px=floor_edge_margin_px,
+                floor_center_mm=setup.floor_center_mm,
+                floor_size_mm=setup.floor_size_mm,
+                mm_per_pixel=setup.mm_per_pixel,
+                enable_occupancy_map=setup.enable_occupancy_map,
+                occupancy_grid_size_mm=setup.occupancy_grid_size_mm,
+                occupancy_cell_size_mm=setup.occupancy_cell_size_mm,
+                occupancy_inflation_radius=setup.occupancy_inflation_radius,
+                occupancy_vote_cap=setup.occupancy_vote_cap,
+                occupancy_valid_min_brightness=setup.occupancy_valid_min_brightness,
+                occupancy_edge_margin_px=setup.occupancy_edge_margin_px,
+                floor_edge_margin_px=setup.floor_edge_margin_px,
             )
 
         # Hand every per-session vision component to the frame stage in
@@ -213,9 +199,9 @@ class Brain:
             event_dispatcher=self.event_dispatcher,
             face_identity=self.face_identity,
             floor_pipeline=self.floor_pipeline,
-            process_every_n_frames=process_every_n_frames,
-            undistort=undistort,
-            face_detect_every_n_frames=face_detect_every_n_frames,
+            process_every_n_frames=setup.process_every_n_frames,
+            undistort=setup.undistort,
+            face_detect_every_n_frames=setup.face_detect_every_n_frames,
         )
 
         # Expose occupancy map to web viewer for A* pathfinding
@@ -239,7 +225,7 @@ class Brain:
 
         logger_cubes.info(
             f"Vision pipeline initialized (processing every "
-            f"{process_every_n_frames} frame{'s' if process_every_n_frames > 1 else ''})"
+            f"{setup.process_every_n_frames} frame{'s' if setup.process_every_n_frames > 1 else ''})"
         )
 
     # ------------------------------------------------------------------

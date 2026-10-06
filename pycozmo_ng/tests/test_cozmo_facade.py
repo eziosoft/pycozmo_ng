@@ -7,6 +7,7 @@ subsystem method fails here instead of raising AttributeError in front of
 a user (the bug this suite guards against).
 """
 
+from dataclasses import fields
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -14,6 +15,7 @@ import pytest
 
 import pycozmo_ng
 from pycozmo_ng import Cozmo, cubes, navigation
+from pycozmo_ng.vision.vision_setup import VisionSetup
 
 
 @pytest.fixture
@@ -198,6 +200,22 @@ class TestVisionFacade:
         # Raises before attempting calibration retrieval from the robot.
         with pytest.raises(RuntimeError):
             cozmo.setup_vision()
+
+    def test_setup_vision_accepts_every_declared_option(self, cozmo):
+        # One declaration (VisionSetup) backs both entries: everything Brain
+        # accepts is accepted here — the facade used to re-list a shorter
+        # parameter map and raise TypeError on the rest.
+        kwargs = {field.name: field.default for field in fields(VisionSetup)}
+        with pytest.raises(RuntimeError):  # parsed fine; only the connection is missing
+            cozmo.setup_vision(**kwargs)
+
+    def test_setup_vision_accepts_prebuilt_options(self, cozmo):
+        with pytest.raises(RuntimeError):
+            cozmo.setup_vision(VisionSetup(enable_occupancy_map=False))
+
+    def test_setup_vision_rejects_unknown_option(self, cozmo):
+        with pytest.raises(TypeError):
+            cozmo.setup_vision(not_a_vision_option=True)
 
 
 class TestWebViewerFacade:

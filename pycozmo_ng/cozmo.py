@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,6 +32,7 @@ from pycozmo_ng.logger import logger, setup_basic_logging
 from pycozmo_ng.navigation.world_map import CubeState, WorldMap
 from pycozmo_ng.protocol import protocol_encoder
 from pycozmo_ng.vision.cube_detector.detection_pipeline import DetectionPipeline
+from pycozmo_ng.vision.vision_setup import VisionSetup
 from pycozmo_ng.web.viewer_server import WebViewerServer
 
 
@@ -48,7 +50,8 @@ class VisionAPI:
 
         Args:
             resolution: ImageResolution enum (default: QVGA).
-            **kwargs: Passed through to :meth:`Cozmo.setup_vision`.
+            **kwargs: :class:`VisionSetup` fields — see
+                :meth:`Cozmo.setup_vision`.
 
         Raises:
             RuntimeError: If not connected to the robot.
@@ -56,7 +59,7 @@ class VisionAPI:
         brain = self._brain
         if brain.cli is None:
             raise RuntimeError("Not connected - call Cozmo.connect() first")
-        brain.setup_vision(**kwargs)
+        brain.setup_vision(VisionSetup(**kwargs))
         brain.camera.enable(resolution)
 
     def stop(self) -> None:
@@ -511,50 +514,29 @@ class Cozmo:
     # Vision setup
     # ------------------------------------------------------------------
 
-    def setup_vision(
-        self,
-        camera_calibration=None,
-        calibration_timeout: float = 10.0,
-        process_every_n_frames: int = 1,
-        undistort: bool = False,
-        enable_floor_projection: bool = True,
-        floor_center_mm: tuple[float, float] = (200.0, 0.0),
-        floor_size_mm: tuple[float, float] = (600.0, 600.0),
-        mm_per_pixel: float = 5.0,
-        enable_face_detection: bool = True,
-        face_detect_every_n_frames: int = 1,
-    ):
+    def setup_vision(self, setup: VisionSetup | None = None, **overrides) -> None:
         """Set up the vision pipeline and register all internal event handlers.
 
-        Requires a connection: when ``camera_calibration`` is None it is
+        The options are declared exactly once — as the fields of
+        :class:`~pycozmo_ng.vision.vision_setup.VisionSetup` — and this entry
+        point accepts all of them, either as a pre-built instance or as
+        individual keyword overrides. There is no second, shorter parameter
+        list to keep in sync: anything the internal setup understands is
+        accepted here too, and an unknown option raises ``TypeError``.
+
+        Requires a connection: when the calibration is omitted it is
         retrieved from the robot.
 
         Args:
-            camera_calibration: CameraCalibration instance. If None, retrieves
-                it from the robot automatically.
-            calibration_timeout: Seconds to wait for calibration retrieval.
-            process_every_n_frames: Run detection every Nth frame (1 = every frame).
-            undistort: Apply lens distortion correction.
-            enable_floor_projection: Enable bird's-eye floor view.
-            floor_center_mm: Floor projection center (x, y) in mm.
-            floor_size_mm: Floor projection size (w, h) in mm.
-            mm_per_pixel: Floor projection resolution.
-            enable_face_detection: Enable Haar cascade face detection.
-            face_detect_every_n_frames: Run face detection every Nth processed
-                frame (1 = every frame). Higher values reduce CPU load.
+            setup: Options to apply (defaults to ``VisionSetup()`` defaults).
+            **overrides: Individual ``VisionSetup`` fields to change, e.g.
+                ``setup_vision(process_every_n_frames=3,
+                enable_occupancy_map=True)``.
+
+        Raises:
+            RuntimeError: If not connected to the robot.
         """
-        self._brain.setup_vision(
-            camera_calibration=camera_calibration,
-            calibration_timeout=calibration_timeout,
-            process_every_n_frames=process_every_n_frames,
-            undistort=undistort,
-            enable_floor_projection=enable_floor_projection,
-            floor_center_mm=floor_center_mm,
-            floor_size_mm=floor_size_mm,
-            mm_per_pixel=mm_per_pixel,
-            enable_face_detection=enable_face_detection,
-            face_detect_every_n_frames=face_detect_every_n_frames,
-        )
+        self._brain.setup_vision(replace(setup or VisionSetup(), **overrides))
 
     # ------------------------------------------------------------------
     # Annotation options

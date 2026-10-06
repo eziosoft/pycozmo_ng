@@ -8,6 +8,14 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- Vision setup options are declared once, in the new typed container
+  `vision/vision_setup.py` (`VisionSetup`): `Brain.setup_vision(setup)` takes
+  that object and `Cozmo.setup_vision(...)` / `Cozmo.vision.start(...)` accept
+  its fields as keyword overrides. The facade used to re-list a shorter
+  parameter map, so `cozmo.setup_vision(enable_occupancy_map=False)` raised
+  `TypeError` while `cozmo.vision.start(...)` accepted it. Also: a camera
+  calibration that the robot never delivers now raises a clear `RuntimeError`
+  instead of failing later inside pipeline construction.
 - Robot-center calibration now has one owner: new
   `vision/calibration/robot_center_calibration.py` holds the session offset,
   the arm/observe/freeze run protocol, and the collected readings.
