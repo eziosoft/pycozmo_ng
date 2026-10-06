@@ -99,7 +99,6 @@ pycozmo_ng/           # Main library (import name: pycozmo_ng)
 │   ├── frame_state.py       # FrameState — typed container for frame/detection state
 │   ├── image_encoder.py     # Image encoding utilities
 │   ├── interfaces.py        # Detector/tracker protocols (CubeDetector, etc.)
-│   ├── processor.py         # DEPRECATED compat shim — nothing imports it; slated for removal (no-shim policy)
 │   ├── calibration/         # camera_calibration.py (from robot NVRAM), robot_center.py (two-ring calibration)
 │   ├── cube_detector/       # cube_detector.py (CozmoCubeDetector + CubeFusionTracker),
 │   │                        # detection_pipeline.py (core detection), cube_faces/ (marker templates)

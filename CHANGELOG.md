@@ -6,6 +6,10 @@ History up to v0.8.0 belongs to upstream [pycozmo](https://github.com/zayfod/pyc
 and is intentionally not carried over — this changelog starts fresh with the first
 PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
+## Unreleased
+
+- Removed `vision/processor.py` backward-compat shim (first no-shim deletion). Nothing imported it.
+
 ## v0.9.0 (2026-10-04)
 
 First release of PyCozmo-NG — a standalone fork of pycozmo.
