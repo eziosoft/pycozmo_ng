@@ -28,10 +28,8 @@ from pycozmo_ng.navigation.world_map import WorldMap
 from pycozmo_ng.web.file_server import FileServer
 from pycozmo_ng.web.mjpeg_streamer import MjpegEndpoint
 from pycozmo_ng.web.msg_router import MsgRouter
-from pycozmo_ng.web.state_builder import (
-    OCCUPANCY_SEND_INTERVAL_S,
-    build_state_json,
-)
+from pycozmo_ng.web.occupancy_delivery import OccupancyDelivery
+from pycozmo_ng.web.state_builder import build_state_json
 from pycozmo_ng.web.ws_server import WSServer
 
 
@@ -54,6 +52,7 @@ class WebViewerServer:
     - :class:`WSServer` — WebSocket + HTTP lifecycle
     - :class:`FileServer` — static file serving
     - :class:`MjpegEndpoint` — annotated/floor MJPEG streams
+    - :class:`OccupancyDelivery` — when the occupancy grid PNG is sent
     - :func:`build_state_json` — world→scene state serialization
     """
 
@@ -85,25 +84,14 @@ class WebViewerServer:
         self._floor_size_mm: tuple[float, float] = (600.0, 600.0)
         self._floor_center_mm: tuple[float, float] = (200.0, 0.0)
 
-        # Occupancy grid (base64-encoded PNG for WebSocket)
-        self._latest_occupancy_png: str | None = None
-        self._occupancy_origin: list[float] | None = None
-        self._occupancy_seq: int = 0
-        self._occupancy_seq_sent: int = -1
-        self._last_occupancy_encode_time: float = 0.0
-
-        # Occupancy map reference for A* pathfinding
-        self.occupancy_map = None
+        # Occupancy grid delivery (encode throttle + changed/send decision)
+        self.occupancy = OccupancyDelivery()
 
         # Procedural face (base64-encoded PNG for WebSocket)
         self._latest_face_png: str | None = None
 
         # Broadcast coalescing
         self._broadcast_queue = None
-
-        # Active-client transition callbacks (COZMO-22)
-        self._active_clients_listeners: list = []
-        self._last_active_count: int = 0
 
         # Latest robot telemetry
         self._telemetry: dict = {}
@@ -149,10 +137,6 @@ class WebViewerServer:
         except RuntimeError:
             pass
 
-    def render(self) -> bool:
-        """No-op for compatibility — web viewer renders in browser."""
-        return True
-
     def push_annotated_frame(self, image):
         """Publish the latest annotated camera frame for MJPEG streaming."""
         self._latest_annotated_image = image
@@ -167,22 +151,6 @@ class WebViewerServer:
 
         self._latest_floor_image = Image.fromarray(rgb)
         self._floor_image_id += 1
-
-    def push_occupancy_grid(self, grid_image, origin_x: float = 0.0, origin_y: float = 0.0) -> None:
-        """Publish the occupancy grid as a base64-encoded PNG for WebSocket."""
-        import base64
-
-        import cv2
-
-        now = time.time()
-        if now - self._last_occupancy_encode_time < OCCUPANCY_SEND_INTERVAL_S:
-            return
-        self._last_occupancy_encode_time = now
-
-        _, buf = cv2.imencode(".png", grid_image)
-        self._latest_occupancy_png = base64.b64encode(buf.tobytes()).decode("ascii")
-        self._occupancy_origin = [origin_x, origin_y]
-        self._occupancy_seq += 1
 
     def set_floor_size(self, width_mm: float, height_mm: float) -> None:
         """Set the floor grid dimensions (mm) for the browser overlay."""
@@ -211,37 +179,19 @@ class WebViewerServer:
             except RuntimeError:
                 pass
 
-    def add_active_clients_listener(self, callback) -> None:
-        """Subscribe to active-client-count transitions."""
-        self._active_clients_listeners.append(callback)
-
-    @property
-    def active_client_count(self) -> int:
-        """Return the current number of connected WebSocket clients."""
-        return self._last_active_count
-
     # -- internal -----------------------------------------------------------
 
     def _build_state_json(self, force_occupancy: bool = False) -> str:
-        msg = build_state_json(
+        return build_state_json(
             self.world_map,
             self._telemetry,
             self._floor_size_mm,
             self._floor_center_mm,
-            self._latest_occupancy_png,
-            self._occupancy_origin,
-            self._occupancy_seq,
-            self._occupancy_seq_sent,
             self._start_time,
-            force_occupancy,
+            self.occupancy.take(force=force_occupancy),
             camera_settings=self.camera.settings if self.camera is not None else None,
             face_png=self._latest_face_png,
         )
-        if self._latest_occupancy_png is not None and (
-            force_occupancy or self._occupancy_seq != self._occupancy_seq_sent
-        ):
-            self._occupancy_seq_sent = self._occupancy_seq
-        return msg
 
     async def _broadcast_loop(self):
         """Coalescing broadcaster: send the latest state at most once per
@@ -275,14 +225,12 @@ class WebViewerServer:
 
     async def _handler(self, websocket):
         self._clients.add(websocket)
-        self._fire_active_clients_change()
         try:
             await websocket.send(self._build_state_json(force_occupancy=True))
             async for raw in websocket:
                 self.router.route(raw)
         finally:
             self._clients.discard(websocket)
-            self._fire_active_clients_change()
             if not self._clients:
                 listener = self.router.get_action("control")
                 if listener is not None:
@@ -290,17 +238,6 @@ class WebViewerServer:
                         listener(set())
                     except Exception as e:  # noqa: BLE001
                         logger.warning("control listener (final stop) failed: %s", e)
-
-    def _fire_active_clients_change(self) -> None:
-        count = len(self._clients)
-        if count == self._last_active_count:
-            return
-        self._last_active_count = count
-        for listener in list(self._active_clients_listeners):
-            try:
-                listener(count)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("active-clients listener failed: %s", e)
 
     # -- server lifecycle ---------------------------------------------------
 

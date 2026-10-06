@@ -23,11 +23,6 @@ PATH_SCENE_LIFT_MM: float = 3.0
 # browser can't visually tell the difference above this many points.
 MAX_PATH_POINTS_SENT: int = 800
 
-# Occupancy changes incrementally (a few cells per frame); re-encoding and
-# re-sending the full PNG that often is wasted bandwidth. Encode at most this
-# often and only embed the PNG in a state message when it actually changed.
-OCCUPANCY_SEND_INTERVAL_S: float = 0.2
-
 # Size of a cube in scene units (mm) — mirrors CUBE_SIZE in index.html.
 CUBE_SIZE_MM: float = 44.0
 
@@ -52,12 +47,8 @@ def build_state_json(
     telemetry: dict,
     floor_size_mm: tuple[float, float],
     floor_center_mm: tuple[float, float],
-    occupancy_png: str | None,
-    occupancy_origin: list[float] | None,
-    occupancy_seq: int,
-    occupancy_seq_sent: int,
     start_time: float,
-    force_occupancy: bool = False,
+    occupancy: tuple[str, list[float]] | None = None,
     camera_settings: dict | None = None,
     face_png: str | None = None,
 ) -> str:
@@ -70,12 +61,10 @@ def build_state_json(
         telemetry: Latest robot telemetry dict.
         floor_size_mm: (width, height) of floor grid in mm.
         floor_center_mm: (center_x, center_y) of floor grid in mm.
-        occupancy_png: Base64-encoded occupancy PNG (or None).
-        occupancy_origin: [origin_x, origin_y] of occupancy grid.
-        occupancy_seq: Current occupancy sequence number.
-        occupancy_seq_sent: Last occupancy sequence sent to browser.
         start_time: Server start time (for timestamp).
-        force_occupancy: If True, include occupancy even if unchanged.
+        occupancy: Payload from ``OccupancyDelivery.take()`` — ``(base64 PNG,
+            [origin_x, origin_y])`` — or None when this message carries no
+            grid. The change/send decision lives in that one call, not here.
         camera_settings: Current camera settings dict (or None).
 
     Returns:
@@ -185,10 +174,10 @@ def build_state_json(
     if face_png is not None:
         state["face_png"] = face_png
 
-    # Include occupancy grid PNG if available — and only when it actually
-    # changed (or the receiver needs a full snapshot, e.g. on connect).
-    if occupancy_png is not None and (force_occupancy or occupancy_seq != occupancy_seq_sent):
-        state["occupancy_png"] = occupancy_png
-        state["occupancy_origin"] = occupancy_origin
+    # Include the occupancy grid when this message carries one (decided once,
+    # by OccupancyDelivery.take()).
+    if occupancy is not None:
+        state["occupancy_png"] = occupancy[0]
+        state["occupancy_origin"] = occupancy[1]
 
     return json.dumps(state)

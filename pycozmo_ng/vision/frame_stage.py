@@ -280,7 +280,7 @@ class FrameStage:
         # Publish the occupancy map image for the browser overlay
         occ = self.floor_pipeline.occupancy_map
         if occ_map_image is not None and self.floor_pipeline.occupancy_enabled and occ is not None:
-            self.web_viewer.push_occupancy_grid(occ_map_image, occ.origin[0], occ.origin[1])
+            self.web_viewer.occupancy.push(occ_map_image, occ.origin[0], occ.origin[1])
 
         # Sync floor grid dimensions to browser on first frame
         fp = self.floor_pipeline.floor_projector

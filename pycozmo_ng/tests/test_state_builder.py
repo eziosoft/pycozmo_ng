@@ -59,10 +59,6 @@ class TestBuildStateJson:
             {},
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
@@ -81,10 +77,6 @@ class TestBuildStateJson:
             {},
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
@@ -98,10 +90,6 @@ class TestBuildStateJson:
             {},
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
@@ -116,10 +104,6 @@ class TestBuildStateJson:
             telemetry,
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
@@ -135,65 +119,27 @@ class TestBuildStateJson:
             telemetry,
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
         assert state["telemetry"]["carry"] == "carrying"
         assert state["telemetry"]["carry_cube"] == 2
 
-    def test_occupancy_included_when_forced(self):
+    def test_occupancy_included_when_payload_given(self):
+        # The changed/send decision belongs to OccupancyDelivery.take(); the
+        # builder just embeds whatever that one call handed it.
         wm = _make_world_map()
         result = build_state_json(
             wm,
             {},
             (600.0, 600.0),
             (200.0, 0.0),
-            "base64data",
-            [10.0, 20.0],
-            1,
-            -1,
             time.time(),
-            force_occupancy=True,
+            ("base64data", [10.0, 20.0]),
         )
         state = json.loads(result)
         assert state["occupancy_png"] == "base64data"
         assert state["occupancy_origin"] == [10.0, 20.0]
-
-    def test_occupancy_included_when_seq_changed(self):
-        wm = _make_world_map()
-        result = build_state_json(
-            wm,
-            {},
-            (600.0, 600.0),
-            (200.0, 0.0),
-            "base64data",
-            [10.0, 20.0],
-            5,
-            4,
-            time.time(),
-        )
-        state = json.loads(result)
-        assert state["occupancy_png"] == "base64data"
-
-    def test_occupancy_excluded_when_seq_same(self):
-        wm = _make_world_map()
-        result = build_state_json(
-            wm,
-            {},
-            (600.0, 600.0),
-            (200.0, 0.0),
-            "base64data",
-            [10.0, 20.0],
-            5,
-            5,
-            time.time(),
-        )
-        state = json.loads(result)
-        assert "occupancy_png" not in state
 
     def test_occupancy_excluded_when_none(self):
         wm = _make_world_map()
@@ -202,10 +148,6 @@ class TestBuildStateJson:
             {},
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
@@ -218,10 +160,6 @@ class TestBuildStateJson:
             {},
             (800.0, 600.0),
             (100.0, 50.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
@@ -240,10 +178,6 @@ class TestBuildStateJson:
             {},
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
@@ -268,10 +202,6 @@ class TestBuildStateJson:
             {},
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
@@ -294,10 +224,6 @@ class TestBuildStateJson:
             {},
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         state = json.loads(result)
@@ -319,10 +245,6 @@ class TestCarriedCube:
             telemetry,
             (600.0, 600.0),
             (200.0, 0.0),
-            None,
-            None,
-            0,
-            -1,
             time.time(),
         )
         return json.loads(result)

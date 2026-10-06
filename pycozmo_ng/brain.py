@@ -204,9 +204,9 @@ class Brain:
             face_detect_every_n_frames=setup.face_detect_every_n_frames,
         )
 
-        # Expose occupancy map to web viewer for A* pathfinding
+        # Plan A* paths over the occupancy grid (Brain is the composition
+        # root — the web server never holds the map)
         if self.floor_pipeline and self.floor_pipeline.occupancy_map is not None:
-            self.web_viewer.occupancy_map = self.floor_pipeline.occupancy_map
             self.astar_planner = AStarPlanner(self.floor_pipeline.occupancy_map, allow_unknown=True)
             self.navigator.set_astar_planner(self.astar_planner)
             self.navigator.set_astar_enabled(False)

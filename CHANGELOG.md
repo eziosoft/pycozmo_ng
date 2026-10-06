@@ -8,6 +8,16 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- Occupancy delivery has one owner: new `web/occupancy_delivery.py`
+  (`OccupancyDelivery.push` throttles the encode, `take()` answers "changed?
+  → send → mark sent" in a single call that `build_state_json` consumes as one
+  payload argument). The same decision used to be written twice — in
+  `state_builder.py` and again in `viewer_server.py` — where the copies could
+  drift apart. Deleted along the way: the no-op `WebViewerServer.render()`,
+  the write-only `WebViewerServer.occupancy_map`, and the never-subscribed
+  active-client listener (`add_active_clients_listener` /
+  `active_client_count`); frame stage now calls `server.occupancy.push(...)`
+  instead of `server.push_occupancy_grid(...)`.
 - Vision setup options are declared once, in the new typed container
   `vision/vision_setup.py` (`VisionSetup`): `Brain.setup_vision(setup)` takes
   that object and `Cozmo.setup_vision(...)` / `Cozmo.vision.start(...)` accept

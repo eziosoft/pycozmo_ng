@@ -150,7 +150,7 @@ def test_full_sequence_updates_every_sink():
     cli.dispatch.assert_called_once()
     assert cli.dispatch.call_args.args[0] is event.EvtFloorProjectedImage
     h.web_viewer.push_floor_frame.assert_called_once_with(h.floor_img)
-    h.web_viewer.push_occupancy_grid.assert_called_once_with(h.occ_map_image, 10, 20)
+    h.web_viewer.occupancy.push.assert_called_once_with(h.occ_map_image, 10, 20)
     h.web_viewer.set_floor_size.assert_called_once_with(600.0, 600.0)
     h.web_viewer.set_floor_center.assert_called_once_with(200.0, 0.0)
 
@@ -299,6 +299,6 @@ def test_floor_disabled_skips_floor_sinks():
 
     cli.dispatch.assert_not_called()
     h.web_viewer.push_floor_frame.assert_not_called()
-    h.web_viewer.push_occupancy_grid.assert_not_called()
+    h.web_viewer.occupancy.push.assert_not_called()
     # …but the rest of the sequence still ran
     h.web_viewer.push_annotated_frame.assert_called_once()

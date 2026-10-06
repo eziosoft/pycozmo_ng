@@ -135,6 +135,7 @@ pycozmo_ng/           # Main library (import name: pycozmo_ng)
 │   ├── file_server.py       # FileServer — static file serving
 │   ├── mjpeg_streamer.py    # MjpegEndpoint — MJPEG streaming
 │   ├── msg_router.py        # MsgRouter — browser WebSocket message dispatch
+│   ├── occupancy_delivery.py # OccupancyDelivery — throttle + changed/send decision
 │   ├── state_builder.py     # build_state_json — world→scene serialization
 │   ├── viewer_server.py     # WebViewerServer — thin composition root
 │   ├── ws_server.py         # WSServer — WebSocket + HTTP lifecycle
