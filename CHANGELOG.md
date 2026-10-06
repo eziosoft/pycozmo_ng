@@ -9,6 +9,12 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 ## Unreleased
 
 - Removed `vision/processor.py` backward-compat shim (first no-shim deletion). Nothing imported it.
+- New `CubeVisit` seam (`navigation/cube_visit.py`): one object now owns the
+  "one cube visit at a time" lock, the background-job spawn, and the truthful
+  "did it start?" answer that `approach_cube` / `approach_cube_at` /
+  `stack_cube` (and so `cozmo.stack_cube`) return — they used to report
+  `True` even when the visit was silently refused as busy. Replaces the bare
+  `CubeApproach.approach_lock` that `CubeStack` reached through its sibling.
 
 ## v0.9.0 (2026-10-04)
 

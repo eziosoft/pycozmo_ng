@@ -21,6 +21,7 @@ from pycozmo_ng.navigation.astar import AStarPlanner
 from pycozmo_ng.navigation.astar_follower import AStarFollower
 from pycozmo_ng.navigation.cube_approach import CubeApproach
 from pycozmo_ng.navigation.cube_stack import CubeStack
+from pycozmo_ng.navigation.cube_visit import CubeVisit
 from pycozmo_ng.navigation.dock_state import DockState
 from pycozmo_ng.navigation.docking import Docking
 from pycozmo_ng.navigation.motion_controller import MotionController
@@ -82,8 +83,12 @@ class Navigator:
         # Cube approach (lazily created with DI callbacks)
         self._cube_approach: CubeApproach | None = None
         # Cube stacking — created on demand, shares the approach's
-        # drive sequence and visit lock.
+        # drive sequence.
         self._cube_stack: CubeStack | None = None
+        # The one cube-visit authority: both classes take this same
+        # object, so a grab and a stack can never interleave (and cannot
+        # be wired onto separate locks by accident).
+        self._cube_visit = CubeVisit(self.motion.spawn)
 
     @property
     def cli(self) -> Any:
@@ -395,7 +400,7 @@ class Navigator:
                 get_cube_state=lambda idx: world_map.get_cubes().get(idx) if world_map is not None else None,
                 drive_to_point=self.drive_to_point,
                 move_forward=self._move_forward,
-                spawn=self.motion.spawn,
+                visit=self._cube_visit,
                 carry=self.carry,
             )
         return self._cube_approach
@@ -407,7 +412,7 @@ class Navigator:
                 cli=self.cli,
                 drive_to_point=self.drive_to_point,
                 move_forward=self._move_forward,
-                spawn=self.motion.spawn,
+                visit=self._cube_visit,
                 carry=self.carry,
                 approach=self._get_cube_approach(),
             )
@@ -430,8 +435,10 @@ class Navigator:
         the two-step approach in the background.
 
         Returns:
-            True if the approach was started (the cube was found in the
-            world map), False otherwise.
+            True if a cube visit was actually started (a grab, or a stack
+            when a cube is riding the forks), False otherwise — the cube is
+            unknown, there is no robot/map, or another cube visit is
+            already in flight.
         """
         if not self.cli:
             logger.warning("Approach: no robot connected")
@@ -446,40 +453,41 @@ class Navigator:
             logger.warning("Approach: cube %d not in world map", cube_id)
             return False
         position = cube.position
-        self.approach_cube_at(cube_index, float(position[0]), float(position[1]))
-        return True
+        return self.approach_cube_at(cube_index, float(position[0]), float(position[1]))
 
-    def approach_cube_at(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
+    def approach_cube_at(self, cube_idx: int, cube_x: float, cube_y: float) -> bool:
         """Approach the cube at world position (x, y) — grab or stack.
 
         ``cube_idx`` is the 0-indexed world-map key; the browser message
         router resolves the pose and calls this directly. Use
         :meth:`approach_cube` to address a cube by its ID (1-3).
 
-        Normally this delegates to :class:`CubeApproach` (drive up, grab).
+        Normally this starts a :class:`CubeApproach` (drive up, grab).
         While a cube is believed to be riding the raised forks
         (``carry.on_forks``) and the target is a *different* cube, it
         routes to :class:`CubeStack` instead — so clicking a second cube
         in the viewer stacks the held cube on it rather than dumping it.
+
+        Returns True when the visit started, False when it was refused
+        (no robot, or another cube visit — approach or stack — is already
+        in flight).
         """
         if not self.cli:
             logger.warning("Approach: no robot connected")
-            return
+            return False
         carry = self.carry
         if carry is not None and carry.on_forks and to_cube_id(cube_idx) != carry.cube_id:
-            self._get_cube_stack().stack(cube_idx, cube_x, cube_y)
-            return
-        ca = self._get_cube_approach()
-        ca.approach(cube_idx, cube_x, cube_y)
+            return self._get_cube_stack().stack(cube_idx, cube_x, cube_y)
+        return self._get_cube_approach().approach(cube_idx, cube_x, cube_y)
 
     def stack_cube(self, cube_id: int) -> bool:
         """Approach the cube with the given ID (1-3) and stack the held cube on it.
 
-        Returns True if the stack was started (a cube is believed to be
-        on the raised forks and the target is in the world map), False
-        otherwise. The same routing happens automatically for
-        click-to-approach while carrying — this method is the explicit
-        library API.
+        Returns True if the stack was started, False when refused: no cube
+        on the raised forks, the target *is* the held cube, the target is
+        not in the world map, or another cube visit is already in flight.
+        The same routing happens automatically for click-to-approach while
+        carrying — this method is the explicit library API.
         """
         carry = self.carry
         if carry is None or not carry.on_forks:

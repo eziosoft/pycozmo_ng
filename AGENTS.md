@@ -109,6 +109,7 @@ pycozmo_ng/           # Main library (import name: pycozmo_ng)
 │   ├── astar_follower.py    # AStarFollower — plan, publish, follow A* path
 │   ├── cube_approach.py     # CubeApproach — two-step standoff approach
 │   ├── cube_stack.py        # CubeStack — stack the carried cube on another cube
+│   ├── cube_visit.py        # CubeVisit — one cube visit at a time (lock + job + start answer)
 │   ├── dock_state.py        # DockState — charger/dock pose tracking
 │   ├── docking.py           # Docking — dock approach, contact, retries
 │   ├── motion_controller.py # MotionController — registry of running motion jobs

@@ -18,6 +18,7 @@ import pycozmo_ng
 from pycozmo_ng.cubes.identity import to_cube_id
 from pycozmo_ng.navigation.cube_approach import CubeApproach
 from pycozmo_ng.navigation.cube_stack import CubeStack
+from pycozmo_ng.navigation.cube_visit import CubeVisit
 from pycozmo_ng.navigation.dock_state import DockState
 from pycozmo_ng.navigation.motion_controller import MotionController
 from pycozmo_ng.navigation.navigator import Navigator
@@ -78,19 +79,22 @@ def _make_stack(
             cube_state.updated_at = time.monotonic()  # fresh during dwell
             return cube_state
 
+    # One shared visit, exactly as Navigator wires it: grab and stack
+    # contend on the same lock.
+    visit = CubeVisit(spawn)
     approach = CubeApproach(
         cli,
         get_cube_state=get_cube_state,
         drive_to_point=drive or (lambda *a, **k: True),
         move_forward=move or (lambda d: True),
-        spawn=spawn,
+        visit=visit,
         carry=carry,
     )
     stack = CubeStack(
         cli=cli,
         drive_to_point=drive or (lambda *a, **k: True),
         move_forward=move or (lambda d: True),
-        spawn=spawn,
+        visit=visit,
         carry=carry,
         approach=approach,
     )
@@ -173,7 +177,7 @@ class TestStackPlacement:
             release_lookup.wait(2.0)  # returns None -> cube unknown
 
         stack, _ = _make_stack(cli=cli, get_cube_state=blocking_state, carry=carry)
-        stack.stack(1, 0.0, 300.0)
+        assert stack.stack(1, 0.0, 300.0) is True
         assert in_lookup.wait(2.0), "stack never started"
         assert CubeStack.JOB_STACK in _MOTION.active_names
         assert _MOTION.cancel(CubeStack.JOB_STACK)
@@ -187,8 +191,7 @@ class TestStackPlacement:
         cli.set_lift_height.assert_not_called()
         carry.clear.assert_not_called()
         # The shared visit lock was released -> the next visit can start.
-        assert stack._approach.approach_lock.acquire(blocking=False)
-        stack._approach.approach_lock.release()
+        assert not stack.visit.busy
 
 
 class TestStackEntry:
@@ -206,46 +209,44 @@ class TestStackEntry:
     def test_refuses_without_a_carry_detector(self):
         calls, spawn = self._recording_spawn()
         stack, _ = _make_stack(carry=None, spawn=spawn)
-        stack.stack(1, 0.0, 300.0)
+        assert stack.stack(1, 0.0, 300.0) is False
         assert calls == []
 
     def test_refuses_when_no_cube_on_the_forks(self):
         calls, spawn = self._recording_spawn()
         stack, _ = _make_stack(carry=_fake_carry(on_forks=False), spawn=spawn)
-        stack.stack(1, 0.0, 300.0)
+        assert stack.stack(1, 0.0, 300.0) is False
         assert calls == []
 
     def test_refuses_the_held_cube_as_target(self):
         calls, spawn = self._recording_spawn()
         carry = _fake_carry(on_forks=True, cube_id=1)
         stack, _ = _make_stack(carry=carry, spawn=spawn)
-        stack.stack(0, 0.0, 300.0)  # cube_idx 0 == cube_id 1 == held cube
+        assert stack.stack(0, 0.0, 300.0) is False  # cube_idx 0 == cube_id 1 == held cube
         assert calls == []
 
     def test_refuses_while_another_visit_is_in_flight(self):
         calls, spawn = self._recording_spawn()
         stack, approach = _make_stack(carry=_fake_carry(on_forks=True, cube_id=1), spawn=spawn)
-        approach.approach_lock.acquire(blocking=False)  # simulate in-flight
-        try:
-            stack.stack(1, 0.0, 300.0)
-        finally:
-            approach.approach_lock.release()
-        assert calls == []
+        # A grab approach is already in flight on the shared visit...
+        assert approach.visit.begin(CubeApproach.JOB_APPROACH, lambda job: None) is True
+        # ...so the stack is refused (not queued) and reports it.
+        assert stack.stack(1, 0.0, 300.0) is False
+        # Only the occupier ever started.
+        assert [name for name, _ in calls] == [CubeApproach.JOB_APPROACH]
 
     def test_starts_as_a_stack_job_and_holds_the_visit_lock(self):
         calls, spawn = self._recording_spawn()
-        stack, approach = _make_stack(carry=_fake_carry(on_forks=True, cube_id=1), spawn=spawn)
-        stack.stack(1, 0.0, 300.0)
+        stack, _approach = _make_stack(carry=_fake_carry(on_forks=True, cube_id=1), spawn=spawn)
+        assert stack.stack(1, 0.0, 300.0) is True
         assert [name for name, _ in calls] == [CubeStack.JOB_STACK]
-        # The visit lock is held for the (not yet run) job...
-        assert not approach.approach_lock.acquire(blocking=False)
+        # The visit is held for the (not yet run) job...
+        assert stack.visit.busy
         # ...and released again by the job's finally when it finishes.
         name, fn = calls[0]
-        del name
-        with _MOTION.begin(CubeStack.JOB_STACK) as job:
+        with _MOTION.begin(name) as job:
             fn(job)
-        assert approach.approach_lock.acquire(blocking=False)
-        approach.approach_lock.release()
+        assert not stack.visit.busy
 
 
 class TestNavigatorRouting:
@@ -258,6 +259,10 @@ class TestNavigatorRouting:
         nav.carry = carry
         nav._cube_stack = MagicMock()  # pre-built: no lazy creation
         nav._cube_approach = MagicMock()
+        # The sub-sequences answer "did the visit start?"; routing must
+        # propagate that answer instead of reporting success itself.
+        nav._cube_stack.stack.return_value = True
+        nav._cube_approach.approach.return_value = True
         return nav
 
     @staticmethod
@@ -269,27 +274,39 @@ class TestNavigatorRouting:
 
     def test_click_while_carrying_routes_to_stack(self):
         nav = self._nav(self._carry(on_forks=True, cube_id=1))
-        nav.approach_cube_at(1, 100.0, 200.0)  # cube 2 (idx 1)
+        assert nav.approach_cube_at(1, 100.0, 200.0) is True  # cube 2 (idx 1)
         nav._cube_stack.stack.assert_called_once_with(1, 100.0, 200.0)
         nav._cube_approach.approach.assert_not_called()
 
     def test_click_without_cube_routes_to_grab(self):
         nav = self._nav(self._carry(on_forks=False, cube_id=1))
-        nav.approach_cube_at(1, 100.0, 200.0)
+        assert nav.approach_cube_at(1, 100.0, 200.0) is True
         nav._cube_approach.approach.assert_called_once_with(1, 100.0, 200.0)
         nav._cube_stack.stack.assert_not_called()
 
     def test_no_carry_detector_routes_to_grab(self):
         nav = self._nav(None)
-        nav.approach_cube_at(1, 100.0, 200.0)
+        assert nav.approach_cube_at(1, 100.0, 200.0) is True
         nav._cube_approach.approach.assert_called_once_with(1, 100.0, 200.0)
         nav._cube_stack.stack.assert_not_called()
 
     def test_clicking_the_held_cube_stays_a_grab(self):
         nav = self._nav(self._carry(on_forks=True, cube_id=1))
-        nav.approach_cube_at(0, 0.0, 300.0)  # cube 1 == the held cube
+        assert nav.approach_cube_at(0, 0.0, 300.0) is True  # cube 1 == the held cube
         nav._cube_approach.approach.assert_called_once_with(0, 0.0, 300.0)
         nav._cube_stack.stack.assert_not_called()
+
+    def test_a_refused_visit_is_reported_not_hidden(self):
+        """A busy visit must not be reported as a started one.
+
+        This is the contract ``cozmo.stack_cube`` documents: True only
+        when the job actually started.
+        """
+        nav = self._nav(self._carry(on_forks=True, cube_id=1))
+        nav.world_map.get_cube.return_value = SimpleNamespace(position=np.array([50.0, 300.0, 0.0]))
+        nav._cube_stack.stack.return_value = False  # another visit in flight
+        assert nav.stack_cube(2) is False
+        assert nav.approach_cube_at(1, 50.0, 300.0) is False
 
     def test_stack_cube_refuses_without_cube_on_forks(self):
         nav = self._nav(self._carry(on_forks=False))

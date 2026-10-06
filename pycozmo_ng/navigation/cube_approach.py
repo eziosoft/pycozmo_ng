@@ -14,6 +14,7 @@ import numpy as np
 import pycozmo_ng
 from pycozmo_ng.cubes.identity import to_cube_id
 from pycozmo_ng.logger import logger
+from pycozmo_ng.navigation.cube_visit import CubeVisit
 from pycozmo_ng.navigation.motion_token import MotionToken
 from pycozmo_ng.navigation.steering import wrap_pi
 from pycozmo_ng.util import Angle, Pose
@@ -31,10 +32,12 @@ class CubeApproach:
                         Closed-loop drive to a point (Navigator.drive_to_point).
         move_forward    ``Callable[[dist_mm], bool]`` Straight-ahead creep
                         (Navigator._move_forward).
-        spawn           ``Callable[[str, Callable[[MotionToken], None]],
-                        MotionToken]`` Starts the approach on a background
-                        motion job (``MotionController.spawn``), which is
-                        what lets ``Navigator.stop`` cancel it.
+        visit           The shared :class:`CubeVisit` — starts the approach
+                        on a background motion job (``MotionController.spawn``
+                        behind it, which is what lets ``Navigator.stop``
+                        cancel it) and serializes it against a stack.
+                        Navigator builds one and hands the same instance to
+                        :class:`CubeStack`, so the two can never interleave.
     """
 
     #: Motion job name this class registers while an approach runs.
@@ -68,20 +71,19 @@ class CubeApproach:
     ARRIVE_POS_MM = 8.0
     ARRIVE_ANG_RAD = math.radians(2.0)
 
-    def __init__(self, cli, get_cube_state, drive_to_point, move_forward, spawn, carry=None):
+    def __init__(self, cli, get_cube_state, drive_to_point, move_forward, visit: CubeVisit, carry=None):
         self.cli = cli
         self._get_cube_state = get_cube_state
         self._drive_to_point = drive_to_point
         self._move_forward = move_forward
-        self._spawn = spawn
+        # The shared cube-visit seam: owns the "one visit at a time"
+        # lock and starts the background job. Public (and shared with
+        # CubeStack) so tests can ask whether a visit is in flight.
+        self.visit = visit
         # Carry observation (Brain's CarryDetector) — cleared when the
         # forks go down, armed after a grab so "cube out of frame" means
         # "cube on the lift". Optional: a standalone approach works without.
         self.carry = carry
-        # Serializes cube visits (approach and stack): multiple in-flight
-        # runs would race each other with conflicting go_to_pose /
-        # drive_wheels commands. Public because CubeStack shares it.
-        self.approach_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Pure helpers
@@ -277,30 +279,24 @@ class CubeApproach:
     # Public entry point
     # ------------------------------------------------------------------
 
-    def approach(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
+    def approach(self, cube_idx: int, cube_x: float, cube_y: float) -> bool:
         """Two-step approach & grab for the given cube.
 
         Runs as one background ``approach`` motion job so the caller
         (WebSocket handler) returns immediately and ``Navigator.stop``
         cancels the whole sequence — including the drives nested inside
-        it. Only one approach runs at a time: if one is already in
-        progress, the request is ignored.
+        it. Only one cube visit runs at a time: while a grab or a stack
+        is in flight the request is ignored.
+
+        Returns True when the job started, False when it was refused.
         """
-        if not self.approach_lock.acquire(blocking=False):
+        started = self.visit.begin(
+            self.JOB_APPROACH,
+            lambda job: self._run(job, cube_idx, cube_x, cube_y),
+        )
+        if not started:
             logger.warning("Approach busy - ignoring request for cube %d", to_cube_id(cube_idx))
-            return
-
-        def _run_guarded(job: MotionToken) -> None:
-            try:
-                self._run(job, cube_idx, cube_x, cube_y)
-            finally:
-                self.approach_lock.release()
-
-        try:
-            self._spawn(self.JOB_APPROACH, _run_guarded)
-        except Exception:
-            self.approach_lock.release()
-            raise
+        return started
 
     def _run(self, job: MotionToken, cube_idx: int, cube_x: float, cube_y: float) -> None:
         """Blocking implementation — runs inside the ``approach`` job."""

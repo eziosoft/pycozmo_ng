@@ -83,7 +83,14 @@ class TestNavigatorFacade:
         _seed_cube(cozmo._brain, cube_idx=0)
 
         calls: list[tuple[int, float, float]] = []
-        nav.approach_cube_at = lambda idx, x, y: calls.append((idx, x, y))
+
+        def _fake_visit(idx: int, x: float, y: float) -> bool:
+            # Stands in for the routing seam: records the visit and
+            # reports that it started.
+            calls.append((idx, x, y))
+            return True
+
+        nav.approach_cube_at = _fake_visit
 
         assert cozmo.navigator.approach_cube(1) is True  # ID 1 -> world key 0
         assert cozmo.navigator.approach_cube(2) is False  # not detected

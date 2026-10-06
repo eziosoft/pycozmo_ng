@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from pycozmo_ng.navigation.cube_approach import CubeApproach
+from pycozmo_ng.navigation.cube_visit import CubeVisit
 from pycozmo_ng.navigation.motion_controller import MotionController
 
 # Shared controller so spawned approaches are visible to assertions.
@@ -82,7 +83,7 @@ class TestStandoff:
             get_cube_state=lambda i: None,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         state = _make_cube_state(x=100.0, y=200.0)
         sx, sy = ca._standoff(state, 90.0, (0.0, 1.0))
@@ -100,7 +101,7 @@ class TestVerifyGrabAlignment:
             get_cube_state=lambda i: _make_cube_state(x=0.0, y=80.0, confidence=0.95),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         (passed, msgs, _facing_err, _forward, _lateral, centered, fresh) = ca._verify_grab_alignment(0)
         assert passed
@@ -115,7 +116,7 @@ class TestVerifyGrabAlignment:
             get_cube_state=lambda i: None,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         (passed, msgs, _, _, _, _, _) = ca._verify_grab_alignment(0)
         assert passed is False
@@ -128,7 +129,7 @@ class TestVerifyGrabAlignment:
             get_cube_state=lambda i: _make_cube_state(x=0.0, y=80.0, updated_at=time.monotonic() - 10.0),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         (passed, _, _, _, _, _, fresh) = ca._verify_grab_alignment(0)
         assert fresh is False
@@ -141,7 +142,7 @@ class TestVerifyGrabAlignment:
             get_cube_state=lambda i: _make_cube_state(x=50.0, y=80.0, confidence=0.95),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         (_passed, _, _, _, lateral, centered, _) = ca._verify_grab_alignment(0)
         assert not centered
@@ -156,7 +157,7 @@ class TestCorrectedTarget:
             get_cube_state=lambda i: None,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         assert ca._corrected_target(0, 90.0) is None
 
@@ -167,7 +168,7 @@ class TestCorrectedTarget:
             get_cube_state=lambda i: _make_cube_state(x=0.0, y=300.0),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         result = ca._corrected_target(0, 90.0)
         assert result is not None
@@ -204,7 +205,7 @@ class TestApproachIntegration:
             get_cube_state=get_state,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
             carry=carry,
         )
         with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
@@ -225,7 +226,7 @@ class TestApproachIntegration:
             get_cube_state=lambda i: cube_state,  # updated_at never advances
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
             carry=carry,
         )
         with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
@@ -248,7 +249,7 @@ class TestApproachIntegration:
             get_cube_state=get_state,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
             ca._run(job, 0, 0.0, 300.0)
@@ -263,7 +264,7 @@ class TestApproachThread:
             get_cube_state=lambda i: None,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
             ca._run(job, 0, 0.0, 300.0)  # should not raise
@@ -292,7 +293,7 @@ class TestApproachThread:
             get_cube_state=get_state,
             drive_to_point=mock_drive,
             move_forward=mock_fwd,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
             ca._run(job, 0, 0.0, 300.0)
@@ -319,7 +320,7 @@ class TestApproachThread:
             get_cube_state=lambda i: cube_state,  # updated_at never advances
             drive_to_point=lambda *a, **k: True,
             move_forward=mock_fwd,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
         with _MOTION.begin(CubeApproach.JOB_APPROACH) as job:
             ca._run(job, 0, 0.0, 300.0)
@@ -333,26 +334,33 @@ class TestApproachThread:
     def test_second_approach_ignored_while_busy(self):
         """Calling approach() while one is in flight must not start another."""
         cli, _ = _make_mock_cli(x=0.0, y=0.0, yaw=0.0)
+        pending = []  # recording spawn: the visit's job, recorded not run
+
+        def record(name, fn):
+            pending.append((name, fn))
+
+        visit = CubeVisit(record)
         ca = CubeApproach(
             cli,
             get_cube_state=lambda i: _make_cube_state(x=0.0, y=300.0),
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=visit,
         )
-        # Hold the approach lock to simulate an in-flight run.
-        ca.approach_lock.acquire(blocking=False)
-        try:
-            ca.approach(0, 0.0, 300.0)
-            time.sleep(0.2)  # give any (wrongly) started thread a chance
-        finally:
-            ca.approach_lock.release()
-
-        # The second approach was refused — no run started, no go_to_pose.
+        # The first visit starts and reports it, holding the visit...
+        assert ca.approach(0, 0.0, 300.0) is True
+        assert visit.busy
+        # ...so the second is refused (not queued): it never starts.
+        assert ca.approach(0, 0.0, 300.0) is False
+        assert len(pending) == 1
+        time.sleep(0.2)  # give any (wrongly) started thread a chance
         assert cli.go_to_pose.call_count == 0
-        # And the lock is free again for the next real approach.
-        assert ca.approach_lock.acquire(blocking=False)
-        ca.approach_lock.release()
+
+        # Once that visit's job finishes, the next one may start.
+        name, run = pending[0]
+        with _MOTION.begin(name) as job:
+            run(job)
+        assert not visit.busy
 
     def test_approach_runs_as_a_cancellable_job(self):
         """The approach is registered on the motion controller, so
@@ -372,9 +380,9 @@ class TestApproachThread:
             get_cube_state=blocking_state,
             drive_to_point=lambda *a, **k: True,
             move_forward=lambda d: True,
-            spawn=_MOTION.spawn,
+            visit=CubeVisit(_MOTION.spawn),
         )
-        ca.approach(0, 0.0, 300.0)
+        assert ca.approach(0, 0.0, 300.0) is True
         assert in_lookup.wait(2.0), "approach never started"
 
         assert CubeApproach.JOB_APPROACH in _MOTION.active_names
@@ -385,5 +393,5 @@ class TestApproachThread:
         while CubeApproach.JOB_APPROACH in _MOTION.active_names and time.monotonic() < deadline:
             time.sleep(0.01)
         assert CubeApproach.JOB_APPROACH not in _MOTION.active_names
-        assert ca.approach_lock.acquire(blocking=False)
-        ca.approach_lock.release()
+        # The job's finally released the shared visit — the next can start.
+        assert not ca.visit.busy

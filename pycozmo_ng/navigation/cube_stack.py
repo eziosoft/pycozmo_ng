@@ -28,6 +28,7 @@ import pycozmo_ng
 from pycozmo_ng.cubes.identity import to_cube_id
 from pycozmo_ng.logger import logger
 from pycozmo_ng.navigation.cube_approach import CubeApproach
+from pycozmo_ng.navigation.cube_visit import CubeVisit
 from pycozmo_ng.navigation.motion_token import MotionToken
 
 
@@ -36,9 +37,9 @@ class CubeStack:
 
     Borrows the approach's drive/alignment sequence
     (:meth:`CubeApproach.drive_and_align` with ``lower_forks=False``) and
-    its :attr:`CubeApproach.approach_lock`, so an approach and a stack
-    can never interleave. Requires a carry observation that believes a
-    cube is on the raised forks (``carry.on_forks``).
+    the shared :class:`CubeVisit`, so an approach and a stack can never
+    interleave. Requires a carry observation that believes a cube is on
+    the raised forks (``carry.on_forks``).
 
     Constructor args (dependency injection, same seams as
     :class:`CubeApproach`):
@@ -46,11 +47,10 @@ class CubeStack:
                         stop_all_motors.
         drive_to_point  Backing away from the stack (Navigator.drive_to_point).
         move_forward    Straight-ahead creep (Navigator._move_forward).
-        spawn           Starts the stack as a background motion job.
+        visit           The shared CubeVisit (lock + background job).
         carry           Brain's CarryDetector — checked at entry,
                         cleared once the forks are fully down.
-        approach        The shared CubeApproach instance (drive_and_align
-                        + approach_lock).
+        approach        The shared CubeApproach instance (drive_and_align).
     """
 
     #: Motion job name this class registers while a stack runs.
@@ -78,11 +78,13 @@ class CubeStack:
     BACK_AWAY_SPEED_MMPS = 40.0
     BACK_AWAY_TIMEOUT_S = 10.0
 
-    def __init__(self, cli, drive_to_point, move_forward, spawn, carry, approach):
+    def __init__(self, cli, drive_to_point, move_forward, visit: CubeVisit, carry, approach):
         self.cli = cli
         self._drive_to_point = drive_to_point
         self._move_forward = move_forward
-        self._spawn = spawn
+        # Shared with CubeApproach (Navigator injects the same object):
+        # the one "one visit at a time" authority for grab and stack.
+        self.visit = visit
         self.carry = carry
         self._approach = approach
 
@@ -90,7 +92,7 @@ class CubeStack:
     # Public entry point
     # ------------------------------------------------------------------
 
-    def stack(self, cube_idx: int, cube_x: float, cube_y: float) -> None:
+    def stack(self, cube_idx: int, cube_x: float, cube_y: float) -> bool:
         """Carry the held cube to the given cube and stack it there.
 
         Runs as one background ``stack`` motion job, so the caller
@@ -98,31 +100,24 @@ class CubeStack:
         cancels the whole sequence. Refused when no cube is believed to
         be on the forks, when the target *is* the held cube, or when
         another cube visit (approach/stack) is already in flight.
+
+        Returns True when the job started, False when it was refused.
         """
         if self.carry is None or not self.carry.on_forks:
             logger.warning("Stack: no cube on the forks - ignoring request")
-            return
+            return False
         carried_id = self.carry.cube_id
         if carried_id is not None and to_cube_id(cube_idx) == carried_id:
             logger.info("Stack: cube %d is already on the forks", carried_id)
-            return
+            return False
 
-        lock = self._approach.approach_lock
-        if not lock.acquire(blocking=False):
+        started = self.visit.begin(
+            self.JOB_STACK,
+            lambda job: self._run(job, cube_idx, cube_x, cube_y),
+        )
+        if not started:
             logger.warning("Stack busy - ignoring request for cube %d", to_cube_id(cube_idx))
-            return
-
-        def _run_guarded(job: MotionToken) -> None:
-            try:
-                self._run(job, cube_idx, cube_x, cube_y)
-            finally:
-                lock.release()
-
-        try:
-            self._spawn(self.JOB_STACK, _run_guarded)
-        except Exception:
-            lock.release()
-            raise
+        return started
 
     # ------------------------------------------------------------------
     # Internal

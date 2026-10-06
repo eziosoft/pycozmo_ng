@@ -198,9 +198,11 @@ class NavigatorAPI:
     def approach_cube(self, cube_id: int) -> bool:
         """Approach and align with the cube with the given ID (1-3).
 
-        Returns True if the approach was started (the cube is in the
-        world map), False otherwise. While a cube is on the raised forks,
-        approaching a *different* cube stacks the held cube on it.
+        Returns True if a cube visit was actually started, False when
+        refused: the cube is not in the world map, there is no robot
+        connection, or another cube visit (approach/stack) is in flight.
+        While a cube is on the raised forks, approaching a *different*
+        cube stacks the held cube on it.
         """
         return self._navigator.approach_cube(cube_id)
 
@@ -208,7 +210,9 @@ class NavigatorAPI:
         """Carry the held cube to the given cube ID (1-3) and stack it.
 
         Requires a cube on the raised forks (see ``cozmo.carry``).
-        Returns True if the stack was started, False when refused.
+        Returns True if the stack was started, False when refused (no
+        cube on the forks, the target is the held cube or unknown, or
+        another cube visit is in flight).
         """
         return self._navigator.stack_cube(cube_id)
 

@@ -233,7 +233,9 @@ address navigation as a single thing. It receives `Brain`'s shared
 sequences that hold their own tuning and job names: `AStarFollower` (`.astar` — plan, publish, and follow an A* path),
 `Docking` (`.docking` — dock approach, reverse into contact, retries), the
 lazily built `CubeApproach` (`_cube_approach`) and `CubeStack`
-(`_cube_stack`). `Navigator.cli` is a property:
+(`_cube_stack`) — both wired to the one `CubeVisit` (below), whose
+"did it start?" answer `approach_cube*` / `stack_cube` return.
+`Navigator.cli` is a property:
 assigning it (Brain wiring, or a reconnect) propagates the client to all of
 them.
 _False friend_: "delegate" here does not mean callers reach past Navigator —
@@ -296,6 +298,21 @@ fallback, never the settle signal.
 _Avoid_: reading `pkt.lift_height_mm` raw (radians, not mm); using a
 height threshold as the "lift settled" signal.
 
+**Cube visit** (`pycozmo_ng/navigation/cube_visit.py`):
+One trip to a cube — a grab approach or a stack — run as a single motion
+job with exclusive rights to the wheels. The `CubeVisit` class owns the
+decision: `begin(job_name, run)` returns True only when the visit
+actually started (False when another visit is in flight — refused, never
+queued), holds the lock until the job's `finally`, and exposes `busy`.
+`Navigator` builds the one instance and injects the *same* object into
+`CubeApproach` and `CubeStack`, so the two can never interleave and
+cannot be wired onto separate locks by accident. `approach_cube`,
+`approach_cube_at`, and `stack_cube` return that answer verbatim, which
+is what makes `cozmo.stack_cube(id)`'s "True if started" contract honest.
+_Avoid_: a bare lock passed between classes (`CubeApproach.approach_lock`
+— deleted); starting the visit from a class that does not hold the
+lock; reporting `True` for a refused visit; queueing a second visit.
+
 **Cube stacking** (`pycozmo_ng/navigation/cube_stack.py`):
 Putting the carried cube on top of a second cube. Trigger: click another
 cube in the viewer while `carry.on_forks`, or the explicit
@@ -312,8 +329,8 @@ while keeping the prongs clear of the 44 mm cube below), back away
 and it drops the remaining gap onto the stack — then forks fully down,
 `carry.clear()`. A failed back-away skips the final lowering — dropping
 the forks while still over the stack would push it over — and leaves
-them at `PLACE_LIFT_MM`. Shares
-`CubeApproach.approach_lock` (one cube visit at a time) and runs as the
+them at `PLACE_LIFT_MM`. Shares the one `CubeVisit` with the approach
+(one cube visit at a time) and runs as the
 `stack` motion job; the post-lower settle wait is time-based
 (`set_lift_height` returns as soon as the command is sent).
 _Avoid_: lowering the forks before alignment; `note_grab` in a stack
