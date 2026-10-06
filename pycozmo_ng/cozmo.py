@@ -584,42 +584,48 @@ class Cozmo:
     ) -> float | None:
         """Calibrate the robot center by tilting head down and detecting circles.
 
+        Arms a robot-center run, takes one reading per frame that sees the
+        ring markers, and freezes their average as the session offset.
+
         Returns the lateral offset in mm, or None if detection failed.
         """
+        dp = self._brain.detection_pipeline
+        if dp is None or dp.robot_center_calibration is None:
+            raise RuntimeError("Not set up - call Cozmo.setup_vision() before calibrate_robot_center")
+
         logger.info("Calibrating robot center (head to max-down)...")
 
-        # Temporarily switch to manual exposure for calibration
-        self._brain.camera.apply_settings({"gain": 8.0, "exposure_ms": 300, "auto_exposure_enabled": False})
-        time.sleep(2.0)
+        # Frames now feed fresh readings; the previous session value stays in
+        # force until this run publishes its average.
+        calib = dp.robot_center_calibration
+        calib.arm()
 
-        self._cli.set_head_angle(pycozmo_ng.robot.MIN_HEAD_ANGLE.radians, accel=30.0, max_speed=30.0)
-        time.sleep(3.0)
+        try:
+            # Temporarily switch to manual exposure for calibration
+            self._brain.camera.apply_settings({"gain": 8.0, "exposure_ms": 300, "auto_exposure_enabled": False})
+            time.sleep(2.0)
 
-        # Collect multiple detections and average them
-        dp = self._brain.detection_pipeline
-        dp._robot_center_measured = False
-        offsets = []
-        for _ in range(int(timeout_s * 10)):
-            time.sleep(0.1)
-            rc = dp.robot_center_result
-            if rc is not None and rc.detected:
-                offsets.append(rc.lateral_offset_mm)
-                if len(offsets) >= 10:
-                    break
+            self._cli.set_head_angle(pycozmo_ng.robot.MIN_HEAD_ANGLE.radians, accel=30.0, max_speed=30.0)
+            time.sleep(3.0)
 
-        # Return head to normal and restore the standard auto-exposure config
-        self._cli.set_head_angle(0.0, accel=30.0, max_speed=30.0)
-        time.sleep(1.0)
-        self._brain.camera.enable(resolution)
+            deadline = time.monotonic() + timeout_s
+            while len(calib.readings) < 10 and time.monotonic() < deadline:
+                time.sleep(0.1)
+        finally:
+            # Return head to normal and restore the standard auto-exposure config
+            self._cli.set_head_angle(0.0, accel=30.0, max_speed=30.0)
+            time.sleep(1.0)
+            self._brain.camera.enable(resolution)
+            calib.disarm()
 
-        if offsets:
-            avg_offset = sum(offsets) / len(offsets)
-            dp.camera_lateral_offset_mm = avg_offset
-            dp._robot_center_measured = True
+        readings = calib.readings
+        if readings:
+            avg_offset = sum(readings) / len(readings)
+            calib.freeze(avg_offset)
             logger.info(
                 "Robot center detected: lateral_offset=%+.2f mm (avg of %d frames)",
                 avg_offset,
-                len(offsets),
+                len(readings),
             )
             return avg_offset
 

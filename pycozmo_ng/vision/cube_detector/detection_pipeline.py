@@ -13,12 +13,11 @@ import numpy as np
 
 from pycozmo_ng.logger import logger
 from pycozmo_ng.vision.calibration.camera_calibration import CameraCalibration
-from pycozmo_ng.vision.calibration.robot_center import RobotCenterResult
+from pycozmo_ng.vision.calibration.robot_center_calibration import RobotCenterCalibration
 from pycozmo_ng.vision.interfaces import (
     CubeDetector,
     CubeFusionTracker,
     FaceDetector,
-    RobotCenterDetector,
 )
 
 
@@ -64,7 +63,7 @@ class DetectionPipeline:
         cube_detector: CubeDetector,
         cube_tracker: CubeFusionTracker,
         face_detector: FaceDetector | None = None,
-        robot_center_detector: RobotCenterDetector | None = None,
+        robot_center_calibration: RobotCenterCalibration | None = None,
     ):
         """
         Initialize the detection pipeline with injected dependencies.
@@ -74,7 +73,8 @@ class DetectionPipeline:
             cube_detector: Cube detector implementation (marker-based, probe-sampling, etc.)
             cube_tracker: Cube fusion tracker implementation
             face_detector: Optional face detector (Haar cascade, etc.)
-            robot_center_detector: Optional robot center calibration detector
+            robot_center_calibration: Owner of the robot-center measurement;
+                frames are handed to it once per processed frame
         """
         self.camera_calibration = camera_calibration
         self.cube_detector = cube_detector
@@ -85,11 +85,8 @@ class DetectionPipeline:
         self.face_detector = face_detector
         self.enable_face_detection = True
 
-        # Robot center detection
-        self.robot_center_detector = robot_center_detector
-        self.robot_center_result: RobotCenterResult | None = None
-        self._robot_center_measured: bool = False
-        self._camera_lateral_offset_mm: float = 0.0
+        # Robot center calibration — observes frames; owns the session offset
+        self.robot_center_calibration = robot_center_calibration
 
         logger.info("Detection pipeline initialized")
 
@@ -191,15 +188,11 @@ class DetectionPipeline:
             List of detected cubes with 3D information
         """
         try:
-            # Robot center detection: measured exactly once during startup
-            # calibration (head at max-down). Once a measurement succeeds the
-            # value is remembered and detection never runs again.
-            if not self._robot_center_measured and self.robot_center_detector is not None:
-                self.robot_center_detector.head_angle_rad = head_angle_rad
-                self.robot_center_result = self.robot_center_detector.detect(img_bgr)
-                if self.robot_center_result is not None and self.robot_center_result.detected:
-                    self._camera_lateral_offset_mm = self.robot_center_result.lateral_offset_mm
-                    self._robot_center_measured = True
+            # Robot center calibration: observes every processed frame, but
+            # only does work while a calibration run is armed (see
+            # RobotCenterCalibration — it owns the session value).
+            if self.robot_center_calibration is not None:
+                self.robot_center_calibration.observe(img_bgr, head_angle_rad)
 
             # Detect marker faces
             results = self.cube_detector.detect(img_bgr)
@@ -250,20 +243,6 @@ class DetectionPipeline:
         """Reset the cube tracking state."""
         self.fused_cubes = {}
         logger.info("Cube tracking reset")
-
-    @property
-    def camera_lateral_offset_mm(self) -> float:
-        """Lateral offset of camera from robot centre (mm), measured once.
-
-        Measured once during startup calibration (head at max-down) and then
-        frozen for the session.  Returns 0.0 until the one-time measurement
-        succeeds.
-        """
-        return self._camera_lateral_offset_mm
-
-    @camera_lateral_offset_mm.setter
-    def camera_lateral_offset_mm(self, value: float) -> None:
-        self._camera_lateral_offset_mm = value
 
 
 def load_marker_templates(marker_dir: str | None = None) -> list[np.ndarray]:
@@ -367,10 +346,13 @@ def create_default_detection_pipeline(
     except OSError as e:
         logger.warning(f"Failed to initialize face detector: {e}")
 
-    # Create robot center detector
-    robot_center_detector = RobotCenterDetector(
-        camera_calibration.camera_matrix,
-        camera_calibration.distortion_coefficients,
+    # Create the owner of the robot-center measurement (armed by
+    # Cozmo.calibrate_robot_center; the detector only runs during a run)
+    robot_center_calibration = RobotCenterCalibration(
+        RobotCenterDetector(
+            camera_calibration.camera_matrix,
+            camera_calibration.distortion_coefficients,
+        )
     )
 
     return DetectionPipeline(
@@ -378,7 +360,7 @@ def create_default_detection_pipeline(
         cube_detector=cube_detector,
         cube_tracker=cube_tracker,
         face_detector=face_detector,
-        robot_center_detector=robot_center_detector,
+        robot_center_calibration=robot_center_calibration,
     )
 
 

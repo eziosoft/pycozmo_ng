@@ -149,11 +149,18 @@ is the `WorldMap` face key, and `ended` triggers `WorldMap.forget_face`.
 _Avoid_: `getattr(det, "_face_id")` probing (deleted — read the field);
 hardcoding `face_id: 0`; treating a frame skip as face loss.
 
-**Robot center calibration**:
+**Robot center calibration** (`vision/calibration/robot_center_calibration.py`):
 Two-ring marker detection on the robot chassis. Head tilted to max-down
 (-25°) to reveal two black rings with white centres. The 20 mm baseline
 between ring centres gives the lateral offset of the camera from robot centre.
 Measured once during startup calibration and frozen for the session.
+`RobotCenterCalibration` is the single owner of that measurement: a run calls
+`arm()`, each processed frame calls `observe()` (one fresh reading per frame
+that sees the rings), and only `freeze(avg)` writes the session value —
+`offset_mm` is the only read. Outside a run the detector does no work, so a
+stray head-down frame can never latch the value.
+_Avoid_: poking a private latch on the detection pipeline; polling a stored
+result on a timer (the same measurement gets counted twice).
 
 **Motion job**:
 One cancellable unit of background motion (navigate/A* follow, drive, align,

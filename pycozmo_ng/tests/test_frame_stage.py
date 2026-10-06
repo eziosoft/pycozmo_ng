@@ -59,8 +59,7 @@ def make_stage(**configure_overrides):
     web_viewer = Mock()
 
     detection_pipeline = Mock()
-    detection_pipeline.camera_lateral_offset_mm = 0.0
-    detection_pipeline.robot_center_result = None
+    detection_pipeline.robot_center_calibration = SimpleNamespace(offset_mm=0.0, last_result=None)
     detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=0)]
     detection_pipeline.detect_faces.return_value = []
     detection_pipeline.get_cube_measurements.return_value = [

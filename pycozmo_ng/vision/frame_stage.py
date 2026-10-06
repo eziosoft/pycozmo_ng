@@ -149,11 +149,12 @@ class FrameStage:
             face_frame = self.face_identity.update(face_detections, measured=face_due)
 
             # Annotate image (single copy inside)
+            robot_center = self.detection_pipeline.robot_center_calibration
             annotated_image = self.annotation_engine.detect_and_annotate(
                 undistorted_image,
                 cube_detections,
                 face_detections,
-                self.detection_pipeline.robot_center_result,
+                robot_center.last_result if robot_center is not None else None,
             )
 
             # Store frame + detections, stamp them, push to the MJPEG sink
@@ -224,8 +225,9 @@ class FrameStage:
 
         head_angle = cli.head_angle.radians if cli is not None else 0.0
 
-        # Read persistent lateral offset
-        lateral_offset = self.detection_pipeline.camera_lateral_offset_mm
+        # Read the session camera lateral offset (frozen by robot-center calibration)
+        robot_center = self.detection_pipeline.robot_center_calibration
+        lateral_offset = robot_center.offset_mm if robot_center is not None else 0.0
 
         for m in self.detection_pipeline.get_cube_measurements():
             self.world_map.update_cube_measurement(

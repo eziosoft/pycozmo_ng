@@ -8,6 +8,15 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- Robot-center calibration now has one owner: new
+  `vision/calibration/robot_center_calibration.py` holds the session offset,
+  the arm/observe/freeze run protocol, and the collected readings.
+  `DetectionPipeline` no longer latches a private `_robot_center_measured` flag
+  and no longer exposes a settable `camera_lateral_offset_mm`; frames are handed
+  to `RobotCenterCalibration.observe()` only while a run is armed, and
+  `Cozmo.calibrate_robot_center()` averages the readings a run collected instead
+  of polling a stored result every 0.1 s (which recounted the same measurement
+  — the "average of 10 frames" was effectively one frame).
 - Removed `vision/processor.py` backward-compat shim (first no-shim deletion). Nothing imported it.
 - Removed `CubeMoveDetector` (`cubes/cube_imu.py`) and the whole cube-move
   suppression feature: the accel sample source was disabled in COZMO-28, so

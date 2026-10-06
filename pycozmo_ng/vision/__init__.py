@@ -9,6 +9,9 @@ from pycozmo_ng.vision.calibration.robot_center import (
     RobotCenterDetector,
     RobotCenterResult,
 )
+from pycozmo_ng.vision.calibration.robot_center_calibration import (
+    RobotCenterCalibration,
+)
 from pycozmo_ng.vision.cube_detector.detection_pipeline import (
     CubeDetection,
     DetectionPipeline,
@@ -39,6 +42,7 @@ __all__ = [
     "FaceIdentity",
     "FrameStage",
     "FrameState",
+    "RobotCenterCalibration",
     "RobotCenterDetector",
     "RobotCenterResult",
     "create_default_detection_pipeline",
