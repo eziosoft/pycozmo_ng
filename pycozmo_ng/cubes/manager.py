@@ -3,7 +3,6 @@
 import time
 
 import pycozmo_ng
-from pycozmo_ng.cubes.cube_imu import CubeMoveDetector
 from pycozmo_ng.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo_ng.cubes.cycler import CubeCycler
 from pycozmo_ng.logger import logger_cubes
@@ -35,7 +34,6 @@ class CubeManager:
             return
         if pkt.connected:
             self.ct.object_id_map[cube_id] = pkt.object_id
-            self.ct.move_detectors.setdefault(cube_id, CubeMoveDetector()).on_connection(time.time())
             logger_cubes.debug(
                 "Cube %d connected: object_id=%s",
                 cube_id,

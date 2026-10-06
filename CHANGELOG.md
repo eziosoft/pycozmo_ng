@@ -9,6 +9,14 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 ## Unreleased
 
 - Removed `vision/processor.py` backward-compat shim (first no-shim deletion). Nothing imported it.
+- Removed `CubeMoveDetector` (`cubes/cube_imu.py`) and the whole cube-move
+  suppression feature: the accel sample source was disabled in COZMO-28, so
+  nothing fed the detector, and the downstream path it drove was unreachable.
+  Gone with it: `CubeTrackingState.move_detectors`/`suppress`, the suppression
+  block in `FrameStage._feed_world_map` (and `FrameStage`'s now-unused
+  `cube_tracking` dependency), and the no-op/uncalled `forget_cube` on
+  `DetectionPipeline` and `WorldMap`. To be rebuilt properly when the cube IMU
+  is understood.
 - New `CubeVisit` seam (`navigation/cube_visit.py`): one object now owns the
   "one cube visit at a time" lock, the background-job spawn, and the truthful
   "did it start?" answer that `approach_cube` / `approach_cube_at` /

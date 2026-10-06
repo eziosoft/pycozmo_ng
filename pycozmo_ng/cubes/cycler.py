@@ -85,9 +85,8 @@ class CubeCycler:
                 self._object_map[cube_id] = oid
             self._stats["connects"] += 1
 
-            # Enable accel stream + set CubeId
+            # Set CubeId
             cli.conn.send(pe.CubeId(object_id=oid))
-            # cli.conn.send(pe.StreamObjectAccel(object_id=oid, enable=True))  # Disabled (COZMO-28)
 
             # Collect data for cycle_ms
             self._stop.wait(self._cycle_ms / 1000.0)

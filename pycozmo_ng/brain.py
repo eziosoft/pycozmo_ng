@@ -77,7 +77,7 @@ class Brain:
         # Per-frame vision stage — owns the whole camera-frame sequence
         # (convert → detect → annotate → publish → events → world map).
         # Configured by setup_vision() once the detectors exist.
-        self.frame_stage = FrameStage(self.frame_state, self.cube_tracking, self.world_map, self.web_viewer)
+        self.frame_stage = FrameStage(self.frame_state, self.world_map, self.web_viewer)
 
         # Domain sub-components — each receives the state it needs.
         # One motion seam (cancellation + driver lease) shared by the

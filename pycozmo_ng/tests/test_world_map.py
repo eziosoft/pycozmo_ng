@@ -100,13 +100,6 @@ class TestWorldMapFusion:
         wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.2, 0.0)
         assert 0 not in wm.get_cubes()
 
-    def test_forget_cube_removes_it(self):
-        wm = WorldMap()
-        wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
-        wm.update_cube_measurement(0, [0.0, 0.0, 200.0], np.eye(3), 0.9, 0.0)
-        wm.forget_cube(0)
-        assert 0 not in wm.get_cubes()
-
     def test_origin_change_resets_map(self):
         wm = WorldMap()
         wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=True)

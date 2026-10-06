@@ -113,8 +113,8 @@ labels (`cube_1`), public navigation (`Navigator.approach_cube`), detection
 events (`EvtCubeLost`), and the whole `Cozmo` facade
 (`cozmo.world_map.cubes`, `cozmo.navigator.approach_cube`, `cozmo.cubes.*`).
 The **cube index 0-2** (`cube_index` / `cube_idx`) is internal: detection
-output (`marker_id // 6`), `WorldMap` keys, `CubeTrackingState`
-suppression, and navigation's `cube_idx`, always `index = cube_id - 1`.
+output (`marker_id // 6`), `WorldMap` keys, and navigation's `cube_idx`,
+always `index = cube_id - 1`.
 All conversion lives in **one module** — `pycozmo_ng/cubes/identity.py`
 (`to_world_index`, `to_cube_id`, `cube_label`, `parse_cube_label`) — and
 is validated at the boundary (`cube_99` and `cube_id=0` raise). Every

@@ -6,7 +6,7 @@ Owns everything that happens to a camera frame, end to end:
     feed world map
 
 ``Brain`` (the composition root) only constructs and wires the stage; the
-stable dependencies (state containers, world map, web sink) arrive via the
+stable dependencies (frame state, world map, web sink) arrive via the
 constructor, and the per-session vision components created by
 ``Brain.setup_vision`` arrive through :meth:`configure`.
 
@@ -21,10 +21,8 @@ import numpy as np
 from PIL import Image
 
 from pycozmo_ng import event
-from pycozmo_ng.cubes.cube_tracking_state import CubeTrackingState
-from pycozmo_ng.cubes.identity import to_cube_id
 from pycozmo_ng.display.expressions import Happiness
-from pycozmo_ng.logger import logger, logger_cubes
+from pycozmo_ng.logger import logger_cubes
 from pycozmo_ng.navigation.world_map import WorldMap
 from pycozmo_ng.vision.annotation import AnnotationEngine
 from pycozmo_ng.vision.cube_detector.detection_pipeline import DetectionPipeline
@@ -47,12 +45,10 @@ class FrameStage:
     def __init__(
         self,
         frame_state: FrameState,
-        cube_tracking: CubeTrackingState,
         world_map: WorldMap,
         web_viewer: WebViewerServer,
     ):
         self.fs = frame_state
-        self.ct = cube_tracking
         self.world_map = world_map
         self.web_viewer = web_viewer
         # Set by the composition root when the client connects
@@ -221,8 +217,6 @@ class FrameStage:
     def _feed_world_map(self, cli, face_detections, face_frame: FaceFrame) -> None:
         """Feed cube, face, and procedural-face measurements into the world map.
 
-        Cubes that have been invalidated (moved, forget_cube) are
-        suppressed until they are re-detected stably. (COZMO-34)
         Face identities that ended this frame are dropped from the map.
         """
         if not self.detection_pipeline or self.world_map is None:
@@ -233,28 +227,9 @@ class FrameStage:
         # Read persistent lateral offset
         lateral_offset = self.detection_pipeline.camera_lateral_offset_mm
 
-        # Synchronized access to suppress state (keys are cube indices 0-2)
-        with self.ct.suppress_lock:
-            suppressed = set(self.ct.suppress.get("ids", set()))
-            fresh_frames = dict(self.ct.suppress.get("fresh_frames", {}))
-            fresh_frames_needed = self.ct.suppress.get("fresh_frames_needed", 5)
-            new_fresh_frames = {}
-
         for m in self.detection_pipeline.get_cube_measurements():
-            cube_index = m["cube_index"]
-            if cube_index in suppressed:
-                n = fresh_frames.get(cube_index, 0) + 1
-                new_fresh_frames[cube_index] = n
-                if n < fresh_frames_needed:
-                    continue
-                suppressed.discard(cube_index)
-                logger.info(
-                    "Cube %d re-settled - re-enabling measurements",
-                    to_cube_id(cube_index),
-                )
-
             self.world_map.update_cube_measurement(
-                cube_index,
+                m["cube_index"],
                 m["position"],
                 m["rotation_matrix"],
                 m["confidence"],
@@ -263,10 +238,6 @@ class FrameStage:
                 camera_lateral_offset_mm=lateral_offset,
                 rotation_source=m.get("rotation_source"),
             )
-
-        with self.ct.suppress_lock:
-            self.ct.suppress["ids"] = suppressed
-            self.ct.suppress["fresh_frames"] = new_fresh_frames
 
         # Feed face measurements (identity assigned earlier this frame),
         # then drop presence epochs that ended.

@@ -52,7 +52,6 @@ class TestConstruction:
             "CubeManagerInterface",
             "CubeInterface",
             "CubeCyclerInterface",
-            "CubeMoveDetectorInterface",
         ):
             assert not hasattr(cubes, name)
 

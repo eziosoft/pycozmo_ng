@@ -154,17 +154,6 @@ class DetectionPipeline:
 
         return self.face_detector.detect(img_bgr)
 
-    def forget_cube(self, cube_index):
-        """Remove a cube from the fusion tracker.
-
-        Called when the cube's IMU detects movement — the old position is
-        stale and the cube will be placed fresh on the next camera frame.
-        (COZMO-27)
-
-        CubeFusionTracker is stateless; temporal cube state lives in
-        WorldMap, so there is nothing to do here.
-        """
-
     def detect_cubes(self, img_bgr: np.ndarray, head_angle_rad: float = 0.0) -> list[CubeDetection]:
         """
         Detect cubes in the given camera image.

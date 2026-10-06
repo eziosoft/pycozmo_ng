@@ -7,7 +7,7 @@ Two numbering conventions exist for the same three physical cubes:
   detection events (``EvtCubeLost``), and the browser wire labels
   (``cube_1`` … ``cube_3``).
 - **Cube index 0-2** — internal: detection output, ``WorldMap`` keys,
-  ``CubeTrackingState`` suppression, and navigation's ``cube_idx``.
+  and navigation's ``cube_idx``.
 
 Every conversion between the two goes through this module, so the ``±1``
 lives in exactly one place and is validated at the boundary. No other

@@ -125,10 +125,9 @@ pycozmo_ng/           # Main library (import name: pycozmo_ng)
 ├── cubes/                   # Cube BLE management
 │   ├── carry_state.py       # CarryDetector/CarryState — cube on the lift, checked on demand
 │   ├── cycler.py            # CubeCycler — rapid BLE cycling
-│   ├── cube_tracking_state.py # CubeTrackingState — factory mapping, BLE cycler, movement
+│   ├── cube_tracking_state.py # CubeTrackingState — factory mapping, BLE cycler
 │   ├── identity.py          # Cube ID 1-3 ↔ cube index 0-2 conversion (the only ±1)
-│   ├── manager.py           # CubeManager — mapping, connection state
-│   └── cube_imu.py          # CubeMoveDetector — accelerometer movement detection
+│   └── manager.py           # CubeManager — mapping, connection state
 ├── web/                     # Web viewer display adapter
 │   ├── __init__.py          # Exports: WebViewerServer
 │   ├── file_server.py       # FileServer — static file serving
@@ -168,7 +167,7 @@ Active development happens on **`develop`** — the main line, where everything 
 - **Face detection**: Haar cascade face detection with expression control
 - **3D web viewer**: Three.js browser viewer with WebSocket state broadcast, MJPEG camera streams, occupancy grid overlay, procedural face streaming
 - **Navigation**: Navigator with cube approach, cube stacking, docking, point-to-point steering
-- **Cube BLE management**: CubeCycler, CubeManager, CubeMoveDetector with IMU-based movement tracking
+- **Cube BLE management**: CubeCycler and CubeManager — factory/object mapping, connection state
 - **Offline TTS**: `Cozmo.say()` / `Client.say()` using pyttsx3 + espeak-ng, with WAV caching
 
 ## Important Notes

@@ -347,15 +347,6 @@ class WorldMap:
                 updated_at=now,
             )
 
-    def forget_cube(self, cube_index: int) -> None:
-        """Drop a cube from the map.
-
-        Called when the cube's IMU detects movement — the old position is stale
-        and the cube will be re-placed on the next camera frame.
-        """
-        with self._lock:
-            self._cubes.pop(cube_index, None)
-
     # -- faces --------------------------------------------------------------
 
     def update_face_measurement(

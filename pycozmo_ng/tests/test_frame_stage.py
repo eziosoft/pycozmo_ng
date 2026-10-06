@@ -12,7 +12,6 @@ from unittest.mock import Mock
 from PIL import Image
 
 from pycozmo_ng import event
-from pycozmo_ng.cubes.cube_tracking_state import CubeTrackingState
 from pycozmo_ng.display.expressions import Happiness
 from pycozmo_ng.vision.face_identity import FaceIdentity
 from pycozmo_ng.vision.frame_stage import FrameStage
@@ -56,7 +55,6 @@ def make_cli(**overrides):
 def make_stage(**configure_overrides):
     """FrameStage with fakes for every injected dependency."""
     fs = FrameState()
-    ct = CubeTrackingState()
     world_map = Mock()
     web_viewer = Mock()
 
@@ -92,7 +90,7 @@ def make_stage(**configure_overrides):
     floor_pipeline.floor_projector.floor_size = (600.0, 600.0)
     floor_pipeline.floor_projector.floor_center = (200.0, 0.0)
 
-    stage = FrameStage(fs, ct, world_map, web_viewer)
+    stage = FrameStage(fs, world_map, web_viewer)
     stage.configure(
         detection_pipeline=detection_pipeline,
         annotation_engine=annotation_engine,
@@ -104,7 +102,6 @@ def make_stage(**configure_overrides):
     return SimpleNamespace(
         stage=stage,
         fs=fs,
-        ct=ct,
         world_map=world_map,
         web_viewer=web_viewer,
         detection_pipeline=detection_pipeline,
@@ -178,7 +175,7 @@ def test_steps_run_in_order():
 def test_unconfigured_stage_is_inert():
     """Before configure() a frame is stamped but nothing downstream runs."""
     web_viewer = Mock()
-    stage = FrameStage(FrameState(), CubeTrackingState(), Mock(), web_viewer)
+    stage = FrameStage(FrameState(), Mock(), web_viewer)
     cli = make_cli()
     image = make_image()
 
@@ -271,21 +268,6 @@ def test_face_identity_survives_skipped_face_frames():
 
     h.stage.on_camera_image(cli, make_image())  # frame 4 — same epoch continues
     assert h.face_identity.current_id == first_id
-
-
-def test_suppressed_cube_reenters_after_fresh_frames():
-    h = make_stage()
-    h.ct.suppress["ids"] = {0}
-    h.ct.suppress["fresh_frames_needed"] = 3
-    cli = make_cli()
-
-    h.stage.on_camera_image(cli, make_image())
-    h.stage.on_camera_image(cli, make_image())
-    h.world_map.update_cube_measurement.assert_not_called()
-
-    h.stage.on_camera_image(cli, make_image())
-    h.world_map.update_cube_measurement.assert_called_once()
-    assert 0 not in h.ct.suppress["ids"]
 
 
 def test_fps_updates_after_one_second():
