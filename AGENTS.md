@@ -210,7 +210,7 @@ Active development happens on **`develop`** — the main line, where everything 
 
 ### Web Viewer
 - Single server on port **8765** (HTTP + WebSocket): `/` serves the viewer page, `/annotated-video` and `/floor-video` are MJPEG streams
-- Three.js browser viewer renders robot, cubes, faces, path trail, occupancy grid
+- Three.js browser viewer renders robot, cubes, faces, charger marker, path trail, occupancy grid
 - Carried cube in the 3D view: `state_builder` marks the cube `carried: true`
   (plus a robot-pose placeholder if the map lost it); the browser locks that
   cube to the robot's rendered pose — it rides the forks, following heading

@@ -7,6 +7,7 @@ Extracted from WebViewerServer for testability and clarity.
 import json
 import math
 import time
+from typing import Any
 
 from pycozmo_ng import coords
 from pycozmo_ng.cubes.identity import cube_label
@@ -25,6 +26,11 @@ MAX_PATH_POINTS_SENT: int = 800
 
 # Size of a cube in scene units (mm) — mirrors CUBE_SIZE in index.html.
 CUBE_SIZE_MM: float = 44.0
+
+# Charger marker size in scene units (mm) — mirrors the CHARGER_* constants
+# in index.html. The marker is 23 x 15 mm (COZMO-65).
+CHARGER_WIDTH_MM: float = 23.0
+CHARGER_HEIGHT_MM: float = 15.0
 
 
 def encode_jpeg(image, quality: int = 70) -> bytes:
@@ -132,6 +138,19 @@ def build_state_json(
             }
         )
 
+    # Charger: one static landmark — null until the first fused sighting
+    # (world map never forgets it, only reset_map / origin change clear it).
+    charger_state = world.get("charger")
+    charger = None
+    if charger_state is not None:
+        pos_gl = coords.world_to_scene_point(charger_state["position"])
+        charger = {
+            "position": [float(v) for v in pos_gl],
+            "confidence": float(charger_state.get("confidence", 1.0)),
+            "width": CHARGER_WIDTH_MM,
+            "height": CHARGER_HEIGHT_MM,
+        }
+
     # Path: world frame -> scene frame, lifted just above the ground so the
     # zero-thickness trail doesn't z-fight the grid floor. Decimated so the
     # payload size doesn't grow with session length (see
@@ -152,9 +171,12 @@ def build_state_json(
     # the line doesn't z-fight the grid floor, same as the path trail.
     astar_path_scene = [[float(y), PATH_SCENE_LIFT_MM, float(x)] for (x, y) in world.get("astar_path", [])]
 
-    state = {
+    # The JSON state bag: heterogeneous by design (lists, dicts, scalars) —
+    # later keys (face_png, occupancy_*) are attached conditionally.
+    state: dict[str, Any] = {
         "cubes": cube_list,
         "faces": face_list,
+        "charger": charger,
         "robot": {
             "position": [float(v) for v in robot_pos],
             "heading": float(robot_heading),

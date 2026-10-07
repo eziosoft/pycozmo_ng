@@ -26,6 +26,15 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
   the annotated stream. Cube ID space stays strictly 0–2; charger PnP uses the
   measured 23 × 15 mm — the image quads (1.32–1.37) are narrower than the
   physical 1.53 aspect, flagged as a calibration follow-up.
+- The charger marker shows up in the 3D web viewer: `build_state_json` now
+  carries a top-level `charger` key (`position`/`confidence`/`width`/`height`
+  in scene frame, `null` until the first fused sighting), and the browser
+  renders it as a marker-sized green (0x00ff40) tablet with a "Charger |
+  NN%" label — the same green as the annotated-stream overlay — plus a
+  "Charger" HUD row showing the fused confidence. Position-only, so the box
+  is axis-aligned (no fused yaw yet); it lerp-smooths like faces and is
+  removed when the world map forgets the charger (`reset_map` /
+  localization-origin change).
 - The frame stage reaches the display through one declared interface: new
   `vision/frame_sink.py` (`FrameSink`). `FrameStage` used to be typed against the
   concrete `WebViewerServer` and reach into its internals

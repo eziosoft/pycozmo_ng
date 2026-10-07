@@ -121,6 +121,10 @@
           <span class="tel-value" id="tel-cubes">0</span>
         </div>
         <div class="tel-row">
+          <span class="tel-label">Charger</span>
+          <span class="tel-value" id="tel-charger">--</span>
+        </div>
+        <div class="tel-row">
           <span class="tel-label">Path</span>
           <span class="tel-value" id="tel-path">0 pts</span>
         </div>
@@ -273,6 +277,10 @@
     const CARRY_H_MM = 114;           // forks up: MAX_LIFT_HEIGHT(92) + half cube
     const CARRY_CUBE_OPACITY = 0.85;  // carried cubes render more solid
     const CUBE_OPACITY = 0.45;
+    // Charger marker (COZMO-65): 23 x 15 mm sticker on the dock — mirrors
+    // CHARGER_*_MM in state_builder.py. Thin, because no yaw is fused yet.
+    const CHARGER_COLOR = 0x00ff40;    // matches the annotated-stream overlay
+    const CHARGER_THICK_MM = 6;
     const FACE_NAMES = ['face_0', 'face_1', 'face_2', 'face_3', 'top', 'bottom'];
     const FACE_TYPES = ['wall', 'wall', 'wall', 'wall', 'bottom', 'top'];
 
@@ -941,6 +949,85 @@
     }
 
     // -----------------------------------------------------------------------
+    // Charger marker management (COZMO-65) — one static landmark
+    // -----------------------------------------------------------------------
+    let chargerGroup = null;
+
+    function createChargerLabel(text, height) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = 512;
+      canvas.height = 64;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 36px monospace';
+      ctx.fillStyle = '#00ff40';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.minFilter = THREE.LinearFilter;
+      const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(60, 8, 1);
+      sprite.position.set(0, height / 2 + 12, 0);
+      return { sprite, canvas, ctx, texture, material };
+    }
+
+    function updateChargerLabel(label, text) {
+      const { ctx, canvas, texture } = label;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 36px monospace';
+      ctx.fillStyle = '#00ff40';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+      texture.needsUpdate = true;
+    }
+
+    function createCharger(width, height) {
+      const group = new THREE.Group();
+
+      // Marker-sized vertical tablet. The world map fuses the charger
+      // position only — no yaw — so the box is axis-aligned.
+      const geo = new THREE.BoxGeometry(width, height, CHARGER_THICK_MM);
+      const mat = new THREE.MeshLambertMaterial({
+        color: CHARGER_COLOR,
+        transparent: true,
+        opacity: 0.6,
+      });
+      group.add(new THREE.Mesh(geo, mat));
+      group.add(
+        new THREE.LineSegments(
+          new THREE.EdgesGeometry(geo),
+          new THREE.LineBasicMaterial({ color: CHARGER_COLOR })
+        )
+      );
+
+      const label = createChargerLabel('Charger', height);
+      group.add(label.sprite);
+
+      group.userData = { targetPos: new THREE.Vector3(), label };
+      scene.add(group);
+      chargerGroup = group;
+      return group;
+    }
+
+    function removeCharger() {
+      if (!chargerGroup) return;
+      const label = chargerGroup.userData.label;
+      if (label) {
+        label.texture.dispose();
+        label.material.dispose();
+      }
+      scene.remove(chargerGroup);
+      chargerGroup = null;
+    }
+
+    // -----------------------------------------------------------------------
     // Camera settings (COZMO-30)
     // -----------------------------------------------------------------------
     const camAutoExp = document.getElementById('cam-auto-exposure');
@@ -1167,6 +1254,23 @@ function sendTestMode(enabled) {
       for (const id of Object.keys(faceGroups)) {
         if (!faceSeen.has(id)) removeFace(id);
       }
+
+      // Charger — one static landmark; null means never fused yet (COZMO-65)
+      const charger = state.charger;
+      if (charger) {
+        if (!chargerGroup) createCharger(charger.width || 23, charger.height || 15);
+        chargerGroup.userData.targetPos.set(
+          charger.position[0], charger.position[1], charger.position[2]
+        );
+        updateChargerLabel(
+          chargerGroup.userData.label,
+          `Charger | ${Math.round((charger.confidence ?? 1) * 100)}%`
+        );
+      } else {
+        removeCharger();
+      }
+      document.getElementById('tel-charger').textContent =
+        charger ? `${Math.round((charger.confidence ?? 1) * 100)}%` : '--';
 
       // Path trail
       if (state.path_points) {
@@ -1440,6 +1544,11 @@ function sendTestMode(enabled) {
       for (const g of Object.values(faceGroups)) {
         _tmpPos.copy(g.userData.targetPos);
         g.position.lerp(_tmpPos, 0.35);
+      }
+
+      if (chargerGroup) {
+        _tmpPos.copy(chargerGroup.userData.targetPos);
+        chargerGroup.position.lerp(_tmpPos, 0.35);
       }
 
       if (hasRobotPose) {

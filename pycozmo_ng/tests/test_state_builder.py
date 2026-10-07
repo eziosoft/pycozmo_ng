@@ -230,6 +230,51 @@ class TestBuildStateJson:
         assert state["astar_path"] == []
 
 
+class TestChargerInState:
+    """The charger is one static landmark — serialized or null (COZMO-65)."""
+
+    @staticmethod
+    def _build(world_extra: dict) -> dict:
+        wm = MagicMock()
+        base = {
+            "robot": {"position": [0.0, 0.0, 0.0], "yaw": 0.0},
+            "cubes": {},
+            "path_points": [],
+        }
+        base.update(world_extra)
+        wm.get_world_state.return_value = base
+        result = build_state_json(
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            time.time(),
+        )
+        return json.loads(result)
+
+    def test_null_until_first_sighting(self):
+        state = self._build({})
+        assert state["charger"] is None
+
+    def test_null_after_reset(self):
+        # reset_map clears the slot; the browser removes the marker.
+        state = self._build({"charger": None})
+        assert state["charger"] is None
+
+    def test_converted_to_scene_frame_with_size(self):
+        state = self._build({"charger": {"position": [100.0, 200.0, 50.0], "confidence": 0.85}})
+        charger = state["charger"]
+        # world (x, y, z) -> scene [y, z, x]
+        assert charger["position"] == [200.0, 50.0, 100.0]
+        assert charger["confidence"] == 0.85
+        assert charger["width"] == 23.0
+        assert charger["height"] == 15.0
+
+    def test_confidence_defaults_to_one(self):
+        state = self._build({"charger": {"position": [0.0, 0.0, 30.0]}})
+        assert state["charger"]["confidence"] == 1.0
+
+
 class TestCarriedCube:
     """The carried cube is flagged so the browser locks it to the robot.
 
