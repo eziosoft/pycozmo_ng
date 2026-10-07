@@ -43,7 +43,7 @@ class ChargerDetector(CozmoCubeDetector):
         height_mm: float = CHARGER_HEIGHT_MM,
         aspect_range: tuple[float, float] = CHARGER_ASPECT_RANGE,
         max_detections=1,
-        min_area=100,
+        min_area=50,
         **kwargs,
     ):
         """
