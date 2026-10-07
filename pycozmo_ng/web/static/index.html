@@ -991,8 +991,9 @@
     function createCharger(width, height) {
       const group = new THREE.Group();
 
-      // Marker-sized vertical tablet. The world map fuses the charger
-      // position only — no yaw — so the box is axis-aligned.
+      // Marker-sized vertical tablet. The group carries the fused marker
+      // orientation — the tablet's local z is the marker normal, so the
+      // rendered yaw shows the dock facing (COZMO-67).
       const geo = new THREE.BoxGeometry(width, height, CHARGER_THICK_MM);
       const mat = new THREE.MeshLambertMaterial({
         color: CHARGER_COLOR,
@@ -1010,7 +1011,7 @@
       const label = createChargerLabel('Charger', height);
       group.add(label.sprite);
 
-      group.userData = { targetPos: new THREE.Vector3(), label };
+      group.userData = { targetPos: new THREE.Vector3(), targetQuat: new THREE.Quaternion(), label };
       scene.add(group);
       chargerGroup = group;
       return group;
@@ -1262,6 +1263,18 @@ function sendTestMode(enabled) {
         chargerGroup.userData.targetPos.set(
           charger.position[0], charger.position[1], charger.position[2]
         );
+        // Marker orientation: the tablet's local z is the marker normal, so
+        // the group rotation shows the dock facing (world yaw, COZMO-67).
+        if (charger.rotation) {
+          const cm = new THREE.Matrix4();
+          cm.set(
+            charger.rotation[0][0], charger.rotation[0][1], charger.rotation[0][2], 0,
+            charger.rotation[1][0], charger.rotation[1][1], charger.rotation[1][2], 0,
+            charger.rotation[2][0], charger.rotation[2][1], charger.rotation[2][2], 0,
+            0, 0, 0, 1
+          );
+          chargerGroup.userData.targetQuat.setFromRotationMatrix(cm);
+        }
         updateChargerLabel(
           chargerGroup.userData.label,
           `Charger | ${Math.round((charger.confidence ?? 1) * 100)}%`
@@ -1549,6 +1562,8 @@ function sendTestMode(enabled) {
       if (chargerGroup) {
         _tmpPos.copy(chargerGroup.userData.targetPos);
         chargerGroup.position.lerp(_tmpPos, 0.35);
+        _tmpQuat.copy(chargerGroup.userData.targetQuat);
+        chargerGroup.quaternion.slerp(_tmpQuat, 0.35);
       }
 
       if (hasRobotPose) {

@@ -378,6 +378,7 @@ def test_charger_detections_flow_to_events_and_world_map():
         confidence=0.8,
         distance=0.1,
         position_mm=np.array([10.0, 0.0, 100.0]),
+        rotation_matrix=np.eye(3),
     )
     h.detection_pipeline.detect_charger.return_value = [charger]
 
@@ -391,4 +392,7 @@ def test_charger_detections_flow_to_events_and_world_map():
     assert h.annotation_engine.detect_and_annotate.call_args.args[4] == [charger]
     assert h.event_dispatcher.dispatch_charger_events.call_args.args[1] == [charger]
     h.world_map.update_charger_measurement.assert_called_once()
-    assert h.world_map.update_charger_measurement.call_args.args[2] == 0.5
+    # position, rotation, confidence, head_angle — same head angle as cubes
+    args = h.world_map.update_charger_measurement.call_args.args
+    assert np.allclose(args[1], np.eye(3))  # marker pose, not position-only (COZMO-67)
+    assert args[3] == 0.5

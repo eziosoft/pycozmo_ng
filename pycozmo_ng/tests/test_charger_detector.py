@@ -19,6 +19,7 @@ from PIL import Image
 
 from pycozmo_ng import event
 from pycozmo_ng.navigation.world_map import WorldMap
+from pycozmo_ng.util.coords import camera_to_world
 from pycozmo_ng.vision.annotation import AnnotationEngine
 from pycozmo_ng.vision.calibration.camera_calibration import CameraCalibration
 from pycozmo_ng.vision.charger_detector import (
@@ -141,6 +142,23 @@ class TestChargerDetector:
         assert set(ys.tolist()) == {-CHARGER_HEIGHT_MM / 2, CHARGER_HEIGHT_MM / 2}
         assert detector.max_detections == 1  # there is only one charger
 
+    def test_marker_rotation_valid_and_facing_camera(self, marker_frame, charger_template, cube_templates):
+        """PnP rotation is a proper rotation; the normal faces the camera.
+
+        The marker normal's world yaw is the dock facing used for robot
+        alignment (COZMO-67), so the pose must be a right-handed orthonormal
+        frame with the visible-face solution selected (normal pointing back
+        toward the camera, i.e. against the +z optical axis).
+        """
+        detector = make_charger_detector(charger_template, cube_templates)
+        results = detector.detect(marker_frame)
+        assert results
+        rot = results[0]["rotation_matrix"]
+        assert np.allclose(rot @ rot.T, np.eye(3), atol=1e-6)
+        assert np.isclose(np.linalg.det(rot), 1.0)
+        normal = rot[:, 2]  # object z = marker plane normal
+        assert normal[2] < 0  # points back at the camera, not away from it
+
     def test_rejects_all_cube_faces(self, charger_template, cube_templates):
         """A cube face is never reported as the charger (COZMO-65)."""
         detector = make_charger_detector(charger_template, cube_templates)
@@ -241,13 +259,13 @@ class TestWorldMap:
         assert wm.get_charger() is None
         assert wm.get_world_state()["charger"] is None
 
-        wm.update_charger_measurement(np.array([100.0, 0.0, 300.0]), 0.9, 0.0)
+        wm.update_charger_measurement(np.array([100.0, 0.0, 300.0]), np.eye(3), 0.9, 0.0)
         first = wm.get_charger()
         assert first is not None
         assert first.age == 0
 
         # Stationary landmark: a second identical measurement fuses in place
-        wm.update_charger_measurement(np.array([100.0, 0.0, 300.0]), 0.9, 0.0)
+        wm.update_charger_measurement(np.array([100.0, 0.0, 300.0]), np.eye(3), 0.9, 0.0)
         second = wm.get_charger()
         assert second.age == 1
         assert np.allclose(second.position, first.position)
@@ -255,17 +273,43 @@ class TestWorldMap:
         state = wm.get_world_state()["charger"]
         assert state is not None
         assert len(state["position"]) == 3
+        assert len(state["rotation"]) == 3  # dock facing for alignment (COZMO-67)
         assert state["confidence"] == 0.9
 
         wm.reset_map()
         assert wm.get_charger() is None
         assert wm.get_world_state()["charger"] is None
 
+    def test_rotation_fused_into_world_frame(self):
+        """The marker pose — not just position — reaches the world map (COZMO-67)."""
+        wm = WorldMap()
+        wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
+
+        pos = np.array([100.0, 0.0, 300.0])
+        # Marker tilted about the camera z axis — normal not along the optical axis
+        c, s = np.cos(0.4), np.sin(0.4)
+        r_cam = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+
+        wm.update_charger_measurement(pos, r_cam, 0.9, 0.0)
+        first = wm.get_charger()
+        assert first is not None
+        _, expected_rot = camera_to_world(pos, r_cam, 0.0, np.zeros(3), 0.0, 0.0)
+        assert np.allclose(first.rotation_matrix, expected_rot)
+        assert np.allclose(first.rotation_matrix @ first.rotation_matrix.T, np.eye(3))
+
+        # An identical second measurement SLERPs onto the same rotation
+        wm.update_charger_measurement(pos, r_cam, 0.9, 0.0)
+        second = wm.get_charger()
+        assert np.allclose(second.rotation_matrix, first.rotation_matrix, atol=1e-9)
+
+        # …and it is serialized for the viewer/alignment consumers
+        assert np.allclose(wm.get_world_state()["charger"]["rotation"], first.rotation_matrix)
+
     def test_charger_survives_visibility_loss(self):
         """No forgetting on visibility loss — the charger does not move."""
         wm = WorldMap()
         wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
-        wm.update_charger_measurement(np.array([100.0, 0.0, 300.0]), 0.9, 0.0)
+        wm.update_charger_measurement(np.array([100.0, 0.0, 300.0]), np.eye(3), 0.9, 0.0)
 
         # No further measurements (marker left the frame)
         assert wm.get_charger() is not None
@@ -273,7 +317,7 @@ class TestWorldMap:
     def test_localization_origin_change_clears_charger(self):
         wm = WorldMap()
         wm.update_robot_pose([0.0, 0.0, 0.0], 0.0, origin_id=1, record_path=False)
-        wm.update_charger_measurement(np.array([100.0, 0.0, 300.0]), 0.9, 0.0)
+        wm.update_charger_measurement(np.array([100.0, 0.0, 300.0]), np.eye(3), 0.9, 0.0)
         assert wm.get_charger() is not None
 
         # Pick-up / put-down re-anchors the world frame → stale pose dropped
@@ -283,6 +327,15 @@ class TestWorldMap:
 
 class TestDetectionPipeline:
     class FakeChargerDetector:
+        #: Marker tilted 0.3 rad about the camera z axis
+        ROTATION = np.array(
+            [
+                [np.cos(0.3), -np.sin(0.3), 0.0],
+                [np.sin(0.3), np.cos(0.3), 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+
         def detect(self, img_bgr):
             return [
                 {
@@ -290,6 +343,7 @@ class TestDetectionPipeline:
                     "kind": "charger",
                     "corners": np.array([[[10, 10]], [[80, 10]], [[80, 60]], [[10, 60]]]),
                     "position": np.array([5.0, 0.0, 100.0]),
+                    "rotation_matrix": self.ROTATION.copy(),
                 }
             ]
 
@@ -321,6 +375,8 @@ class TestDetectionPipeline:
         assert (det.x, det.y, det.width, det.height) == (10, 10, 70, 50)
         assert det.confidence == 0.8
         assert det.distance == pytest.approx(0.1001, abs=1e-3)
+        # The PnP pose flows through to the world-map feed (COZMO-67)
+        assert np.allclose(det.rotation_matrix, self.FakeChargerDetector.ROTATION)
 
 
 class TestAnnotation:

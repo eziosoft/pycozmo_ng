@@ -112,25 +112,30 @@ class FaceState:
 class ChargerState:
     """Fused world-frame state of the charger marker (COZMO-65).
 
-    The charger is a single static landmark — one slot, position-only
-    fusion, no per-object identity.
+    The charger is a single static landmark — one slot, no per-object
+    identity. Position and orientation are fused: the marker frame's
+    world yaw (from the marker normal) is the dock's facing direction —
+    the alignment reference for docking (COZMO-67).
     """
 
     __slots__ = (
         "age",
         "confidence",
         "position",
+        "rotation_matrix",
         "updated_at",
     )
 
     def __init__(
         self,
         position: np.ndarray,
+        rotation_matrix: np.ndarray,
         confidence: float,
         age: int = 0,
         updated_at: float = 0.0,
     ):
         self.position = np.asarray(position, dtype=np.float64)
+        self.rotation_matrix = np.asarray(rotation_matrix, dtype=np.float64)
         self.confidence = float(confidence)
         self.age = int(age)
         self.updated_at = float(updated_at)
@@ -462,15 +467,18 @@ class WorldMap:
     def update_charger_measurement(
         self,
         position_cam: np.ndarray,
+        rotation_cam: np.ndarray,
         confidence: float,
         head_angle_rad: float,
         camera_lateral_offset_mm: float = 0.0,
     ) -> None:
         """Fuse a camera-frame charger measurement into the world map (COZMO-65).
 
-        Transforms camera → body → world, then applies exponential smoothing
-        against the previous world-frame state. Position-only: the marker's
-        orientation is not fused yet (dock-pose integration is deferred).
+        Transforms camera → body → world, then fuses against the previous
+        world-frame state: exponential smoothing on position, confidence-
+        weighted SLERP on rotation (the same rules as cubes). The marker
+        frame's world yaw — the dock's facing direction — is the alignment
+        reference for docking (COZMO-67).
 
         The charger is stationary, so there is no forgetting on visibility
         loss — the last fused pose stays until ``reset_map`` or a
@@ -478,14 +486,16 @@ class WorldMap:
 
         Args:
             position_cam: Marker centre in camera frame (mm).
+            rotation_cam: 3x3 marker rotation in camera frame — the marker
+                plane basis from PnP (x/y in the sticker plane, z = normal).
             confidence: Detection confidence (0..1).
             head_angle_rad: Head pitch at measurement time (radians).
             camera_lateral_offset_mm: Lateral offset of camera from robot centre.
         """
         with self._lock:
-            pos_world, _rot_world = camera_to_world(
+            pos_world, rot_world = camera_to_world(
                 position_cam,
-                np.eye(3),
+                rotation_cam,
                 head_angle_rad,
                 self._robot_position,
                 self._robot_yaw,
@@ -496,6 +506,7 @@ class WorldMap:
             if prev is None:
                 self._charger = ChargerState(
                     position=pos_world,
+                    rotation_matrix=rot_world,
                     confidence=confidence,
                     updated_at=now,
                 )
@@ -504,8 +515,22 @@ class WorldMap:
             alpha = self.smoothing_alpha * float(confidence)
             position = alpha * pos_world + (1.0 - alpha) * prev.position
 
+            # Rotation: confidence-weighted SLERP with the cube rotation_alpha
+            # so attitude noise is suppressed more aggressively than position.
+            rot_blend = self.rotation_alpha * float(confidence)
+            prev_q = R.from_matrix(prev.rotation_matrix)
+            new_q = R.from_matrix(rot_world)
+            prev_quat = prev_q.as_quat()
+            new_quat = new_q.as_quat()
+            if np.dot(prev_quat, new_quat) < 0:
+                new_quat = -new_quat
+                new_q = R.from_quat(new_quat)
+            key_rots = R.concatenate([prev_q, new_q])
+            rotation = Slerp([0, 1], key_rots)(rot_blend).as_matrix()
+
             self._charger = ChargerState(
                 position=position,
+                rotation_matrix=rotation,
                 confidence=confidence,
                 age=prev.age + 1,
                 updated_at=now,
@@ -518,6 +543,7 @@ class WorldMap:
                 return None
             return ChargerState(
                 position=self._charger.position.copy(),
+                rotation_matrix=self._charger.rotation_matrix.copy(),
                 confidence=self._charger.confidence,
                 age=self._charger.age,
                 updated_at=self._charger.updated_at,
@@ -570,8 +596,8 @@ class WorldMap:
 
         Keys: ``robot`` (position, yaw, origin_id), ``cubes`` (cube_index ->
         position/rotation/confidence), ``faces`` (face_id ->
-        position/confidence/label), ``charger`` (position/confidence or
-        None), ``path_points``.
+        position/confidence/label), ``charger`` (position/rotation/confidence
+        or None), ``path_points``.
         """
         with self._lock:
             robot_pos = self._robot_position.tolist()
@@ -599,6 +625,7 @@ class WorldMap:
             if self._charger is not None:
                 charger = {
                     "position": self._charger.position.tolist(),
+                    "rotation": self._charger.rotation_matrix.tolist(),
                     "confidence": self._charger.confidence,
                 }
         return {

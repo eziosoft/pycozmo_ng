@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import numpy as np
 from PIL import Image
 
+from pycozmo_ng import coords
 from pycozmo_ng.web.state_builder import (
     PATH_SCENE_LIFT_MM,
     build_state_json,
@@ -262,13 +263,23 @@ class TestChargerInState:
         assert state["charger"] is None
 
     def test_converted_to_scene_frame_with_size(self):
-        state = self._build({"charger": {"position": [100.0, 200.0, 50.0], "confidence": 0.85}})
+        # Marker yawed 90 deg about world z (up) — the dock facing direction
+        world_rot = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+        state = self._build({"charger": {"position": [100.0, 200.0, 50.0], "rotation": world_rot, "confidence": 0.85}})
         charger = state["charger"]
         # world (x, y, z) -> scene [y, z, x]
         assert charger["position"] == [200.0, 50.0, 100.0]
+        # Rotation reaches the browser in scene frame (COZMO-67)
+        expected = coords.world_to_scene_rotation(np.asarray(world_rot))
+        assert np.allclose(charger["rotation"], expected)
         assert charger["confidence"] == 0.85
         assert charger["width"] == 23.0
         assert charger["height"] == 15.0
+
+    def test_rotation_defaults_to_identity(self):
+        # A world-map snapshot without rotation must not break the viewer.
+        state = self._build({"charger": {"position": [0.0, 0.0, 30.0]}})
+        assert np.allclose(state["charger"]["rotation"], coords.world_to_scene_rotation(np.eye(3)))
 
     def test_confidence_defaults_to_one(self):
         state = self._build({"charger": {"position": [0.0, 0.0, 30.0]}})

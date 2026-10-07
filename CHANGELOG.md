@@ -31,10 +31,18 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
   in scene frame, `null` until the first fused sighting), and the browser
   renders it as a marker-sized green (0x00ff40) tablet with a "Charger |
   NN%" label — the same green as the annotated-stream overlay — plus a
-  "Charger" HUD row showing the fused confidence. Position-only, so the box
-  is axis-aligned (no fused yaw yet); it lerp-smooths like faces and is
-  removed when the world map forgets the charger (`reset_map` /
-  localization-origin change).
+  "Charger" HUD row showing the fused confidence. It lerp/slerp-smooths
+  like cubes and is removed when the world map forgets the charger
+  (`reset_map` / localization-origin change).
+- The charger pose now carries orientation, so the robot can align to the
+  dock (COZMO-67): the PnP rotation flows `ChargerDetection.rotation_matrix`
+  → `WorldMap.update_charger_measurement(position, rotation, …)` (camera →
+  world transform, then confidence-weighted SLERP — the same fusion rules as
+  cubes) → `get_charger()` / `get_world_state()["charger"]["rotation"]`.
+  `build_state_json` sends the scene-frame rotation and the browser orients
+  the marker tablet from it. The marker normal's world yaw is the dock's
+  facing direction — the reference pose for docking alignment (navigation
+  integration still to come).
 - The frame stage reaches the display through one declared interface: new
   `vision/frame_sink.py` (`FrameSink`). `FrameStage` used to be typed against the
   concrete `WebViewerServer` and reach into its internals

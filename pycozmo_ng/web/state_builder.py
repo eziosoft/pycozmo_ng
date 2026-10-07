@@ -9,6 +9,8 @@ import math
 import time
 from typing import Any
 
+import numpy as np
+
 from pycozmo_ng import coords
 from pycozmo_ng.cubes.identity import cube_label
 
@@ -140,12 +142,15 @@ def build_state_json(
 
     # Charger: one static landmark — null until the first fused sighting
     # (world map never forgets it, only reset_map / origin change clear it).
+    # Rotation carries the dock facing (marker normal yaw) for alignment.
     charger_state = world.get("charger")
     charger = None
     if charger_state is not None:
         pos_gl = coords.world_to_scene_point(charger_state["position"])
+        rot_gl = coords.world_to_scene_rotation(np.asarray(charger_state.get("rotation", np.eye(3)), dtype=np.float64))
         charger = {
             "position": [float(v) for v in pos_gl],
+            "rotation": [row.tolist() for row in rot_gl],
             "confidence": float(charger_state.get("confidence", 1.0)),
             "width": CHARGER_WIDTH_MM,
             "height": CHARGER_HEIGHT_MM,

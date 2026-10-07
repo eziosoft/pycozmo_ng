@@ -192,6 +192,7 @@ class DetectionPipeline:
             x_max = int(corners[:, 0].max())
             y_max = int(corners[:, 1].max())
             position = np.asarray(r["position"], dtype=np.float64)
+            rotation = np.asarray(r["rotation_matrix"], dtype=np.float64)
 
             detections.append(
                 ChargerDetection(
@@ -202,6 +203,7 @@ class DetectionPipeline:
                     confidence=float(r["score"]),
                     distance=float(np.linalg.norm(position)) / 1000.0,
                     position_mm=position,
+                    rotation_matrix=rotation,
                     timestamp=time.time(),
                 )
             )

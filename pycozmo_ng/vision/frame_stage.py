@@ -262,10 +262,12 @@ class FrameStage:
             self.world_map.forget_face(face_frame.ended)
 
         # Feed charger marker measurements (single static landmark — no
-        # forgetting on visibility loss, COZMO-65).
+        # forgetting on visibility loss, COZMO-65; pose carries the dock
+        # facing for alignment, COZMO-67).
         for det in charger_detections or []:
             self.world_map.update_charger_measurement(
                 det.position_mm,
+                det.rotation_matrix,
                 det.confidence,
                 head_angle,
                 camera_lateral_offset_mm=lateral_offset,
