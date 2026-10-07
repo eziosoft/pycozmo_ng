@@ -28,9 +28,9 @@ from pycozmo_ng.vision.annotation import AnnotationEngine
 from pycozmo_ng.vision.cube_detector.detection_pipeline import DetectionPipeline
 from pycozmo_ng.vision.events import DetectionEventDispatcher
 from pycozmo_ng.vision.face_identity import FaceFrame, FaceIdentity
+from pycozmo_ng.vision.frame_sink import FrameSink
 from pycozmo_ng.vision.frame_state import FrameState
 from pycozmo_ng.vision.occupancy_map.floor_pipeline import FloorPipeline
-from pycozmo_ng.web.viewer_server import WebViewerServer
 
 
 class FrameStage:
@@ -46,11 +46,11 @@ class FrameStage:
         self,
         frame_state: FrameState,
         world_map: WorldMap,
-        web_viewer: WebViewerServer,
+        sink: FrameSink,
     ):
         self.fs = frame_state
         self.world_map = world_map
-        self.web_viewer = web_viewer
+        self.sink = sink
         # Set by the composition root when the client connects
         self.cli = None
 
@@ -202,7 +202,7 @@ class FrameStage:
             self.fs.latest_detections = cube_detections
 
         if annotated_image is not None:
-            self.web_viewer.push_annotated_frame(annotated_image)
+            self.sink.push_annotated_frame(annotated_image)
 
     def _update_face_expression(self, cli, face_detections, face_due: bool) -> None:
         """Mirror face detection onto the procedural face (Happiness)."""
@@ -260,9 +260,9 @@ class FrameStage:
         if anim_ctrl is not None:
             face_im = getattr(anim_ctrl, "latest_face_image", None)
             if face_im is not None:
-                self.web_viewer.push_face_image(face_im)
+                self.sink.push_face_image(face_im)
 
-        self.web_viewer.broadcast()
+        self.sink.broadcast()
 
     def _process_floor(self, cli, img_bgr, head_angle_rad: float) -> None:
         """Project the floor, dispatch the event, publish image + occupancy."""
@@ -275,15 +275,15 @@ class FrameStage:
             return
 
         cli.dispatch(event.EvtFloorProjectedImage, cli, floor_img, occ_grid)
-        self.web_viewer.push_floor_frame(floor_img)
+        self.sink.push_floor_frame(floor_img)
 
         # Publish the occupancy map image for the browser overlay
         occ = self.floor_pipeline.occupancy_map
         if occ_map_image is not None and self.floor_pipeline.occupancy_enabled and occ is not None:
-            self.web_viewer.occupancy.push(occ_map_image, occ.origin[0], occ.origin[1])
+            self.sink.push_occupancy_frame(occ_map_image, occ.origin[0], occ.origin[1])
 
         # Sync floor grid dimensions to browser on first frame
         fp = self.floor_pipeline.floor_projector
         if fp is not None:
-            self.web_viewer.set_floor_size(fp.floor_size[0], fp.floor_size[1])
-            self.web_viewer.set_floor_center(fp.floor_center[0], fp.floor_center[1])
+            size, center = fp.floor_size, fp.floor_center
+            self.sink.set_floor_grid((float(size[0]), float(size[1])), (float(center[0]), float(center[1])))

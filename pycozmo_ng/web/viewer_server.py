@@ -43,6 +43,8 @@ class WebViewerServer:
     and serializes it to **scene frame** on broadcast for the browser,
     which is a pure display and does no coordinate math. It exposes no
     world-map write methods: callers write to the world map directly.
+    It satisfies the :class:`~pycozmo_ng.vision.frame_sink.FrameSink`
+    interface that ``FrameStage`` publishes frames through.
     The injected :class:`CameraService` is read-only here — the broadcast
     reports the camera settings actually in force.
 
@@ -152,13 +154,14 @@ class WebViewerServer:
         self._latest_floor_image = Image.fromarray(rgb)
         self._floor_image_id += 1
 
-    def set_floor_size(self, width_mm: float, height_mm: float) -> None:
-        """Set the floor grid dimensions (mm) for the browser overlay."""
-        self._floor_size_mm = (width_mm, height_mm)
+    def push_occupancy_frame(self, image, origin_x_mm: float, origin_y_mm: float) -> None:
+        """Publish the occupancy grid image + world origin for the overlay."""
+        self.occupancy.push(image, origin_x_mm, origin_y_mm)
 
-    def set_floor_center(self, center_x_mm: float, center_y_mm: float) -> None:
-        """Set the floor grid center (mm, body frame) for the browser overlay."""
-        self._floor_center_mm = (center_x_mm, center_y_mm)
+    def set_floor_grid(self, size_mm: tuple[float, float], center_mm: tuple[float, float]) -> None:
+        """Set the floor grid dimensions and center (mm) for the browser overlay."""
+        self._floor_size_mm = size_mm
+        self._floor_center_mm = center_mm
 
     def push_face_image(self, pil_image) -> None:
         """Publish the procedural face as a base64-encoded PNG for WebSocket."""

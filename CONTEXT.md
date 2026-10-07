@@ -68,10 +68,24 @@ The per-frame vision sequence, owned by the `FrameStage` class
 dispatch events → feed the world map (plus floor projection and face
 expression). One small interface — `configure(...)` (once per vision setup)
 and `on_camera_image(...)` (once per frame); `Brain` only constructs and
-wires it. Stable deps (state containers, world map, `WebViewerServer`) come
-from the constructor, detectors from `configure()`.
+wires it. Stable deps (state containers, world map, the frame sink below)
+come from the constructor, detectors from `configure()`.
 _Avoid_: FrameHandler, WebStreamer, WebBridge (deleted); calling Brain the
-place where frames are processed.
+place where frames are processed; typing the constructor against
+`WebViewerServer` (its display calls leaked across the seam — deleted).
+
+**Frame sink** (`pycozmo_ng/vision/frame_sink.py`, protocol `FrameSink`):
+The display-side seam behind `FrameStage`: everything the frame stage
+publishes to the browser crosses it — `push_annotated_frame`,
+`push_floor_frame`, `push_face_image`, `push_occupancy_frame`,
+`set_floor_grid` (size + center in one call), `broadcast`. Two adapters
+make the seam real: `WebViewerServer` in production, the recording
+`RecordingFrameSink` in `tests/test_frame_stage.py`, which is where the
+per-frame sequence is asserted (the interface is the test surface).
+`vision/` therefore never imports `web/`.
+_Avoid_: importing `WebViewerServer` from `vision/`; reaching through
+the sink into its parts (`sink.occupancy.push` — deleted); one setter per
+floor-grid field.
 
 **Camera service**:
 The single owner of the camera lifecycle, in the `CameraService` class

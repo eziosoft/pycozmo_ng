@@ -8,6 +8,14 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- The frame stage reaches the display through one declared interface: new
+  `vision/frame_sink.py` (`FrameSink`). `FrameStage` used to be typed against the
+  concrete `WebViewerServer` and reach into its internals
+  (`web_viewer.occupancy.push(...)`); `vision/` no longer imports `web/`, the
+  two always-co-called floor-grid setters collapsed into `set_floor_grid(size,
+  center)`, and `tests/test_frame_stage.py` asserts the per-frame sequence on a
+  recording adapter instead of a `Mock()` that accepted anything (a fake that
+  drifts from the interface now fails mypy).
 - Occupancy delivery has one owner: new `web/occupancy_delivery.py`
   (`OccupancyDelivery.push` throttles the encode, `take()` answers "changed?
   → send → mark sent" in a single call that `build_state_json` consumes as one

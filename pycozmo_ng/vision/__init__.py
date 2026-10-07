@@ -20,6 +20,7 @@ from pycozmo_ng.vision.cube_detector.detection_pipeline import (
 )
 from pycozmo_ng.vision.events import DetectionEventDispatcher
 from pycozmo_ng.vision.face_identity import FaceFrame, FaceIdentity
+from pycozmo_ng.vision.frame_sink import FrameSink
 from pycozmo_ng.vision.frame_stage import FrameStage
 from pycozmo_ng.vision.frame_state import FrameState
 from pycozmo_ng.vision.interfaces import (
@@ -41,6 +42,7 @@ __all__ = [
     "FaceDetector",
     "FaceFrame",
     "FaceIdentity",
+    "FrameSink",
     "FrameStage",
     "FrameState",
     "RobotCenterCalibration",

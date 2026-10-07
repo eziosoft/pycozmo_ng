@@ -1,8 +1,10 @@
 """Tests for the FrameStage — the deep per-frame vision module.
 
 FrameStage's interface is ``configure()`` + ``on_camera_image()``; every
-test crosses that seam with fakes for the injected sinks (world map,
-web viewer, detectors) — no live robot, no Brain.
+test crosses that seam with fakes for the injected dependencies (world
+map, frame sink, detectors) — no live robot, no Brain. What the display
+receives is asserted on the ``FrameSink`` interface itself, through the
+recording adapter below.
 """
 
 import time
@@ -14,8 +16,60 @@ from PIL import Image
 from pycozmo_ng import event
 from pycozmo_ng.display.expressions import Happiness
 from pycozmo_ng.vision.face_identity import FaceIdentity
+from pycozmo_ng.vision.frame_sink import FrameSink
 from pycozmo_ng.vision.frame_stage import FrameStage
 from pycozmo_ng.vision.frame_state import FrameState
+
+
+class RecordingFrameSink:
+    """Recording adapter for the ``FrameSink`` seam — the test surface.
+
+    Every call lands in ``order`` (shared, for sequence assertions) and in
+    the per-call list it belongs to.
+    """
+
+    def __init__(self, order: list | None = None) -> None:
+        self.order: list[str] = order if order is not None else []
+        self.annotated: list = []
+        self.floor: list = []
+        self.faces: list = []
+        self.occupancy: list = []
+        self.grids: list = []
+        self.broadcasts = 0
+
+    def push_annotated_frame(self, image) -> None:
+        self.order.append("publish")
+        self.annotated.append(image)
+
+    def push_floor_frame(self, image) -> None:
+        self.order.append("floor_frame")
+        self.floor.append(image)
+
+    def push_face_image(self, pil_image) -> None:
+        self.order.append("face")
+        self.faces.append(pil_image)
+
+    def push_occupancy_frame(self, image, origin_x_mm: float, origin_y_mm: float) -> None:
+        self.order.append("occupancy")
+        self.occupancy.append((image, origin_x_mm, origin_y_mm))
+
+    def set_floor_grid(self, size_mm: tuple[float, float], center_mm: tuple[float, float]) -> None:
+        self.order.append("grid")
+        self.grids.append((size_mm, center_mm))
+
+    def broadcast(self) -> None:
+        self.order.append("broadcast")
+        self.broadcasts += 1
+
+
+def log_call(order: list[str], name: str, result=None):
+    """Mock side effect that records its own call in a shared ordering list."""
+
+    def side(*args, **kwargs):
+        order.append(name)
+        return result
+
+    return side
 
 
 def make_image() -> Image.Image:
@@ -52,11 +106,11 @@ def make_cli(**overrides):
     return cli
 
 
-def make_stage(**configure_overrides):
+def make_stage(**configure_overrides) -> SimpleNamespace:
     """FrameStage with fakes for every injected dependency."""
     fs = FrameState()
     world_map = Mock()
-    web_viewer = Mock()
+    sink: FrameSink = RecordingFrameSink()
 
     detection_pipeline = Mock()
     detection_pipeline.robot_center_calibration = SimpleNamespace(offset_mm=0.0, last_result=None)
@@ -89,7 +143,7 @@ def make_stage(**configure_overrides):
     floor_pipeline.floor_projector.floor_size = (600.0, 600.0)
     floor_pipeline.floor_projector.floor_center = (200.0, 0.0)
 
-    stage = FrameStage(fs, world_map, web_viewer)
+    stage = FrameStage(fs, world_map, sink)
     stage.configure(
         detection_pipeline=detection_pipeline,
         annotation_engine=annotation_engine,
@@ -102,7 +156,7 @@ def make_stage(**configure_overrides):
         stage=stage,
         fs=fs,
         world_map=world_map,
-        web_viewer=web_viewer,
+        sink=sink,
         detection_pipeline=detection_pipeline,
         annotation_engine=annotation_engine,
         event_dispatcher=event_dispatcher,
@@ -133,8 +187,8 @@ def test_full_sequence_updates_every_sink():
     assert h.fs.latest_annotated_frame is not None
     assert h.fs.latest_detections == h.detection_pipeline.detect_cubes.return_value
 
-    # Published to the browser sink
-    h.web_viewer.push_annotated_frame.assert_called_once()
+    # Published through the frame sink (the display-side seam)
+    assert len(h.sink.annotated) == 1
 
     # Events dispatched (face dispatch carries the identity's FaceFrame)
     h.event_dispatcher.dispatch_cube_events.assert_called_once()
@@ -144,37 +198,44 @@ def test_full_sequence_updates_every_sink():
     # World map fed with the cube measurement (head angle passed through)
     h.world_map.update_cube_measurement.assert_called_once()
     assert h.world_map.update_cube_measurement.call_args.args[4] == 0.5
-    h.web_viewer.broadcast.assert_called_once()
+    assert h.sink.broadcasts == 1
 
     # Floor: event dispatched, image + occupancy + grid dims published
     cli.dispatch.assert_called_once()
     assert cli.dispatch.call_args.args[0] is event.EvtFloorProjectedImage
-    h.web_viewer.push_floor_frame.assert_called_once_with(h.floor_img)
-    h.web_viewer.occupancy.push.assert_called_once_with(h.occ_map_image, 10, 20)
-    h.web_viewer.set_floor_size.assert_called_once_with(600.0, 600.0)
-    h.web_viewer.set_floor_center.assert_called_once_with(200.0, 0.0)
+    assert h.sink.floor == [h.floor_img]
+    assert h.sink.occupancy == [(h.occ_map_image, 10, 20)]
+    assert h.sink.grids == [((600.0, 600.0), (200.0, 0.0))]
 
 
 def test_steps_run_in_order():
     """annotate → publish → dispatch → feed world map → floor."""
     h = make_stage()
-    recorder = Mock()
-    recorder.attach_mock(h.annotation_engine.detect_and_annotate, "annotate")
-    recorder.attach_mock(h.web_viewer.push_annotated_frame, "publish")
-    recorder.attach_mock(h.event_dispatcher.dispatch_cube_events, "dispatch")
-    recorder.attach_mock(h.world_map.update_cube_measurement, "feed")
-    recorder.attach_mock(h.floor_pipeline.process, "floor")
+    order = h.sink.order
+    h.annotation_engine.detect_and_annotate.side_effect = log_call(order, "annotate", make_image())
+    h.event_dispatcher.dispatch_cube_events.side_effect = log_call(order, "dispatch")
+    h.world_map.update_cube_measurement.side_effect = log_call(order, "feed")
+    h.floor_pipeline.process.side_effect = log_call(order, "floor", (h.floor_img, h.occ_grid, h.occ_map_image))
 
     h.stage.on_camera_image(make_cli(), make_image())
 
-    names = [c[0] for c in recorder.mock_calls]
-    assert names == ["annotate", "publish", "dispatch", "feed", "floor"]
+    assert order == [
+        "annotate",
+        "publish",
+        "dispatch",
+        "feed",
+        "broadcast",
+        "floor",
+        "floor_frame",
+        "occupancy",
+        "grid",
+    ]
 
 
 def test_unconfigured_stage_is_inert():
     """Before configure() a frame is stamped but nothing downstream runs."""
-    web_viewer = Mock()
-    stage = FrameStage(FrameState(), Mock(), web_viewer)
+    sink = RecordingFrameSink()
+    stage = FrameStage(FrameState(), Mock(), sink)
     cli = make_cli()
     image = make_image()
 
@@ -182,8 +243,8 @@ def test_unconfigured_stage_is_inert():
 
     assert stage.fs.latest_raw_frame is image
     assert stage.fs.frame_count == 1
-    web_viewer.push_annotated_frame.assert_not_called()
-    web_viewer.broadcast.assert_not_called()
+    assert sink.annotated == []
+    assert sink.broadcasts == 0
 
 
 def test_frame_gate_skips_processing_but_still_stamps():
@@ -298,7 +359,7 @@ def test_floor_disabled_skips_floor_sinks():
     h.stage.on_camera_image(cli, make_image())
 
     cli.dispatch.assert_not_called()
-    h.web_viewer.push_floor_frame.assert_not_called()
-    h.web_viewer.occupancy.push.assert_not_called()
+    assert h.sink.floor == []
+    assert h.sink.occupancy == []
     # …but the rest of the sequence still ran
-    h.web_viewer.push_annotated_frame.assert_called_once()
+    assert len(h.sink.annotated) == 1

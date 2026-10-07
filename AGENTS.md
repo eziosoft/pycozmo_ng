@@ -95,6 +95,7 @@ pycozmo_ng/           # Main library (import name: pycozmo_ng)
 │   ├── events.py            # DetectionEventDispatcher — cube/face events
 │   ├── face_detector.py     # FaceDetector (Haar cascade)
 │   ├── face_identity.py     # FaceIdentity/FaceFrame — face presence epochs (ID per run)
+│   ├── frame_sink.py        # FrameSink — the display-side seam FrameStage publishes through
 │   ├── frame_stage.py       # FrameStage — per-frame sequence (detect → annotate → publish → world map)
 │   ├── frame_state.py       # FrameState — typed container for frame/detection state
 │   ├── image_encoder.py     # Image encoding utilities
