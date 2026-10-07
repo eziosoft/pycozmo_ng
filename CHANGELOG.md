@@ -8,6 +8,24 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- The charger's rectangular marker (23 × 15 mm battery drawing) is detected as
+  a first-class object instead of being misread as a cube whose ID flapped
+  every second (COZMO-65). New `vision/charger_detector/` package:
+  `ChargerDetector` (cube-detector chassis with rectangular object points and
+  `SOLVEPNP_IPPE`, marker aspect gate 1.1–2.0, best-quad-wins), a template
+  loader matching the cube preprocessing (32×32), and `ChargerDetection`.
+  Both detector families now carry a symmetric `reject_markers` guard — a quad
+  is skipped when the *other* family's template out-scores its own — so the
+  marker is never a cube and a cube face is never the charger (validated:
+  phantom cube detections 5 → 0 across the real marker frames; charger found
+  in 22/23, scores 0.71–0.84). Wiring: `DetectionPipeline.detect_charger()`,
+  `VisionSetup.enable_charger_detection`, events
+  `EvtChargerDetected/Observed/Lost`, `WorldMap.update_charger_measurement`
+  (single stationary slot — no forgetting on visibility loss, cleared on
+  `reset_map` or localization-origin change), and a green "Charger" overlay on
+  the annotated stream. Cube ID space stays strictly 0–2; charger PnP uses the
+  measured 23 × 15 mm — the image quads (1.32–1.37) are narrower than the
+  physical 1.53 aspect, flagged as a calibration follow-up.
 - The frame stage reaches the display through one declared interface: new
   `vision/frame_sink.py` (`FrameSink`). `FrameStage` used to be typed against the
   concrete `WebViewerServer` and reach into its internals

@@ -105,6 +105,8 @@ pycozmo_ng/           # Main library (import name: pycozmo_ng)
 │   │                        # robot_center_calibration.py (single owner of the measured session offset)
 │   ├── cube_detector/       # cube_detector.py (CozmoCubeDetector + CubeFusionTracker),
 │   │                        # detection_pipeline.py (core detection), cube_faces/ (marker templates)
+│   ├── charger_detector/     # charger_detector.py (ChargerDetector — rectangular dock marker),
+│   │                        # charger_template.py (32x32 template), marker/charger.png (COZMO-65)
 │   └── occupancy_map/       # floor_pipeline.py, floor_projector.py (bird's-eye view),
 │                            # occupancy_map.py (world-frame occupancy grid)
 ├── navigation/

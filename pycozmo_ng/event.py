@@ -18,7 +18,10 @@ __all__ = [
     "EvtAnnotatedCameraImage",
     "EvtAudioCompleted",
     "EvtBehaviorDone",
+    "EvtChargerDetected",
+    "EvtChargerLost",
     "EvtChargerOOSChange",
+    "EvtChargerObserved",
     "EvtCliffDetectedChange",
     "EvtCubeDetected",
     "EvtCubeLost",
@@ -268,6 +271,31 @@ class EvtFaceLost(Event):
 
     Attributes:
         face_id: ID of the lost face presence run (1+; never reused)
+    """
+
+
+class EvtChargerDetected(Event):
+    """
+    Triggered when the charger marker is first detected.
+
+    Attributes:
+        detections: List of ChargerDetection objects (the charger is a
+            single static object — no per-object ID, COZMO-65)
+    """
+
+
+class EvtChargerObserved(Event):
+    """
+    Triggered periodically while the charger marker is visible.
+
+    Attributes:
+        detections: List of ChargerDetection objects
+    """
+
+
+class EvtChargerLost(Event):
+    """
+    Triggered when the charger marker is no longer visible.
     """
 
 

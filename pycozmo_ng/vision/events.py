@@ -1,4 +1,4 @@
-"""Detection event dispatcher — emits cube/face events from vision pipeline.
+"""Detection event dispatcher — emits cube/face/charger events from vision pipeline.
 
 Separates event emission logic from the detection pipeline for better
 testability and locality.
@@ -6,18 +6,21 @@ testability and locality.
 
 from pycozmo_ng import event
 from pycozmo_ng.cubes.identity import to_cube_id
+from pycozmo_ng.vision.charger_detector.charger_detection import ChargerDetection
 from pycozmo_ng.vision.cube_detector.detection_pipeline import CubeDetection
 from pycozmo_ng.vision.face_detector import FaceDetection
 from pycozmo_ng.vision.face_identity import FaceFrame
 
 
 class DetectionEventDispatcher:
-    """Dispatches cube and face detection events to the client.
+    """Dispatches cube, face and charger detection events to the client.
 
     Cube transitions are tracked here; face presence transitions are
     owned by ``FaceIdentity`` and arrive with each frame as a
     :class:`FaceFrame` — this class only turns them into events.
-    Event payloads use public IDs: cube IDs 1-3, face presence IDs 1+.
+    The charger is a single static object, so only presence transitions
+    are tracked (one visibility flag). Event payloads use public IDs:
+    cube IDs 1-3, face presence IDs 1+.
     """
 
     def __init__(self, obs_throttle_frames: int = 5):
@@ -28,6 +31,8 @@ class DetectionEventDispatcher:
         self._last_cube_indices: set[int] = set()
         self._obs_frame_counter: int = 0
         self._face_obs_counter: int = 0
+        self._charger_visible: bool = False
+        self._charger_obs_counter: int = 0
         self._obs_throttle = obs_throttle_frames
 
     def dispatch_cube_events(self, cli, detections: list[CubeDetection]) -> None:
@@ -81,8 +86,36 @@ class DetectionEventDispatcher:
         if self._face_obs_counter % self._obs_throttle == 0:
             cli.dispatch(event.EvtFaceObserved, cli, detections)
 
+    def dispatch_charger_events(self, cli, detections: list[ChargerDetection]) -> None:
+        """Dispatch charger marker events (detected, observed, lost).
+
+        The charger is one static object, so tracking is a single visibility
+        flag — there is no per-object ID to diff (COZMO-65).
+
+        Args:
+            cli: Client instance
+            detections: Current frame's charger detections (0 or 1)
+        """
+        visible = bool(detections)
+
+        if visible and not self._charger_visible:
+            cli.dispatch(event.EvtChargerDetected, cli, detections)
+        elif not visible and self._charger_visible:
+            cli.dispatch(event.EvtChargerLost, cli)
+        self._charger_visible = visible
+
+        if not visible:
+            self._charger_obs_counter = 0
+            return
+
+        self._charger_obs_counter += 1
+        if self._charger_obs_counter % self._obs_throttle == 0:
+            cli.dispatch(event.EvtChargerObserved, cli, detections)
+
     def reset(self) -> None:
         """Reset all tracking state."""
         self._last_cube_indices.clear()
         self._obs_frame_counter = 0
         self._face_obs_counter = 0
+        self._charger_visible = False
+        self._charger_obs_counter = 0

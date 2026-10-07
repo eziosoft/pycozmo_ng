@@ -14,7 +14,10 @@ import numpy as np
 from pycozmo_ng.logger import logger
 from pycozmo_ng.vision.calibration.camera_calibration import CameraCalibration
 from pycozmo_ng.vision.calibration.robot_center_calibration import RobotCenterCalibration
+from pycozmo_ng.vision.charger_detector.charger_detection import ChargerDetection
+from pycozmo_ng.vision.charger_detector.charger_template import load_charger_template
 from pycozmo_ng.vision.interfaces import (
+    ChargerDetector,
     CubeDetector,
     CubeFusionTracker,
     FaceDetector,
@@ -64,6 +67,7 @@ class DetectionPipeline:
         cube_tracker: CubeFusionTracker,
         face_detector: FaceDetector | None = None,
         robot_center_calibration: RobotCenterCalibration | None = None,
+        charger_detector: ChargerDetector | None = None,
     ):
         """
         Initialize the detection pipeline with injected dependencies.
@@ -75,6 +79,7 @@ class DetectionPipeline:
             face_detector: Optional face detector (Haar cascade, etc.)
             robot_center_calibration: Owner of the robot-center measurement;
                 frames are handed to it once per processed frame
+            charger_detector: Optional charger marker detector (COZMO-65)
         """
         self.camera_calibration = camera_calibration
         self.cube_detector = cube_detector
@@ -84,6 +89,10 @@ class DetectionPipeline:
         # Face detection
         self.face_detector = face_detector
         self.enable_face_detection = True
+
+        # Charger marker detection (COZMO-65)
+        self.charger_detector = charger_detector
+        self.enable_charger_detection = True
 
         # Robot center calibration — observes frames; owns the session offset
         self.robot_center_calibration = robot_center_calibration
@@ -150,6 +159,53 @@ class DetectionPipeline:
             return []
 
         return self.face_detector.detect(img_bgr)
+
+    def detect_charger(self, img_bgr: np.ndarray, head_angle_rad: float = 0.0) -> list[ChargerDetection]:
+        """Detect the charger's rectangular marker (COZMO-65).
+
+        Separate detection path from the cubes — the marker never enters the
+        cube identity space, and the cube detector's ``reject_markers`` guard
+        keeps the two families from claiming the same quad.
+
+        Args:
+            img_bgr: Image as BGR numpy array (already converted by caller).
+            head_angle_rad: Current head tilt angle in radians (unused —
+                kept for call-site symmetry with detect_cubes/detect_faces).
+
+        Returns:
+            Zero or one ChargerDetection (position_mm in camera frame).
+        """
+        if self.charger_detector is None or not self.enable_charger_detection:
+            return []
+
+        try:
+            results = self.charger_detector.detect(img_bgr)
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.error(f"Error in charger detection: {e}", exc_info=True)
+            return []
+
+        detections = []
+        for r in results:
+            corners = np.asarray(r["corners"]).reshape(-1, 2)
+            x_min = int(corners[:, 0].min())
+            y_min = int(corners[:, 1].min())
+            x_max = int(corners[:, 0].max())
+            y_max = int(corners[:, 1].max())
+            position = np.asarray(r["position"], dtype=np.float64)
+
+            detections.append(
+                ChargerDetection(
+                    x=x_min,
+                    y=y_min,
+                    width=max(1, x_max - x_min),
+                    height=max(1, y_max - y_min),
+                    confidence=float(r["score"]),
+                    distance=float(np.linalg.norm(position)) / 1000.0,
+                    position_mm=position,
+                    timestamp=time.time(),
+                )
+            )
+        return detections
 
     def detect_cubes(self, img_bgr: np.ndarray, head_angle_rad: float = 0.0) -> list[CubeDetection]:
         """
@@ -325,6 +381,15 @@ def create_default_detection_pipeline(
     # Load markers
     target_markers = load_marker_templates(marker_dir)
 
+    # Load the charger marker template (COZMO-65). It serves double duty:
+    # negative templates for the cube detector and positives for the charger
+    # detector. Missing asset degrades to "no charger detection" only.
+    charger_template = None
+    try:
+        charger_template = load_charger_template()
+    except (OSError, ValueError, RuntimeError) as e:
+        logger.warning(f"Charger marker template unavailable, charger detection disabled: {e}")
+
     # Create detector
     cube_detector = CozmoCubeDetector(
         camera_calibration.camera_matrix,
@@ -333,6 +398,7 @@ def create_default_detection_pipeline(
         use_clahe=use_clahe,
         max_detections=max_detections,
         denoise_strength=denoise_strength,
+        reject_markers=[charger_template] if charger_template is not None else None,
     )
 
     # Create fusion tracker
@@ -345,6 +411,22 @@ def create_default_detection_pipeline(
         logger.info("Face detector initialized successfully")
     except OSError as e:
         logger.warning(f"Failed to initialize face detector: {e}")
+
+    # Create the charger marker detector — rejects quads the cube templates
+    # out-score, mirroring the cube detector's guard (COZMO-65)
+    charger_detector = None
+    if charger_template is not None:
+        from pycozmo_ng.vision.charger_detector.charger_detector import ChargerDetector
+
+        charger_detector = ChargerDetector(
+            camera_calibration.camera_matrix,
+            camera_calibration.distortion_coefficients,
+            [charger_template],
+            reject_markers=target_markers,
+            use_clahe=use_clahe,
+            denoise_strength=denoise_strength,
+        )
+        logger.info("Charger marker detector initialized successfully")
 
     # Create the owner of the robot-center measurement (armed by
     # Cozmo.calibrate_robot_center; the detector only runs during a run)
@@ -361,6 +443,7 @@ def create_default_detection_pipeline(
         cube_tracker=cube_tracker,
         face_detector=face_detector,
         robot_center_calibration=robot_center_calibration,
+        charger_detector=charger_detector,
     )
 
 

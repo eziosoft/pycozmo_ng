@@ -55,6 +55,28 @@ class FaceDetector(Protocol):
         ...
 
 
+class ChargerDetector(Protocol):
+    """Protocol for charger marker detectors (COZMO-65)."""
+
+    def __init__(
+        self,
+        camera_matrix: np.ndarray,
+        distortion_coefficients: np.ndarray,
+        markers: list[np.ndarray],
+        **kwargs,
+    ) -> None: ...
+
+    def detect(self, img_bgr: np.ndarray) -> list[dict]:
+        """Detect the charger's rectangular marker in an image.
+
+        Returns:
+            List of dicts with keys: score, corners, position (camera frame
+            mm), rotation_matrix, kind == "charger". No cube identity keys —
+            the cube index space stays 0-2.
+        """
+        ...
+
+
 class RobotCenterDetector(Protocol):
     """Protocol for robot center calibration detectors."""
 

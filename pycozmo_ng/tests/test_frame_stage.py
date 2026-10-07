@@ -11,6 +11,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import numpy as np
 from PIL import Image
 
 from pycozmo_ng import event
@@ -115,6 +116,7 @@ def make_stage(**configure_overrides) -> SimpleNamespace:
     detection_pipeline = Mock()
     detection_pipeline.robot_center_calibration = SimpleNamespace(offset_mm=0.0, last_result=None)
     detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=0)]
+    detection_pipeline.detect_charger.return_value = []
     detection_pipeline.detect_faces.return_value = []
     detection_pipeline.get_cube_measurements.return_value = [
         {
@@ -363,3 +365,30 @@ def test_floor_disabled_skips_floor_sinks():
     assert h.sink.occupancy == []
     # …but the rest of the sequence still ran
     assert len(h.sink.annotated) == 1
+
+
+def test_charger_detections_flow_to_events_and_world_map():
+    """Charger detections are annotated, dispatched, and fused (COZMO-65)."""
+    h = make_stage()
+    charger = SimpleNamespace(
+        x=1,
+        y=1,
+        width=5,
+        height=4,
+        confidence=0.8,
+        distance=0.1,
+        position_mm=np.array([10.0, 0.0, 100.0]),
+    )
+    h.detection_pipeline.detect_charger.return_value = [charger]
+
+    h.stage.on_camera_image(make_cli(), make_image())
+
+    h.detection_pipeline.detect_charger.assert_called_once()
+    # Same head angle as the cube pass
+    assert h.detection_pipeline.detect_charger.call_args.args[1] == 0.5
+
+    # …and handed to the dispatcher and the annotation engine (5th arg)
+    assert h.annotation_engine.detect_and_annotate.call_args.args[4] == [charger]
+    assert h.event_dispatcher.dispatch_charger_events.call_args.args[1] == [charger]
+    h.world_map.update_charger_measurement.assert_called_once()
+    assert h.world_map.update_charger_measurement.call_args.args[2] == 0.5

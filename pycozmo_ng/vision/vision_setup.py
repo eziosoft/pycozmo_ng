@@ -73,3 +73,7 @@ class VisionSetup:
 
     #: Run face detection every Nth processed frame (higher = less CPU).
     face_detect_every_n_frames: int = 1
+
+    #: Detect the charger's rectangular marker as a first-class object
+    #: (own detection path, never a cube ID — COZMO-65).
+    enable_charger_detection: bool = True

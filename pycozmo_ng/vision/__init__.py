@@ -12,6 +12,8 @@ from pycozmo_ng.vision.calibration.robot_center import (
 from pycozmo_ng.vision.calibration.robot_center_calibration import (
     RobotCenterCalibration,
 )
+from pycozmo_ng.vision.charger_detector.charger_detection import ChargerDetection
+from pycozmo_ng.vision.charger_detector.charger_template import load_charger_template
 from pycozmo_ng.vision.cube_detector.detection_pipeline import (
     CubeDetection,
     DetectionPipeline,
@@ -24,6 +26,7 @@ from pycozmo_ng.vision.frame_sink import FrameSink
 from pycozmo_ng.vision.frame_stage import FrameStage
 from pycozmo_ng.vision.frame_state import FrameState
 from pycozmo_ng.vision.interfaces import (
+    ChargerDetector,
     CubeDetector,
     CubeFusionTracker,
     FaceDetector,
@@ -34,6 +37,8 @@ __all__ = [
     "AnnotationEngine",
     "CameraCalibration",
     "CameraCalibrationRetriever",
+    "ChargerDetection",
+    "ChargerDetector",
     "CubeDetection",
     "CubeDetector",
     "CubeFusionTracker",
@@ -50,5 +55,6 @@ __all__ = [
     "RobotCenterResult",
     "VisionSetup",
     "create_default_detection_pipeline",
+    "load_charger_template",
     "load_marker_templates",
 ]

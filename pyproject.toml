@@ -36,5 +36,6 @@ pycozmo_ng = [
     "assets/*.mtl",
     "animation/*.fbs",
     "vision/cube_detector/cube_faces/*.jpg",
+    "vision/charger_detector/marker/*.png",
     "web/static/*",
 ]

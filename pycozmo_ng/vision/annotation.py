@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from pycozmo_ng.cubes.identity import to_cube_id
 from pycozmo_ng.vision.calibration.robot_center import RobotCenterResult
+from pycozmo_ng.vision.charger_detector.charger_detection import ChargerDetection
 from pycozmo_ng.vision.cube_detector.detection_pipeline import CubeDetection
 from pycozmo_ng.vision.face_detector import FaceDetection
 
@@ -172,12 +173,38 @@ class AnnotationEngine:
         label = f"center: {result.lateral_offset_mm:+.1f}mm"
         draw.text((5, 5), label, fill=(0, 255, 255), font=font)
 
+    def draw_charger_detections(self, image: Image.Image, detections: list[ChargerDetection]) -> None:
+        """Draw the charger marker bounding box on the image (in place).
+
+        Args:
+            image: PIL Image to annotate (mutated in place).
+            detections: List of charger detections to draw (0 or 1).
+        """
+        if not detections:
+            return
+
+        draw = ImageDraw.Draw(image)
+
+        font = self._get_font(11)
+
+        # Green: distinct from cube cyan and face orange
+        color = (0, 255, 64)
+
+        for det in detections:
+            x1, y1 = det.x, det.y
+            x2, y2 = det.x + det.width, det.y + det.height
+            draw.rectangle([(x1, y1), (x2, y2)], outline=color, width=2)
+
+            label = f"Charger | {det.confidence:.2f} | {det.distance:.2f}m"
+            draw.text((x1, y1 - 13), label, fill=color, font=font)
+
     def detect_and_annotate(
         self,
         image: Image.Image,
         cube_detections: list[CubeDetection],
         face_detections: list[FaceDetection],
         robot_center_result: RobotCenterResult | None = None,
+        charger_detections: list[ChargerDetection] | None = None,
     ) -> Image.Image:
         """
         Apply all annotations to an image.
@@ -187,6 +214,7 @@ class AnnotationEngine:
             cube_detections: Cube detections to draw
             face_detections: Face detections to draw
             robot_center_result: Optional robot center result to draw
+            charger_detections: Optional charger marker detections to draw
 
         Returns:
             Fully annotated PIL Image (single copy of the original)
@@ -196,4 +224,6 @@ class AnnotationEngine:
         self.draw_face_detections(annotated, face_detections)
         if robot_center_result is not None:
             self.draw_robot_center(annotated, robot_center_result)
+        if charger_detections:
+            self.draw_charger_detections(annotated, charger_detections)
         return annotated

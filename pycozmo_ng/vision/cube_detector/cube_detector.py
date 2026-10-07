@@ -220,6 +220,8 @@ class CozmoCubeDetector:
         min_area=100,
         max_area_ratio=0.8,
         denoise_strength=7,
+        aspect_range=(0.3, 3.0),
+        reject_markers=None,
     ):
         """
         :param target_markers: List of 32x32 gray bitmaps (numpy arrays).
@@ -235,6 +237,11 @@ class CozmoCubeDetector:
         :param min_area: Minimum contour area in pixels (default 100)
         :param max_area_ratio: Maximum contour area as fraction of image area (default 0.8)
         :param denoise_strength: Strength of noise reduction (0=disabled, 3-10 recommended, higher=more smoothing)
+        :param aspect_range: Accepted (min, max) width/height ratio of the candidate quad bbox.
+        :param reject_markers: Negative templates (e.g. the charger marker, COZMO-65).
+            A quad is skipped when the best score among these beats the best
+            target-marker score — symmetric guard keeping the two detector
+            families from claiming the same quad.
         """
         self.camera_matrix = camera_matrix
         self.dist_coeffs = dist_coeffs
@@ -246,6 +253,8 @@ class CozmoCubeDetector:
         self.min_area = min_area
         self.max_area_ratio = max_area_ratio
         self.denoise_strength = denoise_strength
+        self.aspect_range = aspect_range
+        self.pnp_flags = cv2.SOLVEPNP_IPPE_SQUARE
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)) if use_clahe else None
 
         # Define 3D object points for Pose Estimation (SolvePnP)
@@ -253,13 +262,10 @@ class CozmoCubeDetector:
         self.obj_points = np.array([[-s, s, 0], [s, s, 0], [s, -s, 0], [-s, -s, 0]], dtype=np.float32)
 
         # Pre-compute all rotations of target markers and normalize them once
-        self.rotated_markers = []
-        for target in self.target_markers:
-            normalized_target = cv2.normalize(target, None, 0, 255, cv2.NORM_MINMAX)
-            rotations = [normalized_target]
-            for rot in range(1, 4):
-                rotations.append(np.rot90(normalized_target, rot))
-            self.rotated_markers.append(rotations)
+        self.rotated_markers = self._rotate_markers(self.target_markers)
+
+        # Negative templates for symmetric rejection (COZMO-65)
+        self.reject_rotated = self._rotate_markers(reject_markers or [])
 
         # Perspective transform points
         self.dst_pts = np.array([[0, 0], [31, 0], [31, 31], [0, 31]], dtype=np.float32)
@@ -267,6 +273,32 @@ class CozmoCubeDetector:
         # Face type and rotation lookup tables
         self.face_type_lookup = ["wall", "wall", "wall", "wall", "bottom", "top"]
         self.rotation_lookup = [0, 90, 180, 270, 0, 0]
+
+    @staticmethod
+    def _rotate_markers(markers):
+        """Normalize markers and pre-compute all four 90-degree rotations."""
+        rotated = []
+        for marker in markers:
+            normalized = cv2.normalize(marker, None, 0, 255, cv2.NORM_MINMAX)
+            rotations = [normalized]
+            for rot in range(1, 4):
+                rotations.append(np.rot90(normalized, rot))
+            rotated.append(rotations)
+        return rotated
+
+    def _match_reject_markers(self, patch):
+        """Best score of the patch against the negative (reject) templates.
+
+        Returns -1.0 when no reject markers are configured, so the guard is
+        a no-op for callers that did not opt in (COZMO-65).
+        """
+        best = -1.0
+        for rotations in self.reject_rotated:
+            for rotated in rotations:
+                res = cv2.matchTemplate(patch, rotated, cv2.TM_CCOEFF_NORMED)
+                score = float(res[0][0])
+                best = max(best, score)
+        return best
 
     def detect(self, frame):
         """Processes a frame to find cubes."""
@@ -329,13 +361,19 @@ class CozmoCubeDetector:
             if len(approx) == 4 and cv2.isContourConvex(approx):
                 _x, _y, rw, rh = cv2.boundingRect(approx)
                 aspect = rw / rh if rh != 0 else 0
-                if not (0.3 < aspect < 3.0):
+                aspect_min, aspect_max = self.aspect_range
+                if not (aspect_min < aspect < aspect_max):
                     continue
 
                 patch = self._extract_patch(img, approx)
                 marker_id, score, marker_rotation = self._match_marker(patch)
 
                 if score > self.score_threshold:
+                    # Symmetric guard (COZMO-65): another marker family
+                    # matches this quad better — it is not ours.
+                    if self._match_reject_markers(patch) > score:
+                        continue
+
                     pts = approx.reshape(4, 2).astype(np.float32)
 
                     # Drop clips: a quad touching the image border is truncated
@@ -422,7 +460,8 @@ class CozmoCubeDetector:
     def _solve_pose(self, image_points):
         """Solve the marker pose, returning ``(success, rvec, tvec)``.
 
-        The marker is a planar square, so ``SOLVEPNP_IPPE_SQUARE`` is used —
+        Uses ``self.pnp_flags`` — ``SOLVEPNP_IPPE_SQUARE`` for square cube
+        markers, ``SOLVEPNP_IPPE`` for the charger's rectangle (COZMO-65) —
         faster and numerically far more stable than the generic ITERATIVE
         solver (which seeds from a DLT guess and can blow up on near-frontal
         quads). IPPE returns two solutions that project identically; the one
@@ -437,7 +476,7 @@ class CozmoCubeDetector:
                 image_points,
                 self.camera_matrix,
                 self.dist_coeffs,
-                flags=cv2.SOLVEPNP_IPPE_SQUARE,
+                flags=self.pnp_flags,
             )
             # opencv-python >= 5 returns (retval, rvecs, tvecs, reprojErr);
             # 4.x returned (retval, rvecs, tvecs).

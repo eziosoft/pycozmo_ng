@@ -109,6 +109,33 @@ class FaceState:
         self.updated_at = float(updated_at)
 
 
+class ChargerState:
+    """Fused world-frame state of the charger marker (COZMO-65).
+
+    The charger is a single static landmark — one slot, position-only
+    fusion, no per-object identity.
+    """
+
+    __slots__ = (
+        "age",
+        "confidence",
+        "position",
+        "updated_at",
+    )
+
+    def __init__(
+        self,
+        position: np.ndarray,
+        confidence: float,
+        age: int = 0,
+        updated_at: float = 0.0,
+    ):
+        self.position = np.asarray(position, dtype=np.float64)
+        self.confidence = float(confidence)
+        self.age = int(age)
+        self.updated_at = float(updated_at)
+
+
 # Face type to face_idx mapping (matches cube_detector face_type_lookup order)
 _FACE_TYPE_TO_IDX = {
     "wall_0": 0,
@@ -180,6 +207,9 @@ class WorldMap:
         # Faces: face_id -> fused world-frame state.
         self._faces: dict[int, FaceState] = {}
 
+        # Charger: single static landmark (None until first sighting).
+        self._charger: ChargerState | None = None
+
         # Path: rolling buffer of world-frame positions (mm).
         self._path_points: deque[np.ndarray] = deque(maxlen=self.max_path_points)
 
@@ -227,6 +257,7 @@ class WorldMap:
             if origin_id is not None and self._robot_origin_id is not None and origin_id != self._robot_origin_id:
                 logger.info("WorldMap: localization origin changed — resetting map")
                 self._cubes.clear()
+                self._charger = None
                 self._path_points.clear()
             self._robot_origin_id = origin_id
             self._robot_position = pos
@@ -249,6 +280,7 @@ class WorldMap:
         with self._lock:
             self._cubes.clear()
             self._faces.clear()
+            self._charger = None
             self._path_points.clear()
             self._astar_path.clear()
             self._robot_position = np.zeros(3, dtype=np.float64)
@@ -425,6 +457,72 @@ class WorldMap:
                 for face_id, fs in self._faces.items()
             }
 
+    # -- charger ------------------------------------------------------------
+
+    def update_charger_measurement(
+        self,
+        position_cam: np.ndarray,
+        confidence: float,
+        head_angle_rad: float,
+        camera_lateral_offset_mm: float = 0.0,
+    ) -> None:
+        """Fuse a camera-frame charger measurement into the world map (COZMO-65).
+
+        Transforms camera → body → world, then applies exponential smoothing
+        against the previous world-frame state. Position-only: the marker's
+        orientation is not fused yet (dock-pose integration is deferred).
+
+        The charger is stationary, so there is no forgetting on visibility
+        loss — the last fused pose stays until ``reset_map`` or a
+        localization-origin change.
+
+        Args:
+            position_cam: Marker centre in camera frame (mm).
+            confidence: Detection confidence (0..1).
+            head_angle_rad: Head pitch at measurement time (radians).
+            camera_lateral_offset_mm: Lateral offset of camera from robot centre.
+        """
+        with self._lock:
+            pos_world, _rot_world = camera_to_world(
+                position_cam,
+                np.eye(3),
+                head_angle_rad,
+                self._robot_position,
+                self._robot_yaw,
+                camera_lateral_offset_mm,
+            )
+            prev = self._charger
+            now = time.monotonic()
+            if prev is None:
+                self._charger = ChargerState(
+                    position=pos_world,
+                    confidence=confidence,
+                    updated_at=now,
+                )
+                return
+
+            alpha = self.smoothing_alpha * float(confidence)
+            position = alpha * pos_world + (1.0 - alpha) * prev.position
+
+            self._charger = ChargerState(
+                position=position,
+                confidence=confidence,
+                age=prev.age + 1,
+                updated_at=now,
+            )
+
+    def get_charger(self) -> ChargerState | None:
+        """Return a copy of the charger state (world frame), or None if unseen."""
+        with self._lock:
+            if self._charger is None:
+                return None
+            return ChargerState(
+                position=self._charger.position.copy(),
+                confidence=self._charger.confidence,
+                age=self._charger.age,
+                updated_at=self._charger.updated_at,
+            )
+
     # -- read API -----------------------------------------------------------
 
     @staticmethod
@@ -472,7 +570,8 @@ class WorldMap:
 
         Keys: ``robot`` (position, yaw, origin_id), ``cubes`` (cube_index ->
         position/rotation/confidence), ``faces`` (face_id ->
-        position/confidence/label), ``path_points``.
+        position/confidence/label), ``charger`` (position/confidence or
+        None), ``path_points``.
         """
         with self._lock:
             robot_pos = self._robot_position.tolist()
@@ -496,6 +595,12 @@ class WorldMap:
             }
             path_points = [p.tolist() for p in self._path_points]
             astar_path = [list(w) for w in self._astar_path]
+            charger = None
+            if self._charger is not None:
+                charger = {
+                    "position": self._charger.position.tolist(),
+                    "confidence": self._charger.confidence,
+                }
         return {
             "robot": {
                 "position": robot_pos,
@@ -504,6 +609,7 @@ class WorldMap:
             },
             "cubes": cubes,
             "faces": faces,
+            "charger": charger,
             "path_points": path_points,
             "astar_path": astar_path,
         }
