@@ -519,19 +519,18 @@ class Navigator:
     CHARGER_MARKER_ID: ClassVar[int] = 0
 
     def dock_on_aruco(self, marker_id: int = 0) -> bool:
-        """Two-step standoff + reverse dock on the ArUco charger marker.
+        """Dock on an ArUco marker: approach, refresh pose, reverse in.
 
-        Mirrors the cube approach: drives to a view standoff (300 mm in
-        front of the marker along its normal), dwells for the world-map
-        filters to converge, drives to a corrected 15 cm standoff,
-        verifies alignment (facing + centred), then turns 180° and
-        reverses into the charger until charging is detected.
+        Drives to a point 15 cm in front of the marker facing it so the
+        camera sees it and the world map refreshes its fused pose,
+        corrects the approach point if the pose moved, then turns 180°
+        and reverses into the charger until charging is detected (15 s
+        timeout).
 
         After a successful dock the pose origin is reset — the robot's
-        docked position becomes the world origin (the point 65 mm in
-        front of marker 0) — and the marker's world-map pose is snapped
-        to its exact docked position (65 mm behind the camera) so the
-        coordinate frame is rock-solid after every charge.
+        docked position becomes the world origin (the point 65 mm in
+        front of marker 0) — and the marker's world-map pose is snapped
+        to its exact docked position (65 mm behind the camera).
 
         Args:
             marker_id: ArUco dictionary ID of the charger marker
@@ -558,20 +557,19 @@ class Navigator:
             get_marker_state=lambda mid: wm.get_aruco_markers().get(mid),
             dock_state=self.ds,
             motion=self.motion,
-            move_forward=self._move_forward,
+            on_docked=lambda: self._on_aruco_docked(marker_id),
         )
-        self.motion.cancel(ArucoDocking.JOB_ARUCO_DOCK)
-        self.motion.spawn(
-            ArucoDocking.JOB_ARUCO_DOCK, lambda job: self._aruco_dock_wrapper(job, aruco_docking, marker_id)
-        )
-        return True
+        return aruco_docking.dock(marker_id)
 
-    def _aruco_dock_wrapper(self, job, aruco_docking: ArucoDocking, marker_id: int) -> None:
-        """Run the dock sequence, then on success reset origin and snap marker pose."""
-        docked = aruco_docking.run(marker_id)
-        if docked:
-            self._reset_pose_origin()
-            self._snap_marker_dock_pose(marker_id)
+    def _on_aruco_docked(self, marker_id: int) -> None:
+        """Post-dock anchoring — runs once the charger contacts detect.
+
+        Resets the pose origin (the docked robot pose becomes the world
+        origin — the point 65 mm in front of the marker), then snaps the
+        marker to its exact docked position.
+        """
+        self._reset_pose_origin()
+        self._snap_marker_dock_pose(marker_id)
 
     def _snap_marker_dock_pose(self, marker_id: int = 0) -> None:
         r"""Hard-set marker *marker\_id* to its exact docked position.

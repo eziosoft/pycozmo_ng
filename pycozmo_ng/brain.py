@@ -244,7 +244,9 @@ class Brain:
             control=self._remote_control.update_keys,
             navigate=self.navigator.navigate_to,
             approach=self.navigator.approach_cube_at,
-            dock=self.navigator.dock,
+            # Z docks on the ArUco charger marker (id 0) — two-step
+            # standoff + reverse (COZMO-66).
+            dock=self.navigator.dock_on_aruco,
             camera_settings=self.camera.apply_settings,
             say=self._on_say,
             test_mode=self.navigator.set_test_mode,
@@ -256,7 +258,7 @@ class Brain:
         logger.info("Click-to-navigate: click ground to drive there")
         logger.info("Click cube to approach and grab it")
         logger.info("Click another cube while carrying one to stack them")
-        logger.info("Z to dock: drive back to start position")
+        logger.info("Z to dock on the charger (ArUco marker 0)")
         logger.info("A* pathfinding: toggle in the web viewer")
 
     # ------------------------------------------------------------------
