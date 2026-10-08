@@ -8,10 +8,16 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
-- `start.sh` is no longer Pi-specific: dropped the "must run on Linux"
-  platform guard (and its reference to the unshipped `not_used/sync_to_pi.sh`)
-  plus the abort on a missing 192.168.10.1 wired management link — it now
-  runs anywhere `nmcli`, `ping`, and `espeak-ng` are available.
+- `start.sh` runs on any OS, with the Raspberry Pi as the default target:
+  dropped the Linux platform guard (and its pointer to the unshipped
+  `not_used/sync_to_pi.sh`) and the 192.168.10.1 wired-link abort; `nmcli`
+  is now optional (without it the automatic Wi-Fi join is skipped and the
+  script waits for the robot, telling the user which network to join);
+  a missing `espeak-ng` is a warning with a per-OS install hint instead of
+  a hard failure; ping timeouts adapt per OS (milliseconds on macOS/BSD,
+  seconds on Linux); the Wi-Fi interface is discovered instead of assuming
+  `wlan0`; a missing virtualenv is created and `pip install -e .` run
+  automatically; long waits print progress every 10 s.
 
 - Wi-Fi credentials now have a single source of truth: `.env` (gitignored).
   `start.sh` no longer hardcodes the SSID/password — it sources `.env` and
