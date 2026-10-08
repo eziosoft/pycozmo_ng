@@ -15,11 +15,17 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
   *local→world* so the correct scene transform is just `M @ R`. A vertical
   wall marker now stands upright in the viewer instead of appearing
   horizontal.
-- ArUco-based docking: `Navigator.dock_on_aruco(marker_id=0)` reads the
-  ArUco marker from the world map, drives to a point 15 cm in front of it
-  facing the marker, then reverses until the charger contacts are detected
-  (with a timeout).  Exposed on the public API as `cozmo.dock_on_aruco()`.
-  Marker 0 is presumed to be the charger marker by default.
+- ArUco-based docking: two-step standoff + reverse dock on the ArUco charger
+  marker (id=0).  New `navigation/aruco_docking.py` — `ArucoDocking` mirrors
+  the cube approach: view standoff (300 mm along marker normal → dwell for
+  fused-pose convergence → corrected 15 cm standoff → alignment verification
+  with creep rechecks), then a 180° turn and reverse into the charger until
+  charging is detected (with timeout).  After a successful dock the pose
+  origin resets (robot docked pose = world origin = 65 mm in front of marker
+  0) and the marker's world-map pose is snapped to its exact docked position
+  (65 mm behind the camera — known physical offset) via the new
+  `WorldMap.set_aruco_world_pose()` for a rock-solid coordinate frame.
+  Exposed on the public API as `cozmo.dock_on_aruco(marker_id=0)`.
 - Standard 4x4 ArUco markers are detected as first-class objects with
   **per-ID physical sizes** and rendered in the 3D viewer with their real
   bitmap texture. Sizes live in a JSON config (`aruco_markers.json` in the

@@ -668,6 +668,31 @@ class WorldMap:
                 updated_at=now,
             )
 
+    def set_aruco_world_pose(
+        self,
+        marker_id: int,
+        position_world: np.ndarray,
+        rotation_world: np.ndarray,
+        size_mm: float = 22.5,
+    ) -> None:
+        """Hard-set a marker's world pose (overwrite, no fusion).
+
+        Used after a successful dock: the robot is at the charger so the
+        marker's exact position and orientation are known from geometry
+        (e.g. 65 mm behind the camera).  The confidence is set to 1.0 so
+        subsequent vision measurements converge toward the known landmark.
+        """
+        with self._lock:
+            self._aruco[marker_id] = ArucoState(
+                marker_id=marker_id,
+                position=np.asarray(position_world, dtype=np.float64),
+                rotation_matrix=np.asarray(rotation_world, dtype=np.float64),
+                confidence=1.0,
+                size_mm=float(size_mm),
+                age=100,
+                updated_at=time.monotonic(),
+            )
+
     def get_aruco_markers(self) -> dict[int, ArucoState]:
         """Return a copy of the fused ArUco marker states, keyed by marker ID."""
         with self._lock:
