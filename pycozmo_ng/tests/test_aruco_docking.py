@@ -140,7 +140,7 @@ class TestDockGuards:
 
 class TestDockSequence:
     def test_approach_turn_reverse_then_docked(self):
-        """Face the marker (15 cm out), turn 180°, reverse, dock."""
+        """Face the marker (20 cm out), turn 180°, reverse, dock."""
         docking, cli, ds, motion, on_docked = _make()
         ds.charging = True  # contacts detect immediately on reverse
 
@@ -151,7 +151,7 @@ class TestDockSequence:
         # One path for the approach — the 180° turn must not send one.
         assert cli.go_to_pose.call_count == 1
         approach = cli.go_to_pose.call_args_list[0].args[0]
-        assert math.isclose(approach.position.x, 150.0)
+        assert math.isclose(approach.position.x, 200.0)
         assert math.isclose(approach.position.y, 0.0)
         assert math.isclose(abs(approach.rotation.angle_z.radians), math.pi)
 
@@ -174,8 +174,8 @@ class TestDockSequence:
 
         assert cli.go_to_pose.call_count == 2  # approach, then correction
         first, second = (c.args[0] for c in cli.go_to_pose.call_args_list)
-        assert math.isclose(first.position.x, 150.0)  # from the stale pose
-        assert math.isclose(second.position.x, 80.0)  # marker + 150 mm
+        assert math.isclose(first.position.x, 200.0)  # from the stale pose
+        assert math.isclose(second.position.x, 130.0)  # marker + 200 mm
         assert math.isclose(second.position.y, 3.0)
         assert on_docked.call_count == 1
 

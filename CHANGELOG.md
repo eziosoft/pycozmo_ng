@@ -27,7 +27,7 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
   wall marker now stands upright in the viewer instead of appearing
   horizontal.
 - ArUco-based docking: `cozmo.dock_on_aruco(marker_id=0)` (browser key
-  **Z**) drives to a point 15 cm in front of the charger marker facing it so
+  **Z**) drives to a point 20 cm in front of the charger marker facing it so
   the camera sees it and the world map refreshes its fused pose, corrects the
   approach point if the pose moved, then turns 180° and reverses into the
   charger until charging is detected (15 s timeout).  After a successful dock

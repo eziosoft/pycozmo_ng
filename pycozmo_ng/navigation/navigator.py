@@ -521,7 +521,7 @@ class Navigator:
     def dock_on_aruco(self, marker_id: int = 0) -> bool:
         """Dock on an ArUco marker: approach, refresh pose, reverse in.
 
-        Drives to a point 15 cm in front of the marker facing it so the
+        Drives to a point 20 cm in front of the marker facing it so the
         camera sees it and the world map refreshes its fused pose,
         corrects the approach point if the pose moved, then turns 180°
         and reverses into the charger until charging is detected (15 s

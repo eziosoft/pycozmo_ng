@@ -50,7 +50,7 @@ class ArucoDocking:
 
     JOB_ARUCO_DOCK: str = "aruco_dock"
 
-    APPROACH_DIST_MM: float = 150.0  # standoff in front of the marker
+    APPROACH_DIST_MM: float = 200.0  # standoff in front of the marker
     SETTLE_S: float = 0.5  # time for the camera to refresh the marker pose
 
     #: Below this, a move is a pure turn — never send a zero-length path
