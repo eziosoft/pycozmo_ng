@@ -523,9 +523,10 @@ class Navigator:
 
         Drives to a point 20 cm in front of the marker facing it so the
         camera sees it and the world map refreshes its fused pose,
-        corrects the approach point if the pose moved, then turns 180°
-        and reverses into the charger until charging is detected (15 s
-        timeout).
+        dwells until that pose converges, corrects the approach point,
+        verifies the robot is centred on the marker's normal line (the
+        reverse is open loop), then turns 180° and reverses into the
+        charger until charging is detected (15 s timeout).
 
         After a successful dock the pose origin is reset — the robot's
         docked position becomes the world origin (the point 65 mm in

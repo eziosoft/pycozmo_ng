@@ -125,7 +125,7 @@ def _make(marker_known: bool = True, x: float = 500.0, marker_move: tuple[float,
         motion=motion,
         on_docked=on_docked,
     )
-    docking.SETTLE_S = 0.1  # keep the tests fast
+    docking.STANDOFF_DWELL_S = 0.1  # keep the tests fast
     return docking, cli, ds, motion, on_docked
 
 
@@ -200,7 +200,7 @@ class TestDockSequence:
     def test_cancel_stops_dock_without_docked(self):
         """Navigator.stop() cancels the job mid-approach — no docking."""
         docking, cli, _ds, motion, on_docked = _make()
-        docking.SETTLE_S = 5.0  # park the job in the settle phase
+        docking.STANDOFF_DWELL_S = 5.0  # park the job in the standoff dwell
 
         docking.dock(0)
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK in motion.active_names)
@@ -229,7 +229,7 @@ class TestDockSequence:
     def test_supersede_new_request_cancels_the_old(self):
         docking, _cli, ds, motion, _on_docked = _make()
         ds.charging = True
-        docking.SETTLE_S = 1.0
+        docking.STANDOFF_DWELL_S = 1.0
 
         docking.dock(0)
         first = next(t for t in motion._jobs if t.name == ArucoDocking.JOB_ARUCO_DOCK)
@@ -237,6 +237,41 @@ class TestDockSequence:
 
         assert first.cancelled
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names)
+
+
+class TestAlignToLine:
+    """The reverse is open loop — a robot off the normal line docks off-centre."""
+
+    def test_off_line_robot_is_centred_on_the_marker_line(self):
+        """40 mm lateral offset → the robot is driven back onto the line."""
+        ds = DockState()
+        motion = MotionController()
+        cli = _FakeCli(x=200.0, y=0.0)
+        feed = _MarkerFeed(x=0.0, y=-40.0)  # normal line runs along y = -40
+        docking = ArucoDocking(
+            cli=cli,
+            get_marker_state=feed.get,
+            dock_state=ds,
+            motion=motion,
+            on_docked=MagicMock(),
+        )
+
+        with motion.begin("test_align") as job:
+            assert docking._align_to_line(job, 0) is True
+
+        # Robot re-driven onto the marker's normal line, same standoff.
+        assert math.isclose(cli.pose.position.y, -40.0, abs_tol=1.0)
+        assert math.isclose(cli.pose.position.x, 200.0, abs_tol=1.0)
+
+    def test_centred_robot_needs_no_correction(self):
+        """Already on the line → no path is sent."""
+        docking, cli, _ds, motion, _on_docked = _make()
+        cli.pose = _pose(200.0, 0.0, math.pi)  # on the line, facing away
+
+        with motion.begin("test_align") as job:
+            assert docking._align_to_line(job, 0) is True
+
+        cli.go_to_pose.assert_not_called()
 
 
 class TestZKeyWiring:

@@ -4,8 +4,12 @@ The sequence, mirroring the cube approach:
 
 1. Drive to a point in front of the marker, facing it — the camera sees
    the marker and the world map refreshes its pose.
-2. Correct the approach point from the refreshed pose if it moved.
-3. Turn 180° so the rear faces the charger and reverse in until the
+2. Dwell until the fused marker pose has actually converged, then
+   correct the approach point from it.
+3. Verify the robot is centred on the marker's normal line — the
+   reverse is open loop, so any lateral offset here is the offset it
+   docks with.
+4. Turn 180° so the rear is toward the charger and reverse in until the
    charging contacts detect (with a timeout).
 
 On success ``on_docked`` runs — the caller resets the pose origin (the
@@ -51,7 +55,21 @@ class ArucoDocking:
     JOB_ARUCO_DOCK: str = "aruco_dock"
 
     APPROACH_DIST_MM: float = 200.0  # standoff in front of the marker
-    SETTLE_S: float = 0.5  # time for the camera to refresh the marker pose
+
+    #: Dwell at the standoff until the fused marker pose converges —
+    #: mirrors ``CubeApproach.STANDOFF_DWELL_S``. The world-map EMA
+    #: (alpha 0.15/frame) barely moves on the first frames after the
+    #: approach drive; correcting off a still-moving pose leaves the
+    #: reverse line off-centre (the intermittent ~3 cm dock error).
+    STANDOFF_DWELL_S: float = 1.5
+    #: The marker must have been re-detected this recently during the
+    #: dwell (``ArucoState.updated_at`` advances per fused frame) — a
+    #: stale pose is not a converged pose.
+    FRESH_TOL_S: float = 1.0
+    #: Convergence criterion: the fused position must move less than
+    #: ``STABLE_MM`` between reads for ``STABLE_WINDOW_S``.
+    STABLE_MM: float = 2.0
+    STABLE_WINDOW_S: float = 0.3
 
     #: Below this, a move is a pure turn — never send a zero-length path
     #: segment: the firmware asserts ``y != 0 || x != 0`` in
@@ -59,8 +77,26 @@ class ArucoDocking:
     MIN_SEG_MM: float = 15.0
 
     TURN_SPEED_MMPS: float = 60.0
-    TURN_TOL_RAD: float = math.radians(4.0)
+    #: Tighter than the cube's 2° arrival angle because the reverse is
+    #: open loop: a residual heading error ``e`` drags the line sideways
+    #: by ~135 · sin(e) mm over the reverse (2° ≈ 5 mm, 4° ≈ 9 mm).
+    TURN_TOL_RAD: float = math.radians(2.0)
     TURN_TIMEOUT_S: float = 5.0
+
+    #: Post-``go_to_pose`` arrival wait — mirrors ``CubeApproach``'s
+    #: ``ARRIVE_*`` pair. ``go_to_pose`` returns on its pose-proximity
+    #: poll (15 mm / 0.15 rad) while the firmware path is still
+    #: executing; starting the ``drive_wheels`` turn right away cuts the
+    #: path short with a random stop error.
+    ARRIVE_POS_MM: float = 8.0
+    ARRIVE_ANG_RAD: float = math.radians(2.0)
+    ARRIVE_TIMEOUT_S: float = 10.0
+
+    #: Final centring tolerance before the 180° turn — mirrors
+    #: ``CubeApproach._verify_grab_alignment``. Equal to ``MIN_SEG_MM``:
+    #: a smaller correction could not be sent as a path segment anyway.
+    LATERAL_TOL_MM: float = 15.0
+    ALIGN_RETRIES: int = 2
 
     REVERSE_SPEED_MMPS: float = -60.0  # negative = backward
     REVERSE_TIMEOUT_S: float = 15.0
@@ -136,14 +172,10 @@ class ArucoDocking:
         if not self._go(job, x, y, heading):
             return False
 
-        # Settle — the camera sees the marker and the world map refreshes
-        # its fused pose.
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < self.SETTLE_S:
-            if job.cancelled:
-                self.cli.stop_all_motors()
-                return False
-            time.sleep(0.05)
+        # Dwell until the fused marker pose converges — a fixed short
+        # sleep corrects off a pose that is still moving.
+        if not self._settle_marker(marker_id, job):
+            return False
 
         # If the refreshed pose moved the approach point, correct it
         # (``_go`` is a no-op drive + turn when already in place).
@@ -153,7 +185,11 @@ class ArucoDocking:
         cx, cy, cheading = corrected
         if math.hypot(cx - x, cy - y) > self.MIN_SEG_MM:
             logger.info("ArUco dock: marker pose updated — correcting to (%.0f, %.0f)", cx, cy)
-        return self._go(job, cx, cy, cheading)
+        if not self._go(job, cx, cy, cheading):
+            return False
+        # The reverse below is open loop — commit only when the robot is
+        # centred on the marker's normal line (the cube's verify step).
+        return self._align_to_line(job, marker_id)
 
     def _approach_target(self, marker_id: int):
         """(x, y, heading) of the point in front of the marker, facing it."""
@@ -167,6 +203,94 @@ class ArucoDocking:
         y = float(state.position[1]) + ny * self.APPROACH_DIST_MM
         heading = math.atan2(-ny, -nx)  # face the marker
         return x, y, heading
+
+    def _settle_marker(self, marker_id: int, job: MotionToken) -> bool:
+        """Dwell at the standoff until the fused marker pose converges.
+
+        Mirrors ``CubeApproach._dwell_for_smoothing``: the world-map EMA
+        (alpha 0.15/frame) needs dozens of frames to absorb the pose jump
+        from the approach drive, so a fixed short sleep corrects off a
+        still-moving pose. Ends early once the fused position stops
+        moving *and* the marker has been re-detected during the dwell.
+
+        Returns False when cancelled or when the marker was not
+        re-detected (the caller must not dock on a stale pose).
+        """
+        deadline = time.monotonic() + self.STANDOFF_DWELL_S
+        base_ts: float | None = None
+        saw_fresh = False
+        stable_since: float | None = None
+        last: tuple[float, float] | None = None
+        while time.monotonic() < deadline:
+            if job.cancelled:
+                self.cli.stop_all_motors()
+                return False
+            state = self._get_marker_state(marker_id)
+            if state is None:
+                time.sleep(0.05)
+                continue
+            if base_ts is None:
+                base_ts = state.updated_at
+            if state.updated_at > base_ts + 0.05:
+                saw_fresh = True
+            pos = (float(state.position[0]), float(state.position[1]))
+            if last is not None:
+                if math.hypot(pos[0] - last[0], pos[1] - last[1]) >= self.STABLE_MM:
+                    stable_since = None
+                elif stable_since is None:
+                    stable_since = time.monotonic()
+                elif time.monotonic() - stable_since >= self.STABLE_WINDOW_S and saw_fresh:
+                    return True
+            last = pos
+            time.sleep(0.05)
+        if not saw_fresh:
+            logger.warning("ArUco dock: marker %d not re-detected at the standoff", marker_id)
+            return False
+        return True
+
+    def _align_to_line(self, job: MotionToken, marker_id: int) -> bool:
+        """Verify (and correct) that the robot sits on the marker's normal line.
+
+        The reverse phase drives straight with no feedback, so the
+        lateral offset measured here is the offset the robot docks with
+        — mirroring ``CubeApproach._verify_grab_alignment``, which reads
+        a fresh fused pose and re-drives when the target line moved.
+
+        Returns False when cancelled, when the marker is unknown, or
+        when the robot could not be centred within ``ALIGN_RETRIES``
+        corrections (the caller must not reverse blind).
+        """
+        lateral = float("inf")
+        for attempt in range(self.ALIGN_RETRIES + 1):
+            state = self._get_marker_state(marker_id)
+            if state is None:
+                return False
+            nx, ny = self._normal(state)
+            if nx is None:
+                return False
+            mx, my = float(state.position[0]), float(state.position[1])
+            rp = self.cli.pose
+            dx, dy = rp.position.x - mx, rp.position.y - my
+            along = dx * nx + dy * ny  # distance in front of the marker
+            lateral = abs(dx * -ny + dy * nx)  # offset perpendicular to the line
+            if lateral <= self.LATERAL_TOL_MM:
+                return True
+            if attempt == self.ALIGN_RETRIES:
+                break
+            if along <= 0.0:
+                logger.warning("ArUco dock: robot is behind the marker — cannot centre")
+                return False
+            logger.info(
+                "ArUco dock: %.0f mm off the marker line — centring (%d/%d)",
+                lateral,
+                attempt + 1,
+                self.ALIGN_RETRIES,
+            )
+            # Drive to the point on the normal line at the same standoff.
+            if not self._go(job, mx + nx * along, my + ny * along, math.atan2(-ny, -nx)):
+                return False
+        logger.warning("ArUco dock: %.0f mm off the marker line — not reversing", lateral)
+        return False
 
     # ------------------------------------------------------------------
     # 3. Turn around and reverse into the marker
@@ -241,7 +365,40 @@ class ArucoDocking:
                 logger.info("ArUco dock cancelled")
                 self.cli.stop_all_motors()
                 return False
+            # ``go_to_pose`` returns on its 15 mm / 0.15 rad proximity
+            # poll while the firmware path may still be executing — let
+            # it finish before taking the wheels over with ``_turn_to``.
+            if not self._wait_arrival(job, x, y, heading):
+                return False
         return self._turn_to(job, heading)
+
+    def _wait_arrival(self, job: MotionToken, x: float, y: float, heading: float) -> bool:
+        """Wait until the robot actually reaches (*x*, *y*, *heading*).
+
+        Mirrors ``CubeApproach``'s post-``go_to_pose`` arrival wait: the
+        firmware path keeps driving after the proximity poll returned,
+        and interrupting it with wheel commands stops the robot short
+        with a random error.
+
+        Returns False when cancelled (motors already stopped); True on
+        arrival or after ``ARRIVE_TIMEOUT_S`` (the alignment check runs
+        downstream either way).
+        """
+        deadline = time.monotonic() + self.ARRIVE_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if job.cancelled:
+                logger.info("ArUco dock cancelled")
+                self.cli.stop_all_motors()
+                return False
+            rp = self.cli.pose
+            if (
+                math.hypot(x - rp.position.x, y - rp.position.y) <= self.ARRIVE_POS_MM
+                and abs(wrap_pi(heading - rp.rotation.angle_z.radians)) <= self.ARRIVE_ANG_RAD
+            ):
+                return True
+            time.sleep(0.05)
+        logger.warning("ArUco dock: target not reached within %.0f s — continuing", self.ARRIVE_TIMEOUT_S)
+        return True
 
     def _turn_to(self, job: MotionToken, heading: float) -> bool:
         """Turn in place to *heading* — closed loop on the yaw error.

@@ -8,6 +8,21 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- Fixed the intermittent ~3 cm off-centre ArUco dock (the miss was random
+  in direction and sometimes absent). `ArucoDocking` now applies the three
+  safeguards the working `CubeApproach` already has: (1) it dwells at the
+  standoff until the fused marker pose actually converges (freshness +
+  stability check instead of a fixed 0.5 s sleep — the world-map EMA keeps
+  moving after a short sleep, so the corrected approach point was computed
+  from a still-moving pose); (2) it waits for the firmware path to reach
+  the target after `go_to_pose` returns (`go_to_pose` completes on a
+  15 mm / 0.15 rad pose poll while the path is still executing — starting
+  the `drive_wheels` turn right away cut the path short with a random stop
+  error); (3) it verifies the robot is centred on the marker's normal line
+  before the open-loop reverse, correcting up to 2 times, and refuses to
+  reverse blind. The pre-reverse turn tolerance also tightened from 4° to
+  2° (~9 mm → ~5 mm of sideways drift over the reverse).
+
 - Fixed a firmware crash that killed the ArUco dock run: turning in place sent
   a zero-length path segment (`AppendPathSegLine` with `to == from`), which
   makes the firmware assert `y != 0 || x != 0` in `supervisor/src/trig_fast.cpp`
