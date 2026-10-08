@@ -59,11 +59,12 @@ class ArucoDocking:
     APPROACH_DIST_MM: float = 200.0  # standoff in front of the marker
 
     #: Dwell at the standoff until the fused marker pose converges —
-    #: mirrors ``CubeApproach.STANDOFF_DWELL_S``. The world-map EMA
-    #: (alpha 0.15/frame) barely moves on the first frames after the
-    #: approach drive; correcting off a still-moving pose leaves the
-    #: reverse line off-centre (the intermittent ~3 cm dock error).
-    STANDOFF_DWELL_S: float = 1.5
+    #: mirrors ``CubeApproach.STANDOFF_DWELL_S`` (3 s deadline here: at
+    #: QVGA the PnP is noisier and the world-map EMA — alpha 0.15/frame —
+    #: needs dozens of frames to absorb the pose jump from the approach
+    #: drive). Exits early once stable; correcting off a still-moving
+    #: pose leaves the reverse line off-centre.
+    STANDOFF_DWELL_S: float = 3.0
     #: The marker must have been re-detected this recently during the
     #: dwell (``ArucoState.updated_at`` advances per fused frame) — a
     #: stale pose is not a converged pose.
@@ -86,19 +87,24 @@ class ArucoDocking:
     TURN_TIMEOUT_S: float = 5.0
 
     #: Post-``go_to_pose`` arrival wait — mirrors ``CubeApproach``'s
-    #: ``ARRIVE_*`` pair. ``go_to_pose`` returns on its pose-proximity
-    #: poll (15 mm / 0.15 rad) while the firmware path is still
-    #: executing; starting the ``drive_wheels`` turn right away cuts the
-    #: path short with a random stop error.
+    #: ``ARRIVE_*`` pair. After ``go_to_pose`` returns (its proximity
+    #: poll can fire at 15 mm / 0.15 rad while the path is still driving,
+    #: or when the firmware died short with the event omitted — COZMO-53),
+    #: wait for the robot to land within these tolerances before taking
+    #: the wheels over with ``_turn_to``. Short bound: when it fails, the
+    #: residual is logged and the alignment check downstream recovers.
     ARRIVE_POS_MM: float = 8.0
     ARRIVE_ANG_RAD: float = math.radians(2.0)
-    ARRIVE_TIMEOUT_S: float = 10.0
+    ARRIVE_TIMEOUT_S: float = 5.0
 
     #: Final centring tolerance before the 180° turn — mirrors
     #: ``CubeApproach._verify_grab_alignment``. Equal to ``MIN_SEG_MM``:
     #: a smaller correction could not be sent as a path segment anyway.
     LATERAL_TOL_MM: float = 15.0
-    ALIGN_RETRIES: int = 2
+    ALIGN_RETRIES: int = 3
+    #: Short settle before each centring measurement so the line being
+    #: corrected against is the converged one, not a moving EMA.
+    ALIGN_DWELL_S: float = 1.0
 
     REVERSE_SPEED_MMPS: float = -60.0  # negative = backward
     REVERSE_TIMEOUT_S: float = 15.0
@@ -210,8 +216,8 @@ class ArucoDocking:
         heading = math.atan2(-ny, -nx)  # face the marker
         return x, y, heading
 
-    def _settle_marker(self, marker_id: int, job: MotionToken) -> bool:
-        """Dwell at the standoff until the fused marker pose converges.
+    def _settle_marker(self, marker_id: int, job: MotionToken, dwell_s: float | None = None) -> bool:
+        """Dwell until the fused marker pose converges (``dwell_s`` deadline).
 
         Mirrors ``CubeApproach._dwell_for_smoothing``: the world-map EMA
         (alpha 0.15/frame) needs dozens of frames to absorb the pose jump
@@ -222,7 +228,9 @@ class ArucoDocking:
         Returns False when cancelled or when the marker was not
         re-detected (the caller must not dock on a stale pose).
         """
-        deadline = time.monotonic() + self.STANDOFF_DWELL_S
+        if dwell_s is None:
+            dwell_s = self.STANDOFF_DWELL_S
+        deadline = time.monotonic() + dwell_s
         base_ts: float | None = None
         saw_fresh = False
         stable_since: float | None = None
@@ -250,7 +258,7 @@ class ArucoDocking:
             last = pos
             time.sleep(0.05)
         if not saw_fresh:
-            logger.warning("ArUco dock: marker %d not re-detected at the standoff", marker_id)
+            logger.warning("ArUco dock: marker %d not re-detected during settle", marker_id)
             return False
         return True
 
@@ -268,6 +276,11 @@ class ArucoDocking:
         """
         lateral = float("inf")
         for attempt in range(self.ALIGN_RETRIES + 1):
+            # Settle first: the correction target must come off the
+            # converged line, not a moving EMA (live log showed the line
+            # drifting ~17 mm between the approach and the measurement).
+            if not self._settle_marker(marker_id, job, self.ALIGN_DWELL_S):
+                return False
             state = self._get_marker_state(marker_id)
             if state is None:
                 return False
@@ -381,9 +394,9 @@ class ArucoDocking:
                 logger.info("ArUco dock cancelled")
                 self.cli.stop_all_motors()
                 return False
-            # ``go_to_pose`` returns on its 15 mm / 0.15 rad proximity
-            # poll while the firmware path may still be executing — let
-            # it finish before taking the wheels over with ``_turn_to``.
+            # ``go_to_pose`` can return while the path is still driving
+            # (15 mm / 0.15 rad proximity poll) — let it land before
+            # taking the wheels over with ``_turn_to``.
             if not self._wait_arrival(job, x, y, heading):
                 return False
         return self._turn_to(job, heading)
@@ -413,7 +426,15 @@ class ArucoDocking:
             ):
                 return True
             time.sleep(0.05)
-        logger.warning("ArUco dock: target not reached within %.0f s — continuing", self.ARRIVE_TIMEOUT_S)
+        rp = self.cli.pose
+        dist_err = math.hypot(x - rp.position.x, y - rp.position.y)
+        ang_err = abs(wrap_pi(heading - rp.rotation.angle_z.radians))
+        logger.warning(
+            "ArUco dock: target not reached within %.0f s — %.0f mm / %.1f deg off; continuing",
+            self.ARRIVE_TIMEOUT_S,
+            dist_err,
+            math.degrees(ang_err),
+        )
         return True
 
     def _turn_to(self, job: MotionToken, heading: float) -> bool:

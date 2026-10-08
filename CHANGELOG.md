@@ -8,6 +8,15 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- ArUco dock hardening from the first live run (10 s "target not reached"
+  stalls ×3, marker line drifting ~17 mm mid-dock, centring oscillating
+  54 → 25 → 36 mm): standoff dwell deadline 1.5 s → 3 s (QVGA PnP is
+  noisier — the EMA needs longer to absorb the approach-drive pose jump);
+  `_align_to_line` now settles the marker pose before *every* measurement
+  (`ALIGN_DWELL_S`) so it corrects against a converged line instead of a
+  moving EMA; arrival wait 10 s → 5 s and its timeout now logs the actual
+  residual (`N mm / N deg off`) for diagnosis; centring retries 2 → 3.
+
 - ArUco dock no longer over-reverses: the reverse loop now stops on
   geometry as well — once the robot has backed to `DOCKED_MARKER_DIST_MM`
   (65 mm) along the marker normal — instead of driving into the charger
