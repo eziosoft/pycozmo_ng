@@ -4,9 +4,6 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
-COZMO_SSID="Cozmo_7144B4"
-COZMO_PASSWORD="973-37134-7253402"
-COZMO_HOST="172.31.1.1"
 VENV_DIR="$REPO_ROOT/venv"
 LOCK_FILE="/tmp/start.sh.lock"
 
@@ -16,6 +13,27 @@ err() { printf "\033[1;31m[start.sh]\033[0m %s\n" "$*" >&2; }
 if [[ "$(uname -s)" != "Linux" ]]; then
     err "This script must run on the Raspberry Pi (detected: $(uname -s))."
     err "Sync to the Pi first: ./not_used/sync_to_pi.sh"
+    exit 1
+fi
+
+# Wi-Fi credentials live in .env (gitignored) — the same file demo.py reads
+# via python-dotenv. Copy .env.example to .env on each machine.
+ENV_FILE="$REPO_ROOT/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+    err "Missing ${ENV_FILE} — copy .env.example to .env and fill in the Cozmo Wi-Fi credentials."
+    exit 1
+fi
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
+COZMO_SSID="${COZMO_WIFI_SSID:-}"
+COZMO_PASSWORD="${COZMO_WIFI_PASSWORD:-}"
+COZMO_HOST="${COZMO_WIFI_HOST:-172.31.1.1}"
+
+if [[ -z "$COZMO_SSID" || -z "$COZMO_PASSWORD" ]]; then
+    err "COZMO_WIFI_SSID / COZMO_WIFI_PASSWORD not set in ${ENV_FILE}."
     exit 1
 fi
 

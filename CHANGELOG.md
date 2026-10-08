@@ -8,6 +8,15 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- Wi-Fi credentials now have a single source of truth: `.env` (gitignored).
+  `start.sh` no longer hardcodes the SSID/password — it sources `.env` and
+  fails fast with a clear message when `COZMO_WIFI_SSID`/`COZMO_WIFI_PASSWORD`
+  are missing; `demo.py` now calls `load_dotenv()` so `connect_to_cozmo_wifi()`
+  actually sees the credentials (python-dotenv was a dependency but nothing
+  ever loaded the file — auto-connect silently skipped). Added `.env.example`
+  as the commit-safe template. Note: the real password remains in git history
+  via old `start.sh` commits.
+
 - Removed `not_used/` from version control: the deprecated reference folder
   (old docs, examples, tools, animation/display/sound leftovers) is now
   gitignored and stays local-only. README no longer links into it.

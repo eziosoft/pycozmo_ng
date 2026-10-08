@@ -14,6 +14,8 @@ import argparse
 import logging
 import time
 
+from dotenv import load_dotenv
+
 import pycozmo_ng
 from pycozmo_ng import Cozmo
 from pycozmo_ng.logger import logger_cubes, setup_basic_logging
@@ -39,6 +41,9 @@ def _step(n: int, msg: str, *args: object) -> None:
 
 def main():
     """Main entry point."""
+    # Wi-Fi credentials (COZMO_WIFI_SSID / COZMO_WIFI_PASSWORD) come from
+    # .env — the same file start.sh sources. Never hardcode them.
+    load_dotenv()
 
     parser = argparse.ArgumentParser(description="PyCozmo-NG Vision System Test")
     parser.add_argument(
