@@ -13,7 +13,7 @@ PyCozmo-NG is a pure-Python library for direct Cozmo robot control over Wi-Fi �
 **Goal.** Extend PyCozmo-NG into a full **standalone robot-control stack**. The standalone decision has three consequences for day-to-day work:
 
 - **No upstream work.** Nothing is contributed back to zayfod/pycozmo; this repository is the home of the code.
-- **No backward-compatibility shims.** The fork starts fresh at **v0.9.0** (see `CHANGELOG.md`); compatibility with old `pycozmo` import paths is intentionally not kept. When an old surface gets in the way, remove it instead of wrapping it.
+- **No backward-compatibility shims.** The fork starts fresh at **v0.9.0**; compatibility with old `pycozmo` import paths is intentionally not kept. When an old surface gets in the way, remove it instead of wrapping it.
 - **Naming.** Distribution name `pycozmo-ng`, import name `pycozmo_ng`, display name "PyCozmo-NG". Hyphens are legal in package names but illegal in Python identifiers — that is why the import name differs. Never `import pycozmo`: that is the upstream package.
 
 **Agent is responsible for this project.** The user reviews results and sets direction.
@@ -57,7 +57,6 @@ npx eslint pycozmo_ng/web/static/
 ## Project Structure
 
 ```
-CHANGELOG.md          # Release changelog (fresh from v0.9.0 — keep up to date)
 CONTEXT.md            # Canonical frame conventions & coordinate transforms — read before vision/nav work
 demo.py               # Demo entry point — argparse + wiring only; no reusable logic here
 pyproject.toml        # Packaging (distribution `pycozmo-ng`) + ruff config
@@ -239,14 +238,6 @@ Active development happens on **`develop`** — the main line, where everything 
 - **JS**: eslint (recommended: `@eslint/js` + `eslint-plugin-unicorn`). Web viewer files live in `pycozmo_ng/web/static/`.
 - Type hints encouraged
 - Docstrings encouraged
-
-## Changelog
-
-`CHANGELOG.md` records notable changes to PyCozmo-NG, starting fresh at v0.9.0 (upstream pycozmo history is not carried over).
-
-- **Keep it up to date with every release** — when a version ships (or `pyproject.toml` `version` bumps), add a matching `## vX.Y.Z (YYYY-MM-DD)` section to `CHANGELOG.md` in the same change. Never let the changelog lag behind releases.
-- For work-in-progress changes, add bullets under a `## Unreleased` section at the top and fold them into the version section at release time.
-- Log user-visible changes: features, bug fixes, breaking changes, dependency/config changes. Skip pure refactors unless they change behavior.
 
 ## Library-First Approach
 

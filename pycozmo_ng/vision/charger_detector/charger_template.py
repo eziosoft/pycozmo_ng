@@ -15,7 +15,7 @@ import numpy as np
 #: Fraction of each image dimension cropped off every side before resizing.
 #: Mirrors the cube loader's fixed 18px crop of its 102px sources (17.6%);
 #: the charger source (92x70) has no uniform pixel margin, so the crop is
-#: fractional. Validated against real camera frames — see CHANGELOG.
+#: fractional. Validated against real camera frames.
 TEMPLATE_CROP_FRACTION = 0.18
 
 
