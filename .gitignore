@@ -11,15 +11,10 @@ __pycache__/
 /venv/
 /.idea/
 
-/docs/source/build/
-/docs/source/generated/
-/docs/source/external/
-
 /.mypy_cache/
 
-/not_used/examples/*.png
-not_used/APK/
-not_used/dev/
+# Deprecated & moved code kept locally for reference — never published
+/not_used/
 
 # OpenCode local config (per-machine MCP ports, etc.)
 /opencode.json

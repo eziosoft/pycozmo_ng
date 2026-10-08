@@ -8,6 +8,10 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- Removed `not_used/` from version control: the deprecated reference folder
+  (old docs, examples, tools, animation/display/sound leftovers) is now
+  gitignored and stays local-only. README no longer links into it.
+
 - ArUco dock hardening from the first live run (10 s "target not reached"
   stalls ×3, marker line drifting ~17 mm mid-dock, centring oscillating
   54 → 25 → 36 mm): standoff dwell deadline 1.5 s → 3 s (QVGA PnP is
