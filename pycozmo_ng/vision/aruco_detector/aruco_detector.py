@@ -167,8 +167,9 @@ class ArucoDetector:
         """
         s = size_mm / 2.0
         # Object points match ArUco's corner order (TL, TR, BR, BL in marker
-        # frame), x right / y down / z out of the marker — same convention as
-        # cv2.aruco's own estimatePoseSingleMarkers.
+        # frame): x right, y up, z out of the printed face toward the viewer.
+        # Same convention as cv2.aruco's own estimatePoseSingleMarkers.
+        # (Camera frame has y down, so PnP maps marker +y → camera −y.)
         obj_points = np.array([[-s, s, 0], [s, s, 0], [s, -s, 0], [-s, -s, 0]], dtype=np.float32)
 
         success, rvec, tvec = cv2.solvePnP(

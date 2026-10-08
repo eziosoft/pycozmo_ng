@@ -172,9 +172,17 @@ def scene_to_world_point(position_scene: np.ndarray) -> np.ndarray:
 
 
 def world_to_scene_rotation(rotation_world: np.ndarray) -> np.ndarray:
-    """Map a world-frame 3x3 rotation to scene frame via change of basis."""
+    """Map a world-frame 3x3 rotation to scene frame.
+
+    The stored rotation maps *local* (object) coords to *world* coords
+    (``p_world = R @ p_local``).  Since positions serialize as
+    ``p_scene = M @ p_world`` (see :func:`world_to_scene_point`), the
+    scene-frame rotation must be ``M @ R`` to satisfy
+    ``p_scene = (M @ R) @ p_local`` — a change of *codomain* basis only,
+    *not* a conjugation.
+    """
     m = WORLD_TO_SCENE_MATRIX
-    return m @ np.asarray(rotation_world, dtype=np.float64) @ m
+    return m @ np.asarray(rotation_world, dtype=np.float64)
 
 
 def world_yaw_to_scene(yaw_rad: float) -> float:

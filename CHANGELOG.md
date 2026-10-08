@@ -8,6 +8,13 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- Fixed a bug in `world_to_scene_rotation()` that made every detected object
+  (cube, charger, ArUco marker) lie flat on the ground in the 3D viewer
+  regardless of its real attitude: the function computed `M @ R @ M` (a
+  conjugation with the wrong permutation), but the stored rotation maps
+  *local→world* so the correct scene transform is just `M @ R`. A vertical
+  wall marker now stands upright in the viewer instead of appearing
+  horizontal.
 - Standard 4x4 ArUco markers are detected as first-class objects with
   **per-ID physical sizes** and rendered in the 3D viewer with their real
   bitmap texture. Sizes live in a JSON config (`aruco_markers.json` in the
