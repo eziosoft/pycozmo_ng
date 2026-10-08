@@ -8,6 +8,13 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- ArUco dock no longer over-reverses: the reverse loop now stops on
+  geometry as well — once the robot has backed to `DOCKED_MARKER_DIST_MM`
+  (65 mm) along the marker normal — instead of driving into the charger
+  until the charging flag lands. The contacts get a short grace period
+  (`CHARGE_GRACE_S`) to register after the wheels stop; a warning is
+  logged when charging does not appear.
+
 - Fixed the intermittent ~3 cm off-centre ArUco dock (the miss was random
   in direction and sometimes absent). `ArucoDocking` now applies the three
   safeguards the working `CubeApproach` already has: (1) it dwells at the

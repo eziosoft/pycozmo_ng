@@ -526,7 +526,8 @@ class Navigator:
         dwells until that pose converges, corrects the approach point,
         verifies the robot is centred on the marker's normal line (the
         reverse is open loop), then turns 180° and reverses into the
-        charger until charging is detected (15 s timeout).
+        charger until charging is detected or the robot has backed to
+        the docked distance (15 s timeout).
 
         After a successful dock the pose origin is reset — the robot's
         docked position becomes the world origin (the point 65 mm in

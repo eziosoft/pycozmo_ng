@@ -61,7 +61,13 @@ class _FakeCli:
         # ~65 mm → yaw rate = (r - l) / wheelbase. Big enough to converge
         # fast, small enough never to overshoot the proportional command.
         yaw = self.pose.rotation.angle_z.radians + 0.002 * (rwheel_speed - lwheel_speed)
-        self.pose = _pose(self.pose.position.x, self.pose.position.y, yaw)
+        # Straight motion advances along the heading (mean wheel speed,
+        # ~0.15 s effective tick) so the reverse actually covers ground;
+        # pure turns have a zero mean → no translation, like the real robot.
+        dist = 0.15 * (lwheel_speed + rwheel_speed) / 2.0
+        x = self.pose.position.x + dist * math.cos(yaw)
+        y = self.pose.position.y + dist * math.sin(yaw)
+        self.pose = _pose(x, y, yaw)
 
 
 class _MarkerFeed:
@@ -196,6 +202,25 @@ class TestDockSequence:
         cli.stop_all_motors.assert_called()
         assert not ds.charging
         on_docked.assert_not_called()
+
+    def test_reverse_stops_at_docked_distance(self):
+        """No charging flag → the robot still stops at the docked geometry.
+
+        The reverse must not rely on the charging flag alone (it can lag,
+        leaving the wheels driving into the charger) and must not run into
+        the reverse timeout either.
+        """
+        docking, cli, ds, motion, on_docked = _make()
+        docking.REVERSE_TIMEOUT_S = 30.0  # must stop on geometry, not timeout
+
+        assert docking.dock(0) is True
+        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
+
+        # Marker at (0,0) with normal +x → docked robot sits ~65 mm out.
+        assert 55.0 <= cli.pose.position.x <= 66.0
+        assert not ds.charging
+        assert on_docked.call_count == 1
+        cli.stop_all_motors.assert_called()
 
     def test_cancel_stops_dock_without_docked(self):
         """Navigator.stop() cancels the job mid-approach — no docking."""

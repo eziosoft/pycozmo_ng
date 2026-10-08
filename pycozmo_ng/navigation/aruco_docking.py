@@ -10,7 +10,8 @@ The sequence, mirroring the cube approach:
    reverse is open loop, so any lateral offset here is the offset it
    docks with.
 4. Turn 180° so the rear is toward the charger and reverse in until the
-   charging contacts detect (with a timeout).
+   charging contacts detect or the robot has backed to the docked
+   distance (with a timeout).
 
 On success ``on_docked`` runs — the caller resets the pose origin (the
 docked robot pose becomes the world origin, 65 mm in front of the
@@ -48,7 +49,8 @@ class ArucoDocking:
             The shared :class:`MotionController` — spawns the dock job so
             ``Navigator.stop()`` cancels it.
         on_docked:
-            Optional callback run once charging is detected (reset
+            Optional callback run once the robot is docked (contacts
+            detect, or it has backed to the docked distance — reset
             origin, snap marker pose).
     """
 
@@ -100,6 +102,10 @@ class ArucoDocking:
 
     REVERSE_SPEED_MMPS: float = -60.0  # negative = backward
     REVERSE_TIMEOUT_S: float = 15.0
+
+    #: After a distance-based stop, give the contacts this long to
+    #: register before declaring the dock complete.
+    CHARGE_GRACE_S: float = 0.5
 
     #: Marker 0 is this far behind the camera when the robot is docked —
     #: the offset the world origin and the post-dock marker snap use.
@@ -297,13 +303,20 @@ class ArucoDocking:
     # ------------------------------------------------------------------
 
     def _reverse_into_charger(self, job: MotionToken, marker_id: int) -> bool:
-        """Turn 180° so the rear faces the charger, reverse until charging."""
+        """Turn 180° and reverse until contact or the docked distance.
+
+        Two stop conditions: the charging contacts (checked first) or the
+        robot having backed to ``DOCKED_MARKER_DIST_MM`` along the marker
+        normal — so the wheels never keep driving into the charger while
+        waiting for the charging flag to land.
+        """
         state = self._get_marker_state(marker_id)
         if state is None:
             return False
         nx, ny = self._normal(state)
         if nx is None:
             return False
+        mx, my = float(state.position[0]), float(state.position[1])
 
         # Turn in place to face away from the marker — rear toward charger.
         pose = self.cli.pose
@@ -319,6 +332,9 @@ class ArucoDocking:
             if self._charging():
                 self.cli.stop_all_motors()
                 return True
+            if self._at_dock(mx, my, nx, ny):
+                self.cli.stop_all_motors()
+                return self._wait_charging()
             self.cli.drive_wheels(
                 lwheel_speed=self.REVERSE_SPEED_MMPS,
                 rwheel_speed=self.REVERSE_SPEED_MMPS,
@@ -424,6 +440,32 @@ class ArucoDocking:
         cli.stop_all_motors()
         logger.warning("ArUco dock: turn did not converge (timeout)")
         return False
+
+    def _at_dock(self, mx: float, my: float, nx: float, ny: float) -> bool:
+        """True once the robot has backed to the docked distance.
+
+        Distance is measured along the marker normal (the reverse
+        direction): the marker sits ``DOCKED_MARKER_DIST_MM`` behind the
+        robot when docked. Acts as a geometric backstop so the robot
+        stops there instead of driving on while the charging flag lags.
+        """
+        rp = self.cli.pose
+        along = (rp.position.x - mx) * nx + (rp.position.y - my) * ny
+        return along <= self.DOCKED_MARKER_DIST_MM
+
+    def _wait_charging(self) -> bool:
+        """After a distance stop, give the contacts time to register.
+
+        Always returns True: the robot is at the docked geometry with a
+        verified line-up, so the dock counts even if the charging flag
+        lands a moment later (Brain polls it for the HUD anyway).
+        """
+        deadline = time.monotonic() + self.CHARGE_GRACE_S
+        while time.monotonic() < deadline and not self._charging():
+            time.sleep(0.05)
+        if not self._charging():
+            logger.warning("ArUco dock: at docked distance — charging not detected yet")
+        return True
 
     def _charging(self) -> bool:
         with self.ds.lock:
