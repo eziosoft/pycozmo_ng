@@ -8,6 +8,17 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- Fixed a firmware crash that killed the ArUco dock run: turning in place sent
+  a zero-length path segment (`AppendPathSegLine` with `to == from`), which
+  makes the firmware assert `y != 0 || x != 0` in `supervisor/src/trig_fast.cpp`
+  (`atan2(0, 0)`) and drop the connection ("No camera frames for 5.0s").
+  `ArucoDocking` now turns with the closed-loop `drive_wheels` yaw loop
+  (`Navigator._align_heading` style) and never sends a path segment shorter
+  than 15 mm — including the 180° turn before reversing into the charger.
+  `PathExecutor.go_to_pose` also skips the line segment for targets within
+  10 mm of the robot (the floor `execute_polyline` already had), so no
+  caller can crash the firmware with a degenerate segment.
+
 - Fixed a bug in `world_to_scene_rotation()` that made every detected object
   (cube, charger, ArUco marker) lie flat on the ground in the 3D viewer
   regardless of its real attitude: the function computed `M @ R @ M` (a

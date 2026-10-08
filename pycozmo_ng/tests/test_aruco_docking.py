@@ -40,12 +40,14 @@ def _wait_until(predicate, timeout: float = 5.0) -> bool:
 
 
 class _FakeCli:
-    """Minimal client: ``pose`` follows the last ``go_to_pose`` goal."""
+    """Minimal client: ``pose`` follows ``go_to_pose``; ``drive_wheels``
+    applies crude differential-drive kinematics so closed-loop turns
+    converge."""
 
     def __init__(self, x: float = 500.0, y: float = 0.0, yaw: float = 0.0):
         self.pose = _pose(x, y, yaw)
         self.go_to_pose = MagicMock(side_effect=self._go_to_pose)
-        self.drive_wheels = MagicMock()
+        self.drive_wheels = MagicMock(side_effect=self._drive_wheels)
         self.stop_all_motors = MagicMock()
 
     def _go_to_pose(self, pose, **kwargs):
@@ -53,13 +55,36 @@ class _FakeCli:
         self.pose = _pose(pose.position.x, pose.position.y, pose.rotation.angle_z.radians)
         return True
 
+    def _drive_wheels(self, lwheel_speed: float, rwheel_speed: float, **kwargs):
+        del kwargs
+        # Time-consistent differential drive: one 30 ms tick, wheelbase
+        # ~65 mm → yaw rate = (r - l) / wheelbase. Big enough to converge
+        # fast, small enough never to overshoot the proportional command.
+        yaw = self.pose.rotation.angle_z.radians + 0.002 * (rwheel_speed - lwheel_speed)
+        self.pose = _pose(self.pose.position.x, self.pose.position.y, yaw)
+
 
 class _MarkerFeed:
-    """Serves the marker state; every read is a fresh detection."""
+    """Serves the marker state; every read is a fresh detection.
 
-    def __init__(self, x: float = 0.0, y: float = 0.0, normal_yaw: float = 0.0):
+    ``refresh_xy`` moves the marker after ``refresh_after`` reads —
+    mimicking the fused pose shifting once the camera really sees it
+    (the "marker pose updated — correcting to ..." case).
+    """
+
+    def __init__(
+        self,
+        x: float = 0.0,
+        y: float = 0.0,
+        normal_yaw: float = 0.0,
+        refresh_xy: tuple[float, float] | None = None,
+        refresh_after: int = 2,
+    ):
         z = np.array([math.cos(normal_yaw), math.sin(normal_yaw), 0.0])
         y_up = np.array([0.0, 0.0, 1.0])
+        self._xy = (x, y)
+        self._refresh_xy = refresh_xy
+        self._refresh_after = refresh_after
         self._state = ArucoState(
             marker_id=0,
             position=np.array([x, y, 0.0]),
@@ -74,9 +99,11 @@ class _MarkerFeed:
         if marker_id != self._state.marker_id:
             return None
         self._reads += 1
+        if self._refresh_xy is not None and self._reads > self._refresh_after:
+            self._xy = self._refresh_xy
         return ArucoState(
             marker_id=self._state.marker_id,
-            position=self._state.position,
+            position=np.array([self._xy[0], self._xy[1], 0.0]),
             rotation_matrix=self._state.rotation_matrix,
             confidence=1.0,
             size_mm=22.5,
@@ -85,11 +112,11 @@ class _MarkerFeed:
         )
 
 
-def _make(marker_known: bool = True, x: float = 500.0):
+def _make(marker_known: bool = True, x: float = 500.0, marker_move: tuple[float, float] | None = None):
     ds = DockState()
     motion = MotionController()
     cli = _FakeCli(x=x)
-    feed = _MarkerFeed()
+    feed = _MarkerFeed(refresh_xy=marker_move)
     on_docked = MagicMock()
     docking = ArucoDocking(
         cli=cli,
@@ -121,14 +148,35 @@ class TestDockSequence:
         assert ArucoDocking.JOB_ARUCO_DOCK in motion.active_names
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names)
 
-        # Approach point: 150 mm in front of the marker along its normal,
-        # facing it — then the 180° turn in place.
-        assert cli.go_to_pose.call_count == 2
+        # One path for the approach — the 180° turn must not send one.
+        assert cli.go_to_pose.call_count == 1
         approach = cli.go_to_pose.call_args_list[0].args[0]
         assert math.isclose(approach.position.x, 150.0)
         assert math.isclose(approach.position.y, 0.0)
         assert math.isclose(abs(approach.rotation.angle_z.radians), math.pi)
 
+        # The turn ran on drive_wheels (closed loop), then the reverse.
+        turn = [c for c in cli.drive_wheels.call_args_list if c.kwargs["lwheel_speed"] == -c.kwargs["rwheel_speed"]]
+        assert turn
+        assert on_docked.call_count == 1
+
+    def test_correction_uses_refreshed_marker_pose(self):
+        """Camera refreshes the marker pose → approach point is recomputed.
+
+        Reproduces the live log: "marker pose updated — correcting to
+        (80, 3)" — marker 0 fused to (-70, 3) after the camera saw it.
+        """
+        docking, cli, ds, _motion, on_docked = _make(marker_move=(-70.0, 3.0))
+        ds.charging = True  # complete quickly
+
+        assert docking.dock(0) is True
+        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in docking.motion.active_names)
+
+        assert cli.go_to_pose.call_count == 2  # approach, then correction
+        first, second = (c.args[0] for c in cli.go_to_pose.call_args_list)
+        assert math.isclose(first.position.x, 150.0)  # from the stale pose
+        assert math.isclose(second.position.x, 80.0)  # marker + 150 mm
+        assert math.isclose(second.position.y, 3.0)
         assert on_docked.call_count == 1
 
     def test_timeout_gives_up_without_docked(self):
@@ -139,9 +187,13 @@ class TestDockSequence:
         docking.dock(0)
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in docking.motion.active_names)
 
-        speeds = [c.kwargs["lwheel_speed"] for c in cli.drive_wheels.call_args_list]
-        assert speeds and all(s < 0 for s in speeds)  # only reverse
-        cli.stop_all_motors.assert_called_once()
+        reverse = [
+            c
+            for c in cli.drive_wheels.call_args_list
+            if c.kwargs["lwheel_speed"] == c.kwargs["rwheel_speed"] == docking.REVERSE_SPEED_MMPS
+        ]
+        assert reverse  # the robot did try to back into the charger
+        cli.stop_all_motors.assert_called()
         assert not ds.charging
         on_docked.assert_not_called()
 
@@ -157,6 +209,22 @@ class TestDockSequence:
 
         assert cli.drive_wheels.call_count == 0
         on_docked.assert_not_called()
+
+    def test_zero_length_path_never_sent(self):
+        """Turns must never go through ``go_to_pose``.
+
+        A zero-length ``AppendPathSegLine`` makes the firmware assert
+        ``y != 0 || x != 0`` in ``trig_fast.cpp`` (atan2(0, 0)) and drop
+        the connection — the bug behind the Z-key dock crash.
+        """
+        docking, cli, _ds, motion, _on_docked = _make()
+        cli.pose = _pose(150.0, 0.0, 0.0)  # robot already at the target
+
+        with motion.begin("test_turn") as job:
+            assert docking._go(job, 150.0, 0.0, math.pi) is True
+
+        cli.go_to_pose.assert_not_called()  # no path segment at all
+        assert math.isclose(abs(cli.pose.rotation.angle_z.radians), math.pi, abs_tol=0.1)
 
     def test_supersede_new_request_cancels_the_old(self):
         docking, _cli, ds, motion, _on_docked = _make()

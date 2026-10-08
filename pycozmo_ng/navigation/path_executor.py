@@ -329,16 +329,21 @@ class PathExecutor:
             robot.send(protocol_encoder.ClearPath())
             start_x = robot.pose.position.x
             start_y = robot.pose.position.y
-            pkt: protocol_encoder.Packet = protocol_encoder.AppendPathSegLine(
-                from_x=start_x,
-                from_y=start_y,
-                to_x=pose.position.x,
-                to_y=pose.position.y,
-                speed_mmps=100.0,
-                accel_mmps2=20.0,
-                decel_mmps2=20.0,
-            )
-            robot.send(pkt)
+            # Same 10 mm floor as _filter_polyline_points: a zero-length
+            # line segment makes the firmware assert in trig_fast.cpp
+            # (atan2(0, 0) — "y != 0 || x != 0") and crash. A degenerate
+            # target still gets its point-turn below.
+            if math.hypot(pose.position.x - start_x, pose.position.y - start_y) >= 10.0:
+                pkt: protocol_encoder.Packet = protocol_encoder.AppendPathSegLine(
+                    from_x=start_x,
+                    from_y=start_y,
+                    to_x=pose.position.x,
+                    to_y=pose.position.y,
+                    speed_mmps=100.0,
+                    accel_mmps2=20.0,
+                    decel_mmps2=20.0,
+                )
+                robot.send(pkt)
             pkt = protocol_encoder.AppendPathSegPointTurn(
                 x=pose.position.x,
                 y=pose.position.y,

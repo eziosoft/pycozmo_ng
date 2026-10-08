@@ -172,6 +172,21 @@ class TestGoToPose:
         assert robot.turns[0].angle_rad == 1.0
         assert robot.handler_count == 0
 
+    def test_degenerate_target_sends_no_line_segment(self):
+        """A target at the robot's own position must not send a zero-length
+        line — the firmware asserts in ``trig_fast.cpp`` (``atan2(0, 0)``)
+        and crashes. The heading change still runs as a point-turn."""
+        robot = FakeRobot(x=150.0)  # already standing at the target
+        executor = PathExecutor(robot)
+        complete_on_execute(robot)
+
+        ok = executor.go_to_pose(pose(150.0, yaw=1.0))
+
+        assert ok is True
+        assert robot.lines == []  # no zero-length segment
+        assert len(robot.turns) == 1
+        assert robot.turns[0].angle_rad == 1.0
+
     def test_firmware_interrupt_event_reports_failure(self):
         robot = FakeRobot()
 

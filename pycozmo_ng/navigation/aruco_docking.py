@@ -22,6 +22,7 @@ from pycozmo_ng.logger import logger
 from pycozmo_ng.navigation.dock_state import DockState
 from pycozmo_ng.navigation.motion_controller import MotionController
 from pycozmo_ng.navigation.motion_token import MotionToken
+from pycozmo_ng.navigation.steering import wrap_pi
 from pycozmo_ng.util import Angle, Pose
 
 
@@ -51,7 +52,15 @@ class ArucoDocking:
 
     APPROACH_DIST_MM: float = 150.0  # standoff in front of the marker
     SETTLE_S: float = 0.5  # time for the camera to refresh the marker pose
-    REAPPROACH_MM: float = 20.0  # re-drive if the refreshed pose moved this far
+
+    #: Below this, a move is a pure turn — never send a zero-length path
+    #: segment: the firmware asserts ``y != 0 || x != 0`` in
+    #: ``trig_fast.cpp`` (``atan2(0, 0)``) and crashes.
+    MIN_SEG_MM: float = 15.0
+
+    TURN_SPEED_MMPS: float = 60.0
+    TURN_TOL_RAD: float = math.radians(4.0)
+    TURN_TIMEOUT_S: float = 5.0
 
     REVERSE_SPEED_MMPS: float = -60.0  # negative = backward
     REVERSE_TIMEOUT_S: float = 15.0
@@ -136,15 +145,15 @@ class ArucoDocking:
                 return False
             time.sleep(0.05)
 
-        # If the refreshed pose moved the approach point, correct it.
+        # If the refreshed pose moved the approach point, correct it
+        # (``_go`` is a no-op drive + turn when already in place).
         corrected = self._approach_target(marker_id)
         if corrected is None:
             return False
         cx, cy, cheading = corrected
-        if math.hypot(cx - x, cy - y) > self.REAPPROACH_MM:
+        if math.hypot(cx - x, cy - y) > self.MIN_SEG_MM:
             logger.info("ArUco dock: marker pose updated — correcting to (%.0f, %.0f)", cx, cy)
-            return self._go(job, cx, cy, cheading)
-        return True
+        return self._go(job, cx, cy, cheading)
 
     def _approach_target(self, marker_id: int):
         """(x, y, heading) of the point in front of the marker, facing it."""
@@ -213,17 +222,51 @@ class ArucoDocking:
         return nx / length, ny / length
 
     def _go(self, job: MotionToken, x: float, y: float, heading: float) -> bool:
-        """``go_to_pose`` with cancellation; False if the job was cancelled."""
-        self.cli.go_to_pose(
-            Pose(x, y, 0, angle_z=Angle(radians=heading)),
-            relative_to_robot=False,
-            should_interrupt=lambda: job.cancelled,
-        )
-        if job.cancelled:
-            logger.info("ArUco dock cancelled")
-            self.cli.stop_all_motors()
-            return False
-        return True
+        """Drive/turn to (*x*, *y*, *heading*) with cancellation.
+
+        A zero-length path segment crashes the firmware (``atan2(0, 0)``
+        → ``trig_fast.cpp`` assert), so when the robot is already at the
+        target only the turn runs — via :meth:`_turn_to`, the same
+        closed-loop ``drive_wheels`` turn ``Navigator._align_heading``
+        uses.
+        """
+        rp = self.cli.pose
+        if math.hypot(x - rp.position.x, y - rp.position.y) > self.MIN_SEG_MM:
+            self.cli.go_to_pose(
+                Pose(x, y, 0, angle_z=Angle(radians=heading)),
+                relative_to_robot=False,
+                should_interrupt=lambda: job.cancelled,
+            )
+            if job.cancelled:
+                logger.info("ArUco dock cancelled")
+                self.cli.stop_all_motors()
+                return False
+        return self._turn_to(job, heading)
+
+    def _turn_to(self, job: MotionToken, heading: float) -> bool:
+        """Turn in place to *heading* — closed loop on the yaw error.
+
+        Returns False when cancelled or when the heading did not
+        converge within the timeout.
+        """
+        cli = self.cli
+        deadline = time.monotonic() + self.TURN_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if job.cancelled:
+                logger.info("ArUco dock cancelled")
+                cli.stop_all_motors()
+                return False
+            err = wrap_pi(heading - cli.pose.rotation.angle_z.radians)
+            if abs(err) < self.TURN_TOL_RAD:
+                cli.stop_all_motors()
+                return True
+            omega = max(-1.0, min(1.0, err * 2.2)) * self.TURN_SPEED_MMPS
+            cli.drive_wheels(lwheel_speed=-omega, rwheel_speed=omega)
+            time.sleep(0.03)
+
+        cli.stop_all_motors()
+        logger.warning("ArUco dock: turn did not converge (timeout)")
+        return False
 
     def _charging(self) -> bool:
         with self.ds.lock:
