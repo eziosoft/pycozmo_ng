@@ -52,6 +52,7 @@ class Navigator:
     JOB_NAVIGATE: ClassVar[str] = "navigate"
     JOB_DRIVE: ClassVar[str] = "drive"
     JOB_ALIGN: ClassVar[str] = "align"
+    JOB_ARUCO_DOCK: ClassVar[str] = "aruco_dock"
     JOB_TEST_MODE: ClassVar[str] = "test_mode"
 
     def __init__(
@@ -510,6 +511,130 @@ class Navigator:
         job that :meth:`stop` cancels.
         """
         self.docking.dock()
+
+    # ------------------------------------------------------------------
+    # ArUco docking
+    # ------------------------------------------------------------------
+
+    ARUCO_DOCK_DIST_MM: ClassVar[float] = 150.0  # 15 cm in front of marker
+    ARUCO_REVERSE_SPEED_MMPS: ClassVar[float] = -60.0
+    ARUCO_REVERSE_TIMEOUT_S: ClassVar[float] = 15.0
+    ARUCO_APPROACH_TIMEOUT_S: ClassVar[float] = 15.0
+
+    def dock_on_aruco(self, marker_id: int = 0) -> bool:
+        """Drive to an ArUco marker and reverse into it until charging.
+
+        Position is read from the world map (ArUco markers are persistent
+        fused landmarks).  The robot drives to a point 15 cm in front of
+        the marker facing it, then reverses at low speed until the charger
+        contacts are detected or a timeout fires.
+
+        One dock job at a time; a new call supersedes the old one.
+        Cancellation via :meth:`stop` works because the reverse loop checks
+        the motion token and the approach uses ``drive_to_point`` (which
+        registers its own ``drive`` job on the shared controller).
+
+        Args:
+            marker_id: ArUco dictionary ID of the charger marker (default 0).
+
+        Returns:
+            True if a dock attempt was **started**, False when the marker
+            is unknown, there is no robot, or the world map is not available.
+        """
+        if not self.cli:
+            logger.warning("ArUco dock: no robot connected")
+            return False
+        wm = self.world_map
+        if wm is None:
+            logger.warning("ArUco dock: world map not available")
+            return False
+        markers = wm.get_aruco_markers()
+        if marker_id not in markers:
+            logger.warning("ArUco dock: marker %d not in world map", marker_id)
+            return False
+
+        self.motion.cancel(self.JOB_ARUCO_DOCK)
+        self.motion.spawn(self.JOB_ARUCO_DOCK, lambda job: self._aruco_dock_job(job, marker_id))
+        return True
+
+    def _aruco_dock_job(self, job: MotionToken, marker_id: int) -> None:
+        """Body of the ArUco docking job (runs in a daemon thread).
+
+        Separated from :meth:`dock_on_aruco` so the spawn registers a clean
+        job token while the world-map read happens synchronously before
+        spawning (fail-fast when the marker is missing).
+        """
+        cli = self.cli
+        if cli is None:
+            return
+        wm = self.world_map
+        if wm is None:
+            return
+        markers = wm.get_aruco_markers()
+        marker = markers.get(marker_id)
+        if marker is None:
+            return  # already checked, but race-safety
+
+        pos = marker.position
+        rot = marker.rotation_matrix
+        normal = rot[:, 2]  # marker z-axis = out of printed face toward robot
+
+        ax = pos[0] + self.ARUCO_DOCK_DIST_MM * normal[0]
+        ay = pos[1] + self.ARUCO_DOCK_DIST_MM * normal[1]
+        # Heading: face toward the marker (approach → marker direction)
+        heading = math.atan2(-normal[1], -normal[0])
+
+        try:
+            logger.info(
+                "ArUco dock: driving to (%.0f, %.0f) marker=%d size=%.1fmm",
+                ax,
+                ay,
+                marker_id,
+                marker.size_mm,
+            )
+            reached = self.drive_to_point(
+                ax,
+                ay,
+                stop_mm=30.0,
+                timeout_s=self.ARUCO_APPROACH_TIMEOUT_S,
+                speed_mmps=80.0,
+                final_heading=heading,
+            )
+            if job.cancelled:
+                return
+            if not reached:
+                logger.warning("ArUco dock: drive to approach point failed")
+                return
+
+            time.sleep(0.3)
+
+            logger.info("ArUco dock: reversing toward marker")
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < self.ARUCO_REVERSE_TIMEOUT_S:
+                if job.cancelled:
+                    return
+                with self.ds.lock:
+                    on_charger = self.ds.on_charger or self.ds.charging
+                if on_charger:
+                    self._reset_pose_origin()
+                    logger.info("ArUco dock: docked and pose reset")
+                    return
+                cli.drive_wheels(
+                    lwheel_speed=self.ARUCO_REVERSE_SPEED_MMPS,
+                    rwheel_speed=self.ARUCO_REVERSE_SPEED_MMPS,
+                )
+                time.sleep(0.05)
+
+            logger.warning("ArUco dock: reverse timed out (%.0f s)", self.ARUCO_REVERSE_TIMEOUT_S)
+            # One last check after stopping
+            cli.stop_all_motors()
+            with self.ds.lock:
+                if self.ds.on_charger or self.ds.charging:
+                    self._reset_pose_origin()
+                    logger.info("ArUco dock: docked (late charging)")
+                    return
+        except Exception:  # noqa: BLE001
+            logger.exception("ArUco dock error")
 
     # ------------------------------------------------------------------
     # Stop (public motion control)
