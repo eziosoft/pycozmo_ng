@@ -10,8 +10,10 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 - Standard 4x4 ArUco markers are detected as first-class objects with
   **per-ID physical sizes** and rendered in the 3D viewer with their real
-  bitmap texture. Sizes live in a JSON config (`~/.pycozmo_ng/aruco_markers.json`,
-  override with `PYCOZMO_NG_ARUCO_CONFIG`): `{"dictionary": "4X4_50",
+  bitmap texture. Sizes live in a JSON config (`aruco_markers.json` in the
+  project root — committed to the repo; search order: explicit path →
+  `PYCOZMO_NG_ARUCO_CONFIG` → project root/cwd → `~/.pycozmo_ng/`):
+  `{"dictionary": "4X4_50",
   "default_size_mm": 50.0, "markers": {"0": 22.5}}` — the per-ID size sets the
   absolute PnP scale for that marker (unlisted IDs fall back to the default
   with a one-time warning; a missing file disables detection, an invalid file

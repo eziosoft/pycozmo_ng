@@ -1,11 +1,16 @@
 """ArUco marker size configuration — JSON file + per-ID size registry.
 
 Sizes live in a JSON file (not ``VisionSetup``) so markers can be re-measured
-and re-printed without touching code. Default location::
+and re-printed without touching code. The file is ``aruco_markers.json``,
+searched in this order (first hit wins):
 
-    ~/.pycozmo_ng/aruco_markers.json
+1. explicit ``path`` argument;
+2. ``$PYCOZMO_NG_ARUCO_CONFIG``;
+3. the project root (next to ``pycozmo_ng/``) or the current working
+   directory — the committed per-project config;
+4. ``~/.pycozmo_ng/aruco_markers.json`` — the per-user config.
 
-overridable with the ``PYCOZMO_NG_ARUCO_CONFIG`` environment variable::
+Example contents::
 
     {
       "dictionary": "4X4_50",
@@ -144,12 +149,19 @@ def _validate(raw: dict, path: str) -> ArucoConfig:
 def load_aruco_config(path: str | None = None) -> ArucoConfig | None:
     """Load the ArUco config file.
 
+    Candidate locations, first existing file wins:
+
+    1. explicit ``path`` argument;
+    2. ``$PYCOZMO_NG_ARUCO_CONFIG``;
+    3. ``aruco_markers.json`` in the project root (next to ``pycozmo_ng/``)
+       or the current working directory — the committed, per-project config;
+    4. ``~/.pycozmo_ng/aruco_markers.json`` — the per-user config.
+
     Args:
-        path: Explicit file path. Defaults to ``$PYCOZMO_NG_ARUCO_CONFIG``,
-            then ``~/.pycozmo_ng/aruco_markers.json``.
+        path: Explicit file path. When None the candidates above are tried.
 
     Returns:
-        The parsed config, or ``None`` when the file does not exist
+        The parsed config, or ``None`` when no candidate exists
         (ArUco detection should stay disabled).
 
     Raises:
@@ -158,9 +170,19 @@ def load_aruco_config(path: str | None = None) -> ArucoConfig | None:
         OSError: The file exists but cannot be read.
     """
     if path is None:
-        path = os.environ.get(ARUCO_CONFIG_ENV)
-    if path is None:
-        path = str(get_pycozmo_ng_dir() / "aruco_markers.json")
+        env_path = os.environ.get(ARUCO_CONFIG_ENV)
+        if env_path is not None:
+            path = env_path
+        else:
+            # Project root: this file lives at
+            # <root>/pycozmo_ng/vision/aruco_detector/aruco_config.py
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            candidates = [
+                os.path.join(project_root, "aruco_markers.json"),
+                os.path.join(os.getcwd(), "aruco_markers.json"),
+                str(get_pycozmo_ng_dir() / "aruco_markers.json"),
+            ]
+            path = next((c for c in candidates if os.path.exists(c)), candidates[-1])
 
     if not os.path.exists(path):
         return None
