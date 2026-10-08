@@ -102,7 +102,7 @@ Off-board functions (see [docs/offboard_functions.md](docs/offboard_functions.md
 Extra off-board functions:
 - [ ] Vector animations from FlatBuffers .bin files
 - [ ] Vector behaviors
-- [ ] ArUco marker recognition
+- [x] ArUco marker recognition
 - [ ] Cozmo and Vector robot detection
 - [ ] Drivable area estimation
 - [ ] Voice commands

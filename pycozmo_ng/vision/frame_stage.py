@@ -139,6 +139,9 @@ class FrameStage:
             # Detect the charger marker — separate path, never a cube ID
             charger_detections = self.detection_pipeline.detect_charger(img_bgr, head_angle_rad)
 
+            # Detect ArUco markers — separate path, marker ID is the identity
+            aruco_detections = self.detection_pipeline.detect_aruco(img_bgr, head_angle_rad)
+
             # Detect faces (every Nth processed frame)
             self._face_frame_counter += 1
             face_due = self._face_frame_counter % self.face_detect_every_n_frames == 0
@@ -159,22 +162,24 @@ class FrameStage:
                 face_detections,
                 robot_center.last_result if robot_center is not None else None,
                 charger_detections,
+                aruco_detections,
             )
 
             # Store frame + detections, stamp them, push to the MJPEG sink
             self._publish_annotated(cli, annotated_image, cube_detections)
 
-            # Dispatch cube/face/charger events
+            # Dispatch cube/face/charger/aruco events
             if self.event_dispatcher is not None:
                 self.event_dispatcher.dispatch_cube_events(cli, cube_detections)
                 self.event_dispatcher.dispatch_charger_events(cli, charger_detections)
+                self.event_dispatcher.dispatch_aruco_events(cli, aruco_detections)
                 self.event_dispatcher.dispatch_face_events(cli, face_detections, face_frame)
 
             # Set face expression based on detection
             self._update_face_expression(cli, face_detections, face_due)
 
             # Feed measurements into the world map, then wake the browser
-            self._feed_world_map(cli, face_detections, face_frame, charger_detections)
+            self._feed_world_map(cli, face_detections, face_frame, charger_detections, aruco_detections)
 
             # Floor projection + occupancy (optional)
             self._process_floor(cli, img_bgr, head_angle_rad)
@@ -220,11 +225,19 @@ class FrameStage:
             # Only clear when we actually ran detection and found nothing
             anim_ctrl.clear_face_expression()
 
-    def _feed_world_map(self, cli, face_detections, face_frame: FaceFrame, charger_detections=None) -> None:
-        """Feed cube, face, charger, and procedural-face measurements into the world map.
+    def _feed_world_map(
+        self,
+        cli,
+        face_detections,
+        face_frame: FaceFrame,
+        charger_detections=None,
+        aruco_detections=None,
+    ) -> None:
+        """Feed cube, face, charger, ArUco, and procedural-face measurements into the world map.
 
         Face identities that ended this frame are dropped from the map.
-        The charger is stationary — its pose is fused but never forgotten.
+        The charger and ArUco markers are stationary — their poses are
+        fused but never forgotten.
         """
         if not self.detection_pipeline or self.world_map is None:
             return
@@ -270,6 +283,19 @@ class FrameStage:
                 det.rotation_matrix,
                 det.confidence,
                 head_angle,
+                camera_lateral_offset_mm=lateral_offset,
+            )
+
+        # Feed ArUco marker measurements (static printed landmarks keyed
+        # by ID — no forgetting on visibility loss, like the charger).
+        for det in aruco_detections or []:
+            self.world_map.update_aruco_measurement(
+                det.marker_id,
+                det.position_mm,
+                det.rotation_matrix,
+                det.confidence,
+                head_angle,
+                det.size_mm,
                 camera_lateral_offset_mm=lateral_offset,
             )
 

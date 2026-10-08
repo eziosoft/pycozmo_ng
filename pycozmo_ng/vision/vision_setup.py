@@ -77,3 +77,8 @@ class VisionSetup:
     #: Detect the charger's rectangular marker as a first-class object
     #: (own detection path, never a cube ID — COZMO-65).
     enable_charger_detection: bool = True
+
+    #: Detect standard 4x4 ArUco markers (own detection path, marker ID is
+    #: the identity — never a cube ID). Physical per-ID sizes come from the
+    #: JSON config file (PYCOZMO_NG_ARUCO_CONFIG), not from here.
+    enable_aruco_detection: bool = True

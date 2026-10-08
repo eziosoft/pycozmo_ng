@@ -77,6 +77,27 @@ class ChargerDetector(Protocol):
         ...
 
 
+class ArucoDetector(Protocol):
+    """Protocol for standard 4x4 ArUco marker detectors."""
+
+    def __init__(
+        self,
+        camera_matrix: np.ndarray,
+        distortion_coefficients: np.ndarray,
+        **kwargs,
+    ) -> None: ...
+
+    def detect(self, img_bgr: np.ndarray) -> list:
+        """Detect ArUco markers in an image.
+
+        Returns:
+            List of ArucoDetection — marker_id, size_mm, position_mm
+            (camera frame), rotation_matrix, corners. Multiple markers per
+            frame; the marker ID is the identity (never a cube index).
+        """
+        ...
+
+
 class RobotCenterDetector(Protocol):
     """Protocol for robot center calibration detectors."""
 

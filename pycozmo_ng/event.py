@@ -16,6 +16,9 @@ __all__ = [
     "Event",
     "EvtAnimationCompleted",
     "EvtAnnotatedCameraImage",
+    "EvtArucoDetected",
+    "EvtArucoLost",
+    "EvtArucoObserved",
     "EvtAudioCompleted",
     "EvtBehaviorDone",
     "EvtChargerDetected",
@@ -296,6 +299,34 @@ class EvtChargerObserved(Event):
 class EvtChargerLost(Event):
     """
     Triggered when the charger marker is no longer visible.
+    """
+
+
+class EvtArucoDetected(Event):
+    """
+    Triggered when one or more ArUco markers enter the frame.
+
+    Attributes:
+        detections: List of ArucoDetection objects — newly visible markers
+            only (marker ID is the identity; diffed against the last frame)
+    """
+
+
+class EvtArucoObserved(Event):
+    """
+    Triggered periodically while ArUco markers are visible.
+
+    Attributes:
+        detections: List of ArucoDetection objects (all markers this frame)
+    """
+
+
+class EvtArucoLost(Event):
+    """
+    Triggered when ArUco markers leave the frame.
+
+    Attributes:
+        marker_ids: List of marker IDs no longer visible
     """
 
 

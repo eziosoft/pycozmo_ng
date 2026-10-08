@@ -8,6 +8,26 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- Standard 4x4 ArUco markers are detected as first-class objects with
+  **per-ID physical sizes** and rendered in the 3D viewer with their real
+  bitmap texture. Sizes live in a JSON config (`~/.pycozmo_ng/aruco_markers.json`,
+  override with `PYCOZMO_NG_ARUCO_CONFIG`): `{"dictionary": "4X4_50",
+  "default_size_mm": 50.0, "markers": {"0": 22.5}}` — the per-ID size sets the
+  absolute PnP scale for that marker (unlisted IDs fall back to the default
+  with a one-time warning; a missing file disables detection, an invalid file
+  fails loudly rather than reporting wrong distances). New
+  `vision/aruco_detector/` package: `ArucoDetector` (modern
+  `cv2.aruco.ArucoDetector` API, `SOLVEPNP_IPPE_SQUARE`, border-clip guard),
+  `ArucoDetection`, `MarkerSizeRegistry`. Wiring mirrors the charger path:
+  `DetectionPipeline.detect_aruco()`, `VisionSetup.enable_aruco_detection`,
+  events `EvtArucoDetected/Observed/Lost` (per-ID set diff), annotation
+  overlay (magenta quad + `ID | size | distance`), and
+  `WorldMap.update_aruco_measurement` — static landmarks keyed by marker ID,
+  never forgotten on visibility loss, cleared by `reset_map`/origin change.
+  Viewer: `state_builder` sends `aruco_markers` (scene pose + `size_mm`),
+  `GET /aruco-texture?id=N` serves each marker's PNG (rendered with
+  `generateImageMarker`, cached), the browser renders a textured plane at the
+  fused pose with an ID/size label, plus an "ArUco" HUD counter.
 - The charger's rectangular marker (23 × 15 mm battery drawing) is detected as
   a first-class object instead of being misread as a cube whose ID flapped
   every second (COZMO-65). New `vision/charger_detector/` package:

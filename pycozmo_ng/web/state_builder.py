@@ -156,6 +156,23 @@ def build_state_json(
             "height": CHARGER_HEIGHT_MM,
         }
 
+    # ArUco markers: static printed landmarks keyed by dictionary ID.
+    # size_mm (per-ID, from the JSON config) sizes the rendered plane; the
+    # browser fetches each marker's bitmap once from /aruco-texture?id=N.
+    aruco_list = []
+    for marker_id, ms in world.get("aruco_markers", {}).items():
+        pos_gl = coords.world_to_scene_point(ms["position"])
+        rot_gl = coords.world_to_scene_rotation(np.asarray(ms.get("rotation", np.eye(3)), dtype=np.float64))
+        aruco_list.append(
+            {
+                "id": int(marker_id),
+                "position": [float(v) for v in pos_gl],
+                "rotation": [row.tolist() for row in rot_gl],
+                "confidence": float(ms.get("confidence", 1.0)),
+                "size_mm": float(ms.get("size_mm", 0.0)),
+            }
+        )
+
     # Path: world frame -> scene frame, lifted just above the ground so the
     # zero-thickness trail doesn't z-fight the grid floor. Decimated so the
     # payload size doesn't grow with session length (see
@@ -182,6 +199,7 @@ def build_state_json(
         "cubes": cube_list,
         "faces": face_list,
         "charger": charger,
+        "aruco_markers": aruco_list,
         "robot": {
             "position": [float(v) for v in robot_pos],
             "heading": float(robot_heading),

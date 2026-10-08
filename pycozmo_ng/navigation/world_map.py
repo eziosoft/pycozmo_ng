@@ -39,6 +39,7 @@ from pycozmo_ng.logger import logger
 from pycozmo_ng.util.coords import camera_to_world
 
 __all__ = [
+    "ArucoState",
     "CubeState",
     "FaceState",
     "WorldMap",
@@ -141,6 +142,43 @@ class ChargerState:
         self.updated_at = float(updated_at)
 
 
+class ArucoState:
+    """Fused world-frame state of one ArUco marker.
+
+    Markers are printed static landmarks keyed by their dictionary ID —
+    like the charger, there is no forgetting on visibility loss; the pose
+    lives until ``reset_map`` or a localization-origin change.
+    """
+
+    __slots__ = (
+        "age",
+        "confidence",
+        "marker_id",
+        "position",
+        "rotation_matrix",
+        "size_mm",
+        "updated_at",
+    )
+
+    def __init__(
+        self,
+        marker_id: int,
+        position: np.ndarray,
+        rotation_matrix: np.ndarray,
+        confidence: float,
+        size_mm: float,
+        age: int = 0,
+        updated_at: float = 0.0,
+    ):
+        self.marker_id = int(marker_id)
+        self.position = np.asarray(position, dtype=np.float64)
+        self.rotation_matrix = np.asarray(rotation_matrix, dtype=np.float64)
+        self.confidence = float(confidence)
+        self.size_mm = float(size_mm)
+        self.age = int(age)
+        self.updated_at = float(updated_at)
+
+
 # Face type to face_idx mapping (matches cube_detector face_type_lookup order)
 _FACE_TYPE_TO_IDX = {
     "wall_0": 0,
@@ -215,6 +253,9 @@ class WorldMap:
         # Charger: single static landmark (None until first sighting).
         self._charger: ChargerState | None = None
 
+        # ArUco markers: marker_id -> fused world-frame static landmark.
+        self._aruco: dict[int, ArucoState] = {}
+
         # Path: rolling buffer of world-frame positions (mm).
         self._path_points: deque[np.ndarray] = deque(maxlen=self.max_path_points)
 
@@ -263,6 +304,7 @@ class WorldMap:
                 logger.info("WorldMap: localization origin changed — resetting map")
                 self._cubes.clear()
                 self._charger = None
+                self._aruco.clear()
                 self._path_points.clear()
             self._robot_origin_id = origin_id
             self._robot_position = pos
@@ -286,6 +328,7 @@ class WorldMap:
             self._cubes.clear()
             self._faces.clear()
             self._charger = None
+            self._aruco.clear()
             self._path_points.clear()
             self._astar_path.clear()
             self._robot_position = np.zeros(3, dtype=np.float64)
@@ -549,6 +592,98 @@ class WorldMap:
                 updated_at=self._charger.updated_at,
             )
 
+    # -- aruco ---------------------------------------------------------------
+
+    def update_aruco_measurement(
+        self,
+        marker_id: int,
+        position_cam: np.ndarray,
+        rotation_cam: np.ndarray,
+        confidence: float,
+        head_angle_rad: float,
+        size_mm: float,
+        camera_lateral_offset_mm: float = 0.0,
+    ) -> None:
+        """Fuse a camera-frame ArUco measurement into the world map.
+
+        Same fusion rules as the charger (exponential smoothing on position,
+        confidence-weighted SLERP on rotation), but keyed by marker ID — each
+        printed marker is its own static landmark. No forgetting on
+        visibility loss; entries are cleared by ``reset_map`` or a
+        localization-origin change.
+
+        Args:
+            marker_id: ArUco dictionary ID (the identity).
+            position_cam: Marker centre in camera frame (mm).
+            rotation_cam: 3x3 marker rotation in camera frame — the marker
+                plane basis from PnP (x/y in the sticker plane, z = normal).
+            confidence: Detection confidence (0..1).
+            head_angle_rad: Head pitch at measurement time (radians).
+            size_mm: Physical side length used for this marker's PnP solve.
+            camera_lateral_offset_mm: Lateral offset of camera from robot centre.
+        """
+        with self._lock:
+            pos_world, rot_world = camera_to_world(
+                position_cam,
+                rotation_cam,
+                head_angle_rad,
+                self._robot_position,
+                self._robot_yaw,
+                camera_lateral_offset_mm,
+            )
+            prev = self._aruco.get(marker_id)
+            now = time.monotonic()
+            if prev is None:
+                self._aruco[marker_id] = ArucoState(
+                    marker_id=marker_id,
+                    position=pos_world,
+                    rotation_matrix=rot_world,
+                    confidence=confidence,
+                    size_mm=size_mm,
+                    updated_at=now,
+                )
+                return
+
+            alpha = self.smoothing_alpha * float(confidence)
+            position = alpha * pos_world + (1.0 - alpha) * prev.position
+
+            rot_blend = self.rotation_alpha * float(confidence)
+            prev_q = R.from_matrix(prev.rotation_matrix)
+            new_q = R.from_matrix(rot_world)
+            prev_quat = prev_q.as_quat()
+            new_quat = new_q.as_quat()
+            if np.dot(prev_quat, new_quat) < 0:
+                new_quat = -new_quat
+                new_q = R.from_quat(new_quat)
+            key_rots = R.concatenate([prev_q, new_q])
+            rotation = Slerp([0, 1], key_rots)(rot_blend).as_matrix()
+
+            self._aruco[marker_id] = ArucoState(
+                marker_id=marker_id,
+                position=position,
+                rotation_matrix=rotation,
+                confidence=confidence,
+                size_mm=size_mm,
+                age=prev.age + 1,
+                updated_at=now,
+            )
+
+    def get_aruco_markers(self) -> dict[int, ArucoState]:
+        """Return a copy of the fused ArUco marker states, keyed by marker ID."""
+        with self._lock:
+            return {
+                marker_id: ArucoState(
+                    marker_id=ms.marker_id,
+                    position=ms.position.copy(),
+                    rotation_matrix=ms.rotation_matrix.copy(),
+                    confidence=ms.confidence,
+                    size_mm=ms.size_mm,
+                    age=ms.age,
+                    updated_at=ms.updated_at,
+                )
+                for marker_id, ms in self._aruco.items()
+            }
+
     # -- read API -----------------------------------------------------------
 
     @staticmethod
@@ -597,7 +732,8 @@ class WorldMap:
         Keys: ``robot`` (position, yaw, origin_id), ``cubes`` (cube_index ->
         position/rotation/confidence), ``faces`` (face_id ->
         position/confidence/label), ``charger`` (position/rotation/confidence
-        or None), ``path_points``.
+        or None), ``aruco_markers`` (marker_id -> position/rotation/
+        confidence/size_mm), ``path_points``.
         """
         with self._lock:
             robot_pos = self._robot_position.tolist()
@@ -628,6 +764,15 @@ class WorldMap:
                     "rotation": self._charger.rotation_matrix.tolist(),
                     "confidence": self._charger.confidence,
                 }
+            aruco_markers = {
+                marker_id: {
+                    "position": ms.position.tolist(),
+                    "rotation": ms.rotation_matrix.tolist(),
+                    "confidence": ms.confidence,
+                    "size_mm": ms.size_mm,
+                }
+                for marker_id, ms in self._aruco.items()
+            }
         return {
             "robot": {
                 "position": robot_pos,
@@ -637,6 +782,7 @@ class WorldMap:
             "cubes": cubes,
             "faces": faces,
             "charger": charger,
+            "aruco_markers": aruco_markers,
             "path_points": path_points,
             "astar_path": astar_path,
         }

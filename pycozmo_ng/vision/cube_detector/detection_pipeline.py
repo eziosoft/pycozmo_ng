@@ -12,11 +12,13 @@ import cv2
 import numpy as np
 
 from pycozmo_ng.logger import logger
+from pycozmo_ng.vision.aruco_detector.aruco_detection import ArucoDetection
 from pycozmo_ng.vision.calibration.camera_calibration import CameraCalibration
 from pycozmo_ng.vision.calibration.robot_center_calibration import RobotCenterCalibration
 from pycozmo_ng.vision.charger_detector.charger_detection import ChargerDetection
 from pycozmo_ng.vision.charger_detector.charger_template import load_charger_template
 from pycozmo_ng.vision.interfaces import (
+    ArucoDetector,
     ChargerDetector,
     CubeDetector,
     CubeFusionTracker,
@@ -68,6 +70,7 @@ class DetectionPipeline:
         face_detector: FaceDetector | None = None,
         robot_center_calibration: RobotCenterCalibration | None = None,
         charger_detector: ChargerDetector | None = None,
+        aruco_detector: ArucoDetector | None = None,
     ):
         """
         Initialize the detection pipeline with injected dependencies.
@@ -80,6 +83,7 @@ class DetectionPipeline:
             robot_center_calibration: Owner of the robot-center measurement;
                 frames are handed to it once per processed frame
             charger_detector: Optional charger marker detector (COZMO-65)
+            aruco_detector: Optional standard 4x4 ArUco detector (per-ID sizes)
         """
         self.camera_calibration = camera_calibration
         self.cube_detector = cube_detector
@@ -93,6 +97,10 @@ class DetectionPipeline:
         # Charger marker detection (COZMO-65)
         self.charger_detector = charger_detector
         self.enable_charger_detection = True
+
+        # ArUco marker detection (standard 4x4, per-ID physical sizes)
+        self.aruco_detector = aruco_detector
+        self.enable_aruco_detection = aruco_detector is not None
 
         # Robot center calibration — observes frames; owns the session offset
         self.robot_center_calibration = robot_center_calibration
@@ -208,6 +216,29 @@ class DetectionPipeline:
                 )
             )
         return detections
+
+    def detect_aruco(self, img_bgr: np.ndarray, head_angle_rad: float = 0.0) -> list[ArucoDetection]:
+        """Detect standard 4x4 ArUco markers with per-ID physical sizes.
+
+        Separate detection path from the cubes — a marker ID is never a
+        cube index. Multiple markers can be visible in one frame.
+
+        Args:
+            img_bgr: Image as BGR numpy array (already converted by caller).
+            head_angle_rad: Current head tilt angle in radians (unused —
+                kept for call-site symmetry with detect_cubes/detect_faces).
+
+        Returns:
+            Marker detections for this frame (positions in camera frame mm).
+        """
+        if self.aruco_detector is None or not self.enable_aruco_detection:
+            return []
+
+        try:
+            return self.aruco_detector.detect(img_bgr)
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.error(f"Error in ArUco detection: {e}", exc_info=True)
+            return []
 
     def detect_cubes(self, img_bgr: np.ndarray, head_angle_rad: float = 0.0) -> list[CubeDetection]:
         """
@@ -439,6 +470,21 @@ def create_default_detection_pipeline(
         )
     )
 
+    # Create the ArUco detector (standard 4x4, per-ID sizes from the JSON
+    # config). Missing/invalid config or a too-old OpenCV degrades to "no
+    # ArUco detection" only — same rule as the charger template above.
+    aruco_detector = None
+    try:
+        from pycozmo_ng.vision.aruco_detector.aruco_detector import ArucoDetector
+
+        aruco_detector = ArucoDetector(
+            camera_calibration.camera_matrix,
+            camera_calibration.distortion_coefficients,
+        )
+        logger.info("ArUco marker detector initialized successfully")
+    except (OSError, TypeError, ValueError, RuntimeError) as e:
+        logger.warning(f"ArUco detection disabled: {e}")
+
     return DetectionPipeline(
         camera_calibration=camera_calibration,
         cube_detector=cube_detector,
@@ -446,6 +492,7 @@ def create_default_detection_pipeline(
         face_detector=face_detector,
         robot_center_calibration=robot_center_calibration,
         charger_detector=charger_detector,
+        aruco_detector=aruco_detector,
     )
 
 

@@ -25,6 +25,7 @@ import time
 from pycozmo_ng.camera.service import CameraService
 from pycozmo_ng.logger import logger
 from pycozmo_ng.navigation.world_map import WorldMap
+from pycozmo_ng.web.aruco_texture import ArucoTextureEndpoint
 from pycozmo_ng.web.file_server import FileServer
 from pycozmo_ng.web.mjpeg_streamer import MjpegEndpoint
 from pycozmo_ng.web.msg_router import MsgRouter
@@ -101,6 +102,7 @@ class WebViewerServer:
         # Sub-modules
         self.router = MsgRouter(world_map=self.world_map)
         self._file_server = FileServer()
+        self._aruco_texture = ArucoTextureEndpoint()
 
         # MJPEG endpoints — closures that return (image, frame_id)
         def _get_annotated_frame():
@@ -262,6 +264,8 @@ class WebViewerServer:
         app.router.add_get("/", self._file_server.serve_index)
         app.router.add_get("/annotated-video", self._mjpeg_annotated.handle)
         app.router.add_get("/floor-video", self._mjpeg_floor.handle)
+        # Must precede the /{filename} catch-all, which would swallow it.
+        app.router.add_get("/aruco-texture", self._aruco_texture.handle)
         app.router.add_get("/{filename}", self._file_server.serve_static)
 
 

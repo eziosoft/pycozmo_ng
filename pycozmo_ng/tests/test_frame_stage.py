@@ -117,6 +117,7 @@ def make_stage(**configure_overrides) -> SimpleNamespace:
     detection_pipeline.robot_center_calibration = SimpleNamespace(offset_mm=0.0, last_result=None)
     detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=0)]
     detection_pipeline.detect_charger.return_value = []
+    detection_pipeline.detect_aruco.return_value = []
     detection_pipeline.detect_faces.return_value = []
     detection_pipeline.get_cube_measurements.return_value = [
         {

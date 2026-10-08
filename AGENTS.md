@@ -105,6 +105,8 @@ pycozmo_ng/           # Main library (import name: pycozmo_ng)
 │   │                        # robot_center_calibration.py (single owner of the measured session offset)
 │   ├── cube_detector/       # cube_detector.py (CozmoCubeDetector + CubeFusionTracker),
 │   │                        # detection_pipeline.py (core detection), cube_faces/ (marker templates)
+│   ├── aruco_detector/      # aruco_detector.py (standard 4x4 ArUco + per-ID sizes), aruco_config.py
+│   │                        # (JSON size registry, PYCOZMO_NG_ARUCO_CONFIG), aruco_detection.py
 │   ├── charger_detector/     # charger_detector.py (ChargerDetector — rectangular dock marker),
 │   │                        # charger_template.py (32x32 template), marker/charger.png (COZMO-65)
 │   └── occupancy_map/       # floor_pipeline.py, floor_projector.py (bird's-eye view),
@@ -135,6 +137,7 @@ pycozmo_ng/           # Main library (import name: pycozmo_ng)
 │   └── manager.py           # CubeManager — mapping, connection state
 ├── web/                     # Web viewer display adapter
 │   ├── __init__.py          # Exports: WebViewerServer
+│   ├── aruco_texture.py      # ArucoTextureEndpoint — GET /aruco-texture?id=N (marker PNG, cached)
 │   ├── file_server.py       # FileServer — static file serving
 │   ├── mjpeg_streamer.py    # MjpegEndpoint — MJPEG streaming
 │   ├── msg_router.py        # MsgRouter — browser WebSocket message dispatch

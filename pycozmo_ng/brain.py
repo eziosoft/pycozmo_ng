@@ -164,6 +164,7 @@ class Brain:
         )
         self.detection_pipeline.enable_face_detection = setup.enable_face_detection
         self.detection_pipeline.enable_charger_detection = setup.enable_charger_detection
+        self.detection_pipeline.enable_aruco_detection = setup.enable_aruco_detection
 
         # Annotation engine (pure drawing)
         self.annotation_engine = AnnotationEngine()
