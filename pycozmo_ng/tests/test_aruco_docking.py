@@ -203,12 +203,14 @@ class TestDockSequence:
         assert not ds.charging
         on_docked.assert_not_called()
 
-    def test_reverse_stops_at_docked_distance(self):
-        """No charging flag → the robot still stops at the docked geometry.
+    def test_reverse_stops_at_overshoot_backstop(self):
+        """No charging flag → the robot still stops at the geometric backstop.
 
-        The reverse must not rely on the charging flag alone (it can lag,
-        leaving the wheels driving into the charger) and must not run into
-        the reverse timeout either.
+        The reverse must not rely on the charging flag alone (it can lag)
+        but must also deliberately overshoot the docked geometry so the
+        robot bumps the back of the charger — the backstop fires 50 mm
+        past the resting point — and must not run into the reverse
+        timeout either.
         """
         docking, cli, ds, motion, on_docked = _make()
         docking.REVERSE_TIMEOUT_S = 30.0  # must stop on geometry, not timeout
@@ -216,8 +218,8 @@ class TestDockSequence:
         assert docking.dock(0) is True
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
 
-        # Marker at (0,0) with normal +x → docked robot sits ~65 mm out.
-        assert 55.0 <= cli.pose.position.x <= 66.0
+        # Marker at (0,0) with normal +x → backstop at 65 − 50 = 15 mm out.
+        assert 5.0 <= cli.pose.position.x <= 16.0
         assert not ds.charging
         assert on_docked.call_count == 1
         cli.stop_all_motors.assert_called()

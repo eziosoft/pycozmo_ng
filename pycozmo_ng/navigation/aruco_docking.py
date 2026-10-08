@@ -10,8 +10,9 @@ The sequence, mirroring the cube approach:
    reverse is open loop, so any lateral offset here is the offset it
    docks with.
 4. Turn 180° so the rear is toward the charger and reverse in until the
-   charging contacts detect or the robot has backed to the docked
-   distance (with a timeout).
+   charging contacts detect (the real stop) or the robot has deliberately
+   overshot the docked distance — it must bump the back of the charger
+   rather than stop short (with a timeout).
 
 On success ``on_docked`` runs — the caller resets the pose origin (the
 docked robot pose becomes the world origin, 65 mm in front of the
@@ -50,7 +51,7 @@ class ArucoDocking:
             ``Navigator.stop()`` cancels it.
         on_docked:
             Optional callback run once the robot is docked (contacts
-            detect, or it has backed to the docked distance — reset
+            detect, or it has overshot the docked distance — reset
             origin, snap marker pose).
     """
 
@@ -115,7 +116,16 @@ class ArucoDocking:
 
     #: Marker 0 is this far behind the camera when the robot is docked —
     #: the offset the world origin and the post-dock marker snap use.
+    #: The reverse deliberately drives past it (``REVERSE_OVERSHOOT_MM``)
+    #: so the robot actually bumps the charger.
     DOCKED_MARKER_DIST_MM: float = 65.0
+    #: Deliberate overshoot: the geometric stop fires this far *past* the
+    #: docked geometry, so the robot drives too much and bumps the back
+    #: of the charger instead of stopping short when the fused pose runs
+    #: optimistic. Charging contact remains the real stop (checked first
+    #: every tick); ``DOCKED_MARKER_DIST_MM`` still describes where the
+    #: robot rests when docked — the pose snap keeps using it.
+    REVERSE_OVERSHOOT_MM: float = 50.0
 
     def __init__(
         self,
@@ -316,12 +326,13 @@ class ArucoDocking:
     # ------------------------------------------------------------------
 
     def _reverse_into_charger(self, job: MotionToken, marker_id: int) -> bool:
-        """Turn 180° and reverse until contact or the docked distance.
+        """Turn 180° and reverse until contact or the overshoot backstop.
 
-        Two stop conditions: the charging contacts (checked first) or the
-        robot having backed to ``DOCKED_MARKER_DIST_MM`` along the marker
-        normal — so the wheels never keep driving into the charger while
-        waiting for the charging flag to land.
+        Two stop conditions: the charging contacts (checked first — the
+        real stop) or the robot having driven past the docked distance
+        by ``REVERSE_OVERSHOOT_MM`` — a deliberate overshoot so it bumps
+        the back of the charger instead of stopping short, while still
+        bounding how long the wheels can push with a lagging flag.
         """
         state = self._get_marker_state(marker_id)
         if state is None:
@@ -463,16 +474,17 @@ class ArucoDocking:
         return False
 
     def _at_dock(self, mx: float, my: float, nx: float, ny: float) -> bool:
-        """True once the robot has backed to the docked distance.
+        """True once the robot has deliberately overshot the docked distance.
 
-        Distance is measured along the marker normal (the reverse
-        direction): the marker sits ``DOCKED_MARKER_DIST_MM`` behind the
-        robot when docked. Acts as a geometric backstop so the robot
-        stops there instead of driving on while the charging flag lags.
+        The stop fires at ``DOCKED_MARKER_DIST_MM - REVERSE_OVERSHOOT_MM``
+        along the marker normal — 5 cm past the resting geometry — so the
+        robot bumps the back of the charger instead of stopping short
+        when the fused pose runs optimistic. A geometric backstop for
+        the lagging charging flag, which remains the real stop.
         """
         rp = self.cli.pose
         along = (rp.position.x - mx) * nx + (rp.position.y - my) * ny
-        return along <= self.DOCKED_MARKER_DIST_MM
+        return along <= self.DOCKED_MARKER_DIST_MM - self.REVERSE_OVERSHOOT_MM
 
     def _wait_charging(self) -> bool:
         """After a distance stop, give the contacts time to register.
@@ -485,7 +497,7 @@ class ArucoDocking:
         while time.monotonic() < deadline and not self._charging():
             time.sleep(0.05)
         if not self._charging():
-            logger.warning("ArUco dock: at docked distance — charging not detected yet")
+            logger.warning("ArUco dock: past the docked distance — charging not detected yet")
         return True
 
     def _charging(self) -> bool:
