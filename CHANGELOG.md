@@ -8,6 +8,11 @@ PyCozmo-NG release. Keep it up to date with every release (see `AGENTS.md`).
 
 ## Unreleased
 
+- `start.sh` is no longer Pi-specific: dropped the "must run on Linux"
+  platform guard (and its reference to the unshipped `not_used/sync_to_pi.sh`)
+  plus the abort on a missing 192.168.10.1 wired management link — it now
+  runs anywhere `nmcli`, `ping`, and `espeak-ng` are available.
+
 - Wi-Fi credentials now have a single source of truth: `.env` (gitignored).
   `start.sh` no longer hardcodes the SSID/password — it sources `.env` and
   fails fast with a clear message when `COZMO_WIFI_SSID`/`COZMO_WIFI_PASSWORD`

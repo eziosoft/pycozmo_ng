@@ -10,12 +10,6 @@ LOCK_FILE="/tmp/start.sh.lock"
 log() { printf "\033[1;34m[start.sh]\033[0m %s\n" "$*"; }
 err() { printf "\033[1;31m[start.sh]\033[0m %s\n" "$*" >&2; }
 
-if [[ "$(uname -s)" != "Linux" ]]; then
-    err "This script must run on the Raspberry Pi (detected: $(uname -s))."
-    err "Sync to the Pi first: ./not_used/sync_to_pi.sh"
-    exit 1
-fi
-
 # Wi-Fi credentials live in .env (gitignored) — the same file demo.py reads
 # via python-dotenv. Copy .env.example to .env on each machine.
 ENV_FILE="$REPO_ROOT/.env"
@@ -121,11 +115,6 @@ ensure_cozmo_wifi() {
 }
 
 acquire_lock
-
-if ! ping -c 1 -W 2 192.168.10.1 >/dev/null 2>&1; then
-    err "Wired management link (192.168.10.0/24) is down. Aborting."
-    exit 4
-fi
 
 ensure_cozmo_wifi
 
