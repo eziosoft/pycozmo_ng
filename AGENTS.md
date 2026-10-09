@@ -111,6 +111,7 @@ pycozmo_ng/             # Main library (import name: pycozmo_ng)
 ├── sound/              # audio.py (μ-law encoding), tts.py (offline TTS, WAV cache)
 ├── util/               # coords.py (frame transforms), util.py (Pose/Vector3/Angle), robot.py, filter.py, object.py
 ├── lights/             # Color class + predefined light states
+├── mcp/                # MCP adapter for LLM clients (tools, jobs, safety, server)
 ├── tests/              # Unit tests — mocked, run without a robot
 └── tests_live/         # Opt-in tests against a connected Cozmo
 ```

@@ -23,6 +23,12 @@ dependencies = [
     "pyttsx3>=2.99",
 ]
 
+[project.optional-dependencies]
+# MCP endpoint for LLM clients (Cozmo.mcp.start() / demo.py --mcp).
+mcp = [
+    "mcp>=2.0",
+]
+
 [tool.ruff]
 line-length = 120
 

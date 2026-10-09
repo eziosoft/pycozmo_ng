@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -99,6 +99,30 @@ class VisionAPI:
     def camera_calibration(self):
         """Get the camera calibration (available after setup_vision)."""
         return self._brain.camera_calibration
+
+    @property
+    def camera_settings(self) -> dict:
+        """Camera settings currently in force (gain, exposure_ms, ...)."""
+        return self._brain.camera.settings
+
+    def apply_settings(self, settings: dict) -> dict:
+        """Apply a partial camera-settings update and return the applied state.
+
+        Omitted keys keep their current values; unknown keys are
+        dropped. Equivalent to the browser's ``camera_settings`` action.
+
+        Args:
+            settings: Any subset of the camera settings vocabulary.
+
+        Returns:
+            The settings in force after the update.
+
+        Raises:
+            RuntimeError: If not connected to the robot.
+        """
+        if self._brain.cli is None:
+            raise RuntimeError("Not connected - call Cozmo.connect() first")
+        return self._brain.camera.apply_settings(settings)
 
 
 class CubesAPI:
@@ -238,6 +262,27 @@ class NavigatorAPI:
         """Stop all movement."""
         self._navigator.stop()
 
+    def navigate_to(self, x: float, y: float) -> None:
+        """Navigate to a world position (mm) in the background.
+
+        Uses the A* path when enabled (see :meth:`set_astar_enabled`),
+        otherwise the firmware path follower. Supersedes any navigation
+        already in flight; observe it through :attr:`active_motions`.
+        """
+        self._navigator.navigate_to(x, y)
+
+    def cancel_navigation(self) -> None:
+        """Cancel background navigation and stop the motors.
+
+        Leaves other motion (approach, dock) untouched.
+        """
+        self._navigator.navigate_to(None)
+
+    @property
+    def active_motions(self) -> tuple[str, ...]:
+        """Names of motion jobs running right now (``navigate``, ``approach``, ...)."""
+        return self._brain.motion.active_names
+
     def set_astar_enabled(self, enabled: bool) -> None:
         """Enable or disable A* obstacle-avoiding pathfinding."""
         self._navigator.set_astar_enabled(enabled)
@@ -280,6 +325,17 @@ class WorldMapAPI:
             ValueError: If ``cube_id`` is outside 1-3.
         """
         return self._world_map.get_cube(to_world_index(cube_id))
+
+    def get_world_state(self) -> dict:
+        """Full world snapshot as plain JSON-able data (world frame, mm/rad).
+
+        Keys: ``robot`` (position, yaw, origin_id), ``cubes`` (world-map
+        index 0-2 -> pose), ``faces``, ``charger``, ``aruco_markers``,
+        ``path_points``, ``astar_path``. Cube-facing members of this
+        class use IDs 1-3; this raw snapshot keeps the map's own keys —
+        use :meth:`get_cube` for the ID-based view.
+        """
+        return self._world_map.get_world_state()
 
 
 class SensorsAPI:
@@ -333,6 +389,30 @@ class SensorsAPI:
         cli = self._brain.cli
         return cli.lift_position.height.mm if cli else 0.0
 
+    @property
+    def is_charging(self) -> bool:
+        """Whether the robot reports charging right now."""
+        with self._brain.dock_state.lock:
+            return self._brain.dock_state.charging
+
+    @property
+    def on_charger(self) -> bool:
+        """Whether the robot believes it is on the charger."""
+        with self._brain.dock_state.lock:
+            return self._brain.dock_state.on_charger
+
+    @property
+    def picked_up(self) -> bool:
+        """Whether the robot is currently picked up."""
+        cli = self._brain.cli
+        return bool(cli.robot_picked_up) if cli else False
+
+    @property
+    def moving(self) -> bool:
+        """Whether the wheels are reported as moving."""
+        cli = self._brain.cli
+        return bool(cli.robot_moving) if cli else False
+
 
 class WebViewerAPI:
     """High-level web viewer interface."""
@@ -353,6 +433,61 @@ class WebViewerAPI:
     def is_running(self) -> bool:
         """Whether the web viewer server is running."""
         return self._web_viewer.is_running
+
+
+class McpAPI:
+    """MCP server interface — let LLM clients drive Cozmo and read its state.
+
+    The server speaks MCP streamable HTTP in-process (like the web
+    viewer), default ``127.0.0.1:8766``. Requires the optional extra::
+
+        pip install 'pycozmo-ng[mcp]'
+
+    Example:
+        cozmo.mcp.start()
+        # ... point an MCP client at http://127.0.0.1:8766/mcp ...
+        cozmo.mcp.stop()
+    """
+
+    def __init__(self, cozmo: Cozmo):
+        self._cozmo = cozmo
+        self._server: Any = None
+
+    def start(self, host: str = "127.0.0.1", port: int = 8766) -> None:
+        """Start the MCP server (no-op when already running).
+
+        Args:
+            host: Bind address (default localhost — keep it there unless
+                you trust the LAN, the tool surface can move the robot).
+            port: TCP port (default 8766).
+
+        Raises:
+            RuntimeError: If the ``mcp`` package is not installed.
+        """
+        if self._server is not None and self._server.is_running:
+            return
+        from pycozmo_ng.mcp.server import McPServer
+
+        self._server = McPServer(self._cozmo, host=host, port=port)
+        self._server.start()
+
+    def stop(self) -> None:
+        """Stop the MCP server (no-op when not running)."""
+        if self._server is not None:
+            self._server.stop()
+            self._server = None
+
+    @property
+    def is_running(self) -> bool:
+        """Whether the MCP server is serving."""
+        return self._server is not None and self._server.is_running
+
+    @property
+    def url(self) -> str | None:
+        """Endpoint URL for an MCP client, or None when not running."""
+        if self._server is None or not self._server.is_running:
+            return None
+        return self._server.url
 
 
 class Cozmo:
@@ -382,6 +517,7 @@ class Cozmo:
         self._world_map: WorldMapAPI | None = None
         self._sensors: SensorsAPI | None = None
         self._web_viewer: WebViewerAPI | None = None
+        self._mcp: McpAPI | None = None
 
     @property
     def vision(self) -> VisionAPI:
@@ -424,6 +560,12 @@ class Cozmo:
         if self._web_viewer is None:
             self._web_viewer = WebViewerAPI(self._brain)
         return self._web_viewer
+
+    @property
+    def mcp(self) -> McpAPI:
+        if self._mcp is None:
+            self._mcp = McpAPI(self)
+        return self._mcp
 
     def connect(
         self,

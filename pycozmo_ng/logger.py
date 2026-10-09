@@ -13,6 +13,7 @@ __all__ = [
     "logger_animation",
     "logger_behavior",
     "logger_cubes",
+    "logger_mcp",
     "logger_protocol",
     "logger_reaction",
     "logger_robot",
@@ -34,6 +35,8 @@ logger_behavior = logging.getLogger("pycozmo_ng.behavior")
 logger_animation = logging.getLogger("pycozmo_ng.animation")
 # Cube logger - cube-light worker diagnostics (connections, object_id cache).
 logger_cubes = logging.getLogger("pycozmo_ng.cubes")
+# MCP logger - MCP server lifecycle and tool calls (LLM adapter).
+logger_mcp = logging.getLogger("pycozmo_ng.mcp")
 
 
 def setup_basic_logging(
@@ -81,6 +84,7 @@ def setup_basic_logging(
         logger_reaction,
         logger_behavior,
         logger_animation,
+        logger_mcp,
     ):
         lg.handlers = [h for h in lg.handlers if not getattr(h, "_pycozmo_basic", False)]
         lg.addHandler(handler)
