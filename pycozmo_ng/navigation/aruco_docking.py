@@ -599,10 +599,6 @@ class ArucoDocking:
     def _turn_to(self, job: MotionToken, heading: float) -> bool:
         """Turn in place to *heading* — closed loop on the yaw error.
 
-        Uses adaptive gain: larger errors get faster turns, smaller errors
-        get gentler turns to reduce oscillation. This prevents the "bucking"
-        effect at the start of the turn.
-
         Returns False when cancelled or when the heading did not
         converge within the timeout.
         """
@@ -617,12 +613,7 @@ class ArucoDocking:
             if abs(err) < self.TURN_TOL_RAD:
                 cli.stop_all_motors()
                 return True
-
-            # Adaptive gain: scale by error magnitude to reduce oscillation
-            # Larger errors → faster turns (preserve responsiveness)
-            # Smaller errors → gentler turns (reduce oscillation)
-            gain = max(0.5, min(1.5, abs(err) / 0.5))  # normalized to [0.5, 1.5]
-            omega = max(-1.0, min(1.0, gain * err)) * self.TURN_SPEED_MMPS
+            omega = max(-1.0, min(1.0, err * 2.2)) * self.TURN_SPEED_MMPS
             cli.drive_wheels(lwheel_speed=-omega, rwheel_speed=omega)
             time.sleep(0.03)
 
