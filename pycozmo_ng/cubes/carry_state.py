@@ -115,6 +115,11 @@ class CarryDetector:
         self._grabbed_at = 0.0
         #: Lift motion seen since ``note_grab`` (the commanded rise).
         self._saw_lift_motion = False
+        #: Highest lift height (mm) observed since the last grab. Used to
+        #: distinguish "the forks rose above the carry threshold and then
+        #: came back down" (a drop) from "the forks rose but the height
+        #: sensor is still stale at the pre-rise reading".
+        self._peak_lift_mm: float = 0.0
         #: The cube was seen after the grab: the check ended — the
         #: NOT_CARRYING verdict latches until the next ``note_grab``.
         self._resolved = False
@@ -131,6 +136,7 @@ class CarryDetector:
             self._cube_index = int(cube_index)
             self._grabbed_at = self._clock()
             self._saw_lift_motion = False
+            self._peak_lift_mm = self._lift_height_mm()
             self._resolved = False
             self._last_logged = None
         logger.info(
@@ -162,6 +168,11 @@ class CarryDetector:
 
         lift = self._lift_height_mm()
         in_pos = self._lift_in_pos()
+
+        # Track the highest lift height seen since the grab.
+        with self._lock:
+            if lift > self._peak_lift_mm:
+                self._peak_lift_mm = lift
 
         if index is None:
             state, detail = self._unarmed_state(lift, in_pos)
@@ -242,6 +253,18 @@ class CarryDetector:
             saw_motion = self._saw_lift_motion
 
         if saw_motion or lift >= self.MIN_CARRY_LIFT_MM:
+            # The fork finished a move. If it settled below the carry
+            # threshold AND the peak height was at or above it, the
+            # forks went up and then came back down — a deliberate drop.
+            with self._lock:
+                peak = self._peak_lift_mm
+            if in_pos and lift < self.MIN_CARRY_LIFT_MM and peak >= self.MIN_CARRY_LIFT_MM:
+                self.clear()
+                return (
+                    CarryState.NOT_CARRYING,
+                    (f"forks settled low at {lift:.1f}mm after reaching {peak:.1f}mm — cube placed (cube {cube_id})"),
+                )
+
             # The fork finished the commanded rise (or reads up): now,
             # and only now, visibility decides.
             age = self._seconds_since_seen(index, now)
