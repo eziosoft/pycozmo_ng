@@ -89,23 +89,17 @@ class ArucoDocking:
 
     JOB_ARUCO_DOCK: str = "aruco_dock"
 
-    #: Standoff in front of the marker, and the range held while measuring
-    #: its normal. Shorter is better on three independent counts, which is
-    #: why this came down from 200 mm:
-    #:
-    #: * **Aim-error lever arm** — lateral aim error is
-    #:   ``bearing_error x distance``, so 150 mm loses 25% of the error
-    #:   200 mm would have.
-    #: * **Corner precision** — a closer marker covers more pixels
-    #:   (34 px vs 26 px at QVGA), so the sub-pixel corner fit is ~30%
-    #:   better.
-    #: * **Blind reverse** — the open-loop leg shrinks from 135 mm to
-    #:   85 mm (docked geometry sits 65 mm back), so less odometry error
-    #:   accumulates while the marker is out of sight.
-    #:
-    #: 150 mm was also what the live robot reported: attitude from ~15 cm
-    #: looked far better than from further out.
-    APPROACH_DIST_MM: float = 150.0
+    #: Standoff in front of the marker. 120 mm (down from 150 mm after
+    #: live testing found the bearing error of the estimated normal still
+    #: too large at 150 mm standoff): shorter reduces the lever arm that
+    #: multiplies bearing error into lateral error and shortens the blind
+    #: reverse. 120 mm keeps the 180° turn clear of the charger
+    #: (half-diagonal ~53 mm, centre-to-charger ~67 mm during the turn).
+    APPROACH_DIST_MM: float = 120.0
+    #: Distance held from the marker while measuring its normal. 150 mm
+    #: gives a clear oblique view at 20° obliquity (marker edge ~101 px
+    #: at QVGA, margin ~59 px). Longer than the standoff because the
+    #: vantage is a measurement pose, not the reverse start.
     VANTAGE_DIST_MM: float = 150.0
     #: Dwell at the vantage while the marker is seen obliquely.
     #: Mirrors ``CubeApproach.STANDOFF_DWELL_S``: the world-map EMA (alpha
@@ -159,9 +153,13 @@ class ArucoDocking:
     #: Final centring tolerance before the 180 deg turn — measured against
     #: the robot's own heading (see the module docstring), so this is a
     #: genuine millimetre quantity rather than a normal-derived fudge.
-    #: Equal to ``MIN_SEG_MM``: a smaller correction could not be sent as a
-    #: path segment anyway.
-    LATERAL_TOL_MM: float = 15.0
+    #: Tightened from 15 mm to 10 mm after live testing: the old
+    #: tolerance let the robot pass without correction at offsets
+    #: that matched the charger capture width. 10 mm forces the
+    #: heading correction for any material offset while still
+    #: accommodating the 2° turn-tolerance residual (at 120 mm
+    #: standoff, 2° → 4.2 mm).
+    LATERAL_TOL_MM: float = 10.0
     ALIGN_RETRIES: int = 3
     #: Short settle before each centring measurement so the line being
     #: corrected against is the converged one, not a moving EMA.
@@ -600,6 +598,10 @@ class ArucoDocking:
     def _turn_to(self, job: MotionToken, heading: float) -> bool:
         """Turn in place to *heading* — closed loop on the yaw error.
 
+        Uses adaptive gain: larger errors get faster turns, smaller errors
+        get gentler turns to reduce oscillation. This prevents the "bucking"
+        effect at the start of the turn.
+
         Returns False when cancelled or when the heading did not
         converge within the timeout.
         """
@@ -614,7 +616,12 @@ class ArucoDocking:
             if abs(err) < self.TURN_TOL_RAD:
                 cli.stop_all_motors()
                 return True
-            omega = max(-1.0, min(1.0, err * 2.2)) * self.TURN_SPEED_MMPS
+
+            # Adaptive gain: scale by error magnitude to reduce oscillation
+            # Larger errors → faster turns (preserve responsiveness)
+            # Smaller errors → gentler turns (reduce oscillation)
+            gain = max(0.5, min(1.5, abs(err) / 0.5))  # normalized to [0.5, 1.5]
+            omega = max(-1.0, min(1.0, gain * err)) * self.TURN_SPEED_MMPS
             cli.drive_wheels(lwheel_speed=-omega, rwheel_speed=omega)
             time.sleep(0.03)
 
