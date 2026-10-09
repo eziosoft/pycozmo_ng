@@ -6,9 +6,10 @@ no asyncio anywhere else in the robot path). The ``mcp`` SDK is an
 optional extra (``pycozmo-ng[mcp]``); this module imports it lazily so
 the rest of the package (and this module's own import) works without it.
 
-Transport: streamable HTTP at ``http://<host>:<port>/mcp``, bound to
-localhost by default — the tool surface can move a physical robot, so
-exposing it to a LAN is a deliberate, explicit choice by the caller.
+Transport: streamable HTTP at ``http://<host>:<port>/mcp``. Binds to
+all interfaces by default so LAN clients (and LLM hosts) can reach the
+robot — the tool surface can move a physical robot, so restricting it
+to localhost is the explicit choice of the caller when needed.
 """
 
 from __future__ import annotations
@@ -43,7 +44,8 @@ class McPServer:
 
     Args:
         cozmo: The public API instance backing the tools.
-        host: Bind address (``127.0.0.1`` unless explicitly changed).
+        host: Bind address (``0.0.0.0`` — all interfaces — unless
+            explicitly restricted).
         port: TCP port.
         limits: Safety caps forwarded to the toolset.
     """
@@ -51,7 +53,7 @@ class McPServer:
     def __init__(
         self,
         cozmo: Cozmo,
-        host: str = "127.0.0.1",
+        host: str = "0.0.0.0",
         port: int = 8767,
         limits: SafetyLimits | None = None,
     ):

@@ -4,7 +4,7 @@
 Connects to Cozmo, initializes vision processor, and runs the headless loop.
 All reusable logic lives in pycozmo_ng; this file is only argparse + wiring.
 The interface is the web viewer (http://<machine-ip>:8765) and, with --mcp,
-an MCP endpoint for LLM clients (http://127.0.0.1:8767/mcp).
+an MCP endpoint for LLM clients (http://<machine-ip>:8767/mcp).
 
 Progress is reported through the ``pycozmo_ng.demo`` logger (never ``print``),
 as numbered startup steps so it is obvious what the script is doing — and
@@ -109,7 +109,7 @@ def main():
         metavar="PORT",
         help=(
             "Serve an MCP endpoint for LLM clients (streamable HTTP, "
-            "default port 8767, localhost only). Requires the optional "
+            "default port 8767, all interfaces). Requires the optional "
             "extra: pip install 'pycozmo-ng[mcp]'."
         ),
     )
@@ -213,7 +213,7 @@ def main():
             if args.mcp is not None:
                 _step(13, "Starting MCP endpoint (streamable HTTP, port %d)...", args.mcp)
                 cozmo.mcp.start(port=args.mcp)
-                logger.info("MCP endpoint for LLM clients: http://127.0.0.1:%d/mcp", args.mcp)
+                logger.info("MCP endpoint for LLM clients: http://%s:%d/mcp", get_local_ip(), args.mcp)
             else:
                 _step(13, "Skipping MCP endpoint (--mcp not given)")
 
