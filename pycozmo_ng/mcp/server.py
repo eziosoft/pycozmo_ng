@@ -14,6 +14,7 @@ to localhost is the explicit choice of the caller when needed.
 
 from __future__ import annotations
 
+import functools
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -158,4 +159,54 @@ class McPServer:
             "list_jobs",
         )
         for name in names:
-            mcp.add_tool(getattr(self.toolset, name), name=name, structured_output=False)
+            fn = getattr(self.toolset, name)
+            if name == "get_frame":
+                fn = self._get_frame_image_wrapper()
+            mcp.add_tool(fn, name=name, structured_output=False)
+
+    def _get_frame_image_wrapper(self):
+        """Return a ``get_frame`` wrapper that emits real MCP image content.
+
+        The Toolset stays free of the ``mcp`` SDK (its calls are JSON dicts by
+        contract), so the base64 JPEG leaves the robot path as text. MCP clients
+        (LLMs) can't see a base64 string as an image, so this wrapper — built
+        where the SDK is already in scope — converts a populated frame into
+        ``ImageContent`` plus a ``TextContent`` summary, returned as a
+        ``CallToolResult``. A null return is passed through as the plain dict
+        (the camera has no frame yet, there is nothing to draw).
+        """
+        from mcp_types import CallToolResult, ImageContent, TextContent
+
+        frame_fn = self.toolset.get_frame
+
+        @functools.wraps(frame_fn)
+        def _wrapper(**kwargs: Any) -> Any:
+            result = frame_fn(**kwargs)
+            frame = result.get("frame")
+            if not frame or not frame.get("jpeg_base64"):
+                return result  # no frame available yet — text snapshot is right
+            blocks: list[Any] = [ImageContent(type="image", data=frame["jpeg_base64"], mime_type="image/jpeg")]
+            summary = frame.get("detections_summary")
+            meta = f"Frame {frame.get('width')}x{frame.get('height')}px, timestamp {frame.get('timestamp'):.3f}" + (
+                f"\n{summary}" if summary else ""
+            )
+            blocks.append(TextContent(type="text", text=meta))
+            return CallToolResult(content=blocks)
+
+        _wrapper.__doc__ = (
+            "Latest camera frame as MCP image content (JPEG), optimised for LLM consumption, "
+            "plus a text block summarising what the vision pipeline sees in the frame.\n\n"
+            "Args:\n"
+            "    annotated: When true, return the annotated frame (detection boxes,\n"
+            "        labels, confidence, distance drawn on the image) instead of the\n"
+            "        raw camera frame.\n"
+            "    max_width: Downscale the image so its width is at most this many\n"
+            "        pixels (aspect ratio preserved). 0 = original resolution. Use\n"
+            "        320 or 160 for smaller payloads.\n"
+            "    jpeg_quality: JPEG encoding quality (1-95, default 70). Lower\n"
+            "        values produce smaller payloads at the cost of fidelity.\n\n"
+            "Returns an image content block plus a text summary of detections. When "
+            "the camera is stopped or no frame has arrived yet, returns a text "
+            "snapshot with frame: null."
+        )
+        return _wrapper

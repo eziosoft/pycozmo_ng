@@ -171,8 +171,7 @@ class CarryDetector:
 
         # Track the highest lift height seen since the grab.
         with self._lock:
-            if lift > self._peak_lift_mm:
-                self._peak_lift_mm = lift
+            self._peak_lift_mm = max(self._peak_lift_mm, lift)
 
         if index is None:
             state, detail = self._unarmed_state(lift, in_pos)

@@ -232,3 +232,52 @@ class TestServer:
         assert "stop" in names
         # Docstrings double as tool descriptions.
         assert all(tool.description for tool in tools)
+
+
+class TestGetFrameImageContent:
+    """get_frame is repackaged by the server wrapper: a populated frame must
+    leave the MCP endpoint as real image content, not a base64 JSON string."""
+
+    def _server(self, cozmo):
+        from mcp.server.mcpserver import MCPServer as SdkServer
+
+        from pycozmo_ng.mcp.server import McPServer
+
+        sdk = SdkServer(name="test")
+        McPServer(cozmo)._register_tools(sdk)
+        return sdk
+
+    def test_frame_returns_image_content_plus_summary(self, cozmo):
+        pytest.importorskip("mcp")
+        import asyncio
+        import base64
+        import io
+
+        from mcp_types import ImageContent, TextContent
+        from PIL import Image as PILImage
+
+        cozmo._brain.frame_state.latest_raw_frame = PILImage.new("RGB", (64, 48), (255, 0, 0))
+        sdk = self._server(cozmo)
+        result = asyncio.run(sdk.call_tool("get_frame", {}))
+        assert result.is_error is False
+        blocks = result.content
+        images = [b for b in blocks if isinstance(b, ImageContent)]
+        texts = [b for b in blocks if isinstance(b, TextContent)]
+        assert len(images) == 1
+        assert images[0].data  # non-empty base64 payload
+        assert PILImage.open(io.BytesIO(base64.b64decode(images[0].data))).size == (64, 48)
+        assert len(texts) == 1
+        assert "64x48" in texts[0].text
+        assert "timestamp" in texts[0].text
+
+    def test_no_frame_returns_text_snapshot(self, cozmo):
+        pytest.importorskip("mcp")
+        import asyncio
+
+        from mcp_types import ImageContent, TextContent
+
+        sdk = self._server(cozmo)
+        result = asyncio.run(sdk.call_tool("get_frame", {}))
+        assert result.is_error is False
+        assert all(isinstance(b, TextContent) for b in result.content)
+        assert not any(isinstance(b, ImageContent) for b in result.content)

@@ -285,7 +285,7 @@ class Toolset:
         if max_width > 0 and frame.width > max_width:
             ratio = max_width / frame.width
             new_size = (max_width, max(1, int(frame.height * ratio)))
-            img = frame.resize(new_size, Image.LANCZOS)
+            img = frame.resize(new_size, Image.Resampling.LANCZOS)
 
         buf = io.BytesIO()
         jpeg_q = max(1, min(95, int(jpeg_quality)))
