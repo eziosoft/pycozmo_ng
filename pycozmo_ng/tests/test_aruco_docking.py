@@ -181,7 +181,10 @@ class TestDockSequence:
         # that makes the normal ill-conditioned.
         assert cli.go_to_pose.call_count >= 2
         vantage = cli.go_to_pose.call_args_list[0].args[0]
-        assert abs(vantage.position.y) > 50.0, "first move must be a sidestep off the marker's normal"
+        # The lateral step is VANTAGE_DIST * sin(TARGET_OBLIQUITY), so it
+        # follows the geometry rather than being a magic number.
+        expected_step = docking.VANTAGE_DIST_MM * math.sin(math.radians(TARGET_OBLIQUITY_DEG))
+        assert abs(vantage.position.y) > expected_step * 0.9, "first move must be a sidestep off the marker's normal"
         assert math.isclose(math.hypot(vantage.position.x, vantage.position.y), docking.VANTAGE_DIST_MM, rel_tol=0.05)
 
         # And that vantage must actually clear the threshold the dock

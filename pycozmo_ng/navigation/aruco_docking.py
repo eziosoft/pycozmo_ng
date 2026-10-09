@@ -89,12 +89,24 @@ class ArucoDocking:
 
     JOB_ARUCO_DOCK: str = "aruco_dock"
 
-    APPROACH_DIST_MM: float = 200.0  # standoff in front of the marker
-
-    #: Distance held from the marker while measuring its normal. Long
-    #: enough that the marker clears the robot's own body when it sidesteps
-    #: (and short enough that the position estimate stays sub-2 mm).
-    VANTAGE_DIST_MM: float = 200.0
+    #: Standoff in front of the marker, and the range held while measuring
+    #: its normal. Shorter is better on three independent counts, which is
+    #: why this came down from 200 mm:
+    #:
+    #: * **Aim-error lever arm** — lateral aim error is
+    #:   ``bearing_error x distance``, so 150 mm loses 25% of the error
+    #:   200 mm would have.
+    #: * **Corner precision** — a closer marker covers more pixels
+    #:   (34 px vs 26 px at QVGA), so the sub-pixel corner fit is ~30%
+    #:   better.
+    #: * **Blind reverse** — the open-loop leg shrinks from 135 mm to
+    #:   85 mm (docked geometry sits 65 mm back), so less odometry error
+    #:   accumulates while the marker is out of sight.
+    #:
+    #: 150 mm was also what the live robot reported: attitude from ~15 cm
+    #: looked far better than from further out.
+    APPROACH_DIST_MM: float = 150.0
+    VANTAGE_DIST_MM: float = 150.0
     #: Dwell at the vantage while the marker is seen obliquely.
     #: Mirrors ``CubeApproach.STANDOFF_DWELL_S``: the world-map EMA (alpha
     #: 0.15/frame) needs dozens of frames to absorb the pose jump from the
