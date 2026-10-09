@@ -1,10 +1,16 @@
-"""Tests for ArucoDocking — approach, refresh pose, reverse into the charger.
+"""Tests for ArucoDocking — vantage, normal, standoff, reverse into the charger.
 
 ``ArucoDocking`` is constructible from plain dependencies (mock client,
 marker feed, dock state, motion controller) so the whole sequence runs
-without a robot: the guard when the marker is unknown, the approach +
-reverse flow, the ``on_docked`` callback that anchors the world origin,
-the timeout that gives up without docking, and cancellation.
+without a robot: the guard when the marker is unknown, the sidestep ->
+measure -> standoff -> reverse flow, the ``on_docked`` callback that
+anchors the world origin, the refusal to anchor after a failed dock, the
+timeout that gives up without docking, and cancellation.
+
+The sequence deliberately never re-derives the marker's normal while
+driving straight at it: a fronto-parallel view is the ill-conditioned case
+``marker_observation`` exists to avoid (see that module's docstring). The
+tests below pin that structure down as well as the outcome.
 
 The last class covers the browser wiring: the Z key must reach
 ``Navigator.dock_on_aruco`` — not the legacy pose-based dock.
@@ -19,6 +25,11 @@ import numpy as np
 
 from pycozmo_ng.navigation.aruco_docking import ArucoDocking
 from pycozmo_ng.navigation.dock_state import DockState
+from pycozmo_ng.navigation.marker_observation import (
+    MIN_USABLE_OBLIQUITY_DEG,
+    TARGET_OBLIQUITY_DEG,
+    obliquity_deg,
+)
 from pycozmo_ng.navigation.motion_controller import MotionController
 from pycozmo_ng.navigation.world_map import ArucoState
 
@@ -118,7 +129,11 @@ class _MarkerFeed:
         )
 
 
-def _make(marker_known: bool = True, x: float = 500.0, marker_move: tuple[float, float] | None = None):
+def _make(
+    marker_known: bool = True,
+    x: float = 500.0,
+    marker_move: tuple[float, float] | None = None,
+):
     ds = DockState()
     motion = MotionController()
     cli = _FakeCli(x=x)
@@ -131,7 +146,11 @@ def _make(marker_known: bool = True, x: float = 500.0, marker_move: tuple[float,
         motion=motion,
         on_docked=on_docked,
     )
-    docking.STANDOFF_DWELL_S = 0.1  # keep the tests fast
+    # keep the tests fast: every dwell is a couple of poll ticks
+    docking.VANTAGE_DWELL_S = 0.1
+    docking.SAMPLE_WINDOW_S = 0.05
+    docking.STANDOFF_DWELL_S = 0.1
+    docking.ALIGN_DWELL_S = 0.1
     return docking, cli, ds, motion, on_docked
 
 
@@ -145,8 +164,12 @@ class TestDockGuards:
 
 
 class TestDockSequence:
-    def test_approach_turn_reverse_then_docked(self):
-        """Face the marker (20 cm out), turn 180°, reverse, dock."""
+    def test_sidestep_then_standoff_then_reverse(self):
+        """Sidestep to a vantage, read the normal, drive the standoff, reverse.
+
+        Two path segments: the sideways move onto the vantage, then the
+        drive to the standoff. The 180° turn must not send one.
+        """
         docking, cli, ds, motion, on_docked = _make()
         ds.charging = True  # contacts detect immediately on reverse
 
@@ -154,36 +177,89 @@ class TestDockSequence:
         assert ArucoDocking.JOB_ARUCO_DOCK in motion.active_names
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names)
 
-        # One path for the approach — the 180° turn must not send one.
-        assert cli.go_to_pose.call_count == 1
-        approach = cli.go_to_pose.call_args_list[0].args[0]
-        assert math.isclose(approach.position.x, 200.0)
-        assert math.isclose(approach.position.y, 0.0)
-        assert math.isclose(abs(approach.rotation.angle_z.radians), math.pi)
+        # First drive is the sidestep: it must NOT be the dead-ahead point
+        # that makes the normal ill-conditioned.
+        assert cli.go_to_pose.call_count >= 2
+        vantage = cli.go_to_pose.call_args_list[0].args[0]
+        assert abs(vantage.position.y) > 50.0, "first move must be a sidestep off the marker's normal"
+        assert math.isclose(math.hypot(vantage.position.x, vantage.position.y), docking.VANTAGE_DIST_MM, rel_tol=0.05)
 
-        # The turn ran on drive_wheels (closed loop), then the reverse.
+        # And that vantage must actually clear the threshold the dock
+        # gates on — the point of the sidestep is the angle it buys.
+        assert (
+            obliquity_deg((0.0, 0.0), (1.0, 0.0), (vantage.position.x, vantage.position.y)) >= MIN_USABLE_OBLIQUITY_DEG
+        )
+        assert TARGET_OBLIQUITY_DEG >= MIN_USABLE_OBLIQUITY_DEG
+
+        # Last drive lands on the standoff ~200 mm out, facing the marker.
+        standoff = cli.go_to_pose.call_args_list[-1].args[0]
+        assert math.isclose(math.hypot(standoff.position.x, standoff.position.y), docking.APPROACH_DIST_MM, rel_tol=0.2)
+
         turn = [c for c in cli.drive_wheels.call_args_list if c.kwargs["lwheel_speed"] == -c.kwargs["rwheel_speed"]]
         assert turn
         assert on_docked.call_count == 1
 
-    def test_correction_uses_refreshed_marker_pose(self):
-        """Camera refreshes the marker pose → approach point is recomputed.
+    def test_head_on_view_is_refused(self):
+        """A view that never gains obliquity must not aim a reverse.
 
-        Reproduces the live log: "marker pose updated — correcting to
-        (80, 3)" — marker 0 fused to (-70, 3) after the camera saw it.
+        This is the whole point of the vantage: with a fronto-parallel
+        marker the normal's bearing is meaningless, and docking on it aims
+        the reverse metres off. When every attempt comes back too head-on
+        the dock must decline and leave the world origin alone.
         """
-        docking, cli, ds, _motion, on_docked = _make(marker_move=(-70.0, 3.0))
-        ds.charging = True  # complete quickly
+        docking, cli, ds, motion, on_docked = _make(x=200.0)  # dead ahead
+        docking.ARRIVE_TIMEOUT_S = 0.05  # the pinned rig never "arrives"
+        # Pin the robot on the marker's normal line: it never actually
+        # sidesteps, so no measurement can ever gain obliquity.
+        cli.go_to_pose = MagicMock(side_effect=lambda pose, **kw: setattr(cli, "pose", _pose(200.0, 0.0, 0.0)))
+
+        docking.dock(0)
+        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
+
+        # Refused before the reverse, so the contacts never mattered and
+        # the world origin is untouched.
+        on_docked.assert_not_called()
+        assert not ds.charging
+        reverse = [
+            c
+            for c in cli.drive_wheels.call_args_list
+            if c.kwargs["lwheel_speed"] == c.kwargs["rwheel_speed"] == docking.REVERSE_SPEED_MMPS
+        ]
+        assert not reverse, "must not reverse on a head-on view"
+
+    def test_no_charging_does_not_reanchor_the_world(self):
+        """Reaching the docked distance is not the same as docking.
+
+        The geometric backstop fires on range alone, so a robot that bumps
+        the charger off-centre gets there too. Anchoring the world origin
+        on that would silently corrupt the map — so ``on_docked`` must not
+        run without the contacts actually registering.
+        """
+        docking, cli, ds, motion, on_docked = _make()
+        docking.REVERSE_TIMEOUT_S = 30.0  # must stop on geometry, not timeout
 
         assert docking.dock(0) is True
-        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in docking.motion.active_names)
+        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
 
-        assert cli.go_to_pose.call_count == 2  # approach, then correction
-        first, second = (c.args[0] for c in cli.go_to_pose.call_args_list)
-        assert math.isclose(first.position.x, 200.0)  # from the stale pose
-        assert math.isclose(second.position.x, 130.0)  # marker + 200 mm
-        assert math.isclose(second.position.y, 3.0)
-        assert on_docked.call_count == 1
+        cli.stop_all_motors.assert_called()
+        assert not ds.charging
+        on_docked.assert_not_called()
+
+    def test_reverse_stops_at_overshoot_backstop(self):
+        """No charging flag → the robot still stops on the geometric backstop.
+
+        The reverse must not rely on the charging flag alone (it can lag)
+        but must also stop rather than drive into the charger forever.
+        """
+        docking, cli, ds, motion, _on_docked = _make()
+        docking.REVERSE_TIMEOUT_S = 30.0
+
+        assert docking.dock(0) is True
+        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
+
+        # Marker at (0,0) → backstop at 65 − 50 = 15 mm out.
+        assert 5.0 <= math.hypot(cli.pose.position.x, cli.pose.position.y) <= 16.0
+        assert not ds.charging
 
     def test_timeout_gives_up_without_docked(self):
         """No charge within the reverse timeout → no post-dock anchoring."""
@@ -203,38 +279,16 @@ class TestDockSequence:
         assert not ds.charging
         on_docked.assert_not_called()
 
-    def test_reverse_stops_at_overshoot_backstop(self):
-        """No charging flag → the robot still stops at the geometric backstop.
-
-        The reverse must not rely on the charging flag alone (it can lag)
-        but must also deliberately overshoot the docked geometry so the
-        robot bumps the back of the charger — the backstop fires 50 mm
-        past the resting point — and must not run into the reverse
-        timeout either.
-        """
-        docking, cli, ds, motion, on_docked = _make()
-        docking.REVERSE_TIMEOUT_S = 30.0  # must stop on geometry, not timeout
-
-        assert docking.dock(0) is True
-        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
-
-        # Marker at (0,0) with normal +x → backstop at 65 − 50 = 15 mm out.
-        assert 5.0 <= cli.pose.position.x <= 16.0
-        assert not ds.charging
-        assert on_docked.call_count == 1
-        cli.stop_all_motors.assert_called()
-
     def test_cancel_stops_dock_without_docked(self):
         """Navigator.stop() cancels the job mid-approach — no docking."""
-        docking, cli, _ds, motion, on_docked = _make()
-        docking.STANDOFF_DWELL_S = 5.0  # park the job in the standoff dwell
+        docking, _cli, _ds, motion, on_docked = _make()
+        docking.VANTAGE_DWELL_S = 5.0  # park the job in the vantage dwell
 
         docking.dock(0)
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK in motion.active_names)
         motion.cancel_all()
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names)
 
-        assert cli.drive_wheels.call_count == 0
         on_docked.assert_not_called()
 
     def test_zero_length_path_never_sent(self):
@@ -256,7 +310,7 @@ class TestDockSequence:
     def test_supersede_new_request_cancels_the_old(self):
         docking, _cli, ds, motion, _on_docked = _make()
         ds.charging = True
-        docking.STANDOFF_DWELL_S = 1.0
+        docking.VANTAGE_DWELL_S = 1.0
 
         docking.dock(0)
         first = next(t for t in motion._jobs if t.name == ArucoDocking.JOB_ARUCO_DOCK)
@@ -267,14 +321,22 @@ class TestDockSequence:
 
 
 class TestAlignToLine:
-    """The reverse is open loop — a robot off the normal line docks off-centre."""
+    """The reverse is open loop — a crooked approach docks crooked."""
 
-    def test_off_line_robot_is_centred_on_the_marker_line(self):
-        """40 mm lateral offset → the robot is driven back onto the line."""
+    def test_off_line_robot_is_reaimed_at_the_marker(self):
+        """Robot 40 mm off the marker's centreline → re-aimed onto it.
+
+        The correction is a turn onto the bearing to the marker: aiming
+        the robot at the marker is what zeroes the offset, and it holds the
+        standoff distance exactly.
+        """
         ds = DockState()
         motion = MotionController()
-        cli = _FakeCli(x=200.0, y=0.0)
-        feed = _MarkerFeed(x=0.0, y=-40.0)  # normal line runs along y = -40
+        # Standing 200 mm out and 40 mm to the side of the marker, facing
+        # back along -x rather than at it — the classic "docked crooked"
+        # geometry the reverse cannot recover from.
+        cli = _FakeCli(x=200.0, y=-40.0, yaw=math.pi)
+        feed = _MarkerFeed(x=0.0, y=0.0)
         docking = ArucoDocking(
             cli=cli,
             get_marker_state=feed.get,
@@ -282,23 +344,31 @@ class TestAlignToLine:
             motion=motion,
             on_docked=MagicMock(),
         )
+        docking.ALIGN_DWELL_S = 0.1
 
         with motion.begin("test_align") as job:
             assert docking._align_to_line(job, 0) is True
 
-        # Robot re-driven onto the marker's normal line, same standoff.
-        assert math.isclose(cli.pose.position.y, -40.0, abs_tol=1.0)
+        # Now pointing at the marker centre, from the same standoff.
+        bearing = math.atan2(0.0 - cli.pose.position.y, 0.0 - cli.pose.position.x)
+        assert math.isclose(cli.pose.rotation.angle_z.radians, bearing, abs_tol=0.05)
+        # The turn is in place, so the robot has not moved: the standoff
+        # from the origin is still 40 mm off the marker's centreline, but
+        # the rear axis now points straight at it — which is what a reverse
+        # needs. Distance to the marker is unchanged too.
         assert math.isclose(cli.pose.position.x, 200.0, abs_tol=1.0)
+        assert math.isclose(cli.pose.position.y, -40.0, abs_tol=1.0)
 
-    def test_centred_robot_needs_no_correction(self):
-        """Already on the line → no path is sent."""
+    def test_aligned_robot_needs_no_correction(self):
+        """Already aimed at the marker → nothing is sent."""
         docking, cli, _ds, motion, _on_docked = _make()
-        cli.pose = _pose(200.0, 0.0, math.pi)  # on the line, facing away
+        cli.pose = _pose(200.0, 0.0, math.pi)  # marker dead ahead
 
         with motion.begin("test_align") as job:
             assert docking._align_to_line(job, 0) is True
 
         cli.go_to_pose.assert_not_called()
+        cli.drive_wheels.assert_not_called()
 
 
 class TestZKeyWiring:
