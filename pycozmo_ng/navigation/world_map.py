@@ -35,6 +35,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
+from pycozmo_ng.cubes.identity import to_cube_id
 from pycozmo_ng.logger import logger
 from pycozmo_ng.util.coords import camera_to_world
 
@@ -44,6 +45,29 @@ __all__ = [
     "FaceState",
     "WorldMap",
 ]
+
+#: A measurement this far (mm) from the fused pose gets an info line:
+#: it means the map was *stale* — an object re-sighted after leaving the
+#: frame, or odometry drift — and is being corrected. Smaller deltas are
+#: normal EMA convergence and stay out of the log. A stale map is what
+#: makes the robot aim at where an object *was*, so the corrections are
+#: exactly the positions worth having on record.
+_LOG_CORRECTION_MM: float = 20.0
+
+
+def _log_pose_correction(what: str, fused_xy, measured_xy) -> None:
+    """Info line when a measurement pulls the fused pose by ``_LOG_CORRECTION_MM``+."""
+    drift = float(np.hypot(float(measured_xy[0]) - float(fused_xy[0]), float(measured_xy[1]) - float(fused_xy[1])))
+    if drift >= _LOG_CORRECTION_MM:
+        logger.info(
+            "WorldMap: %s measurement %.0f mm off the fused pose — correcting (%.0f, %.0f) → (%.0f, %.0f)",
+            what,
+            drift,
+            float(fused_xy[0]),
+            float(fused_xy[1]),
+            float(measured_xy[0]),
+            float(measured_xy[1]),
+        )
 
 
 class CubeState:
@@ -301,7 +325,13 @@ class WorldMap:
         pos = np.asarray(position, dtype=np.float64).reshape(3)
         with self._lock:
             if origin_id is not None and self._robot_origin_id is not None and origin_id != self._robot_origin_id:
-                logger.info("WorldMap: localization origin changed — resetting map")
+                # Positions are in the *old* frame — recording them lets a
+                # log reader line the dropped world up against everything
+                # logged before the reset.
+                logger.info(
+                    "WorldMap: localization origin changed — resetting map, dropping %s",
+                    ", ".join(self._contents_locked()) or "empty map",
+                )
                 self._cubes.clear()
                 self._charger = None
                 self._aruco.clear()
@@ -311,6 +341,24 @@ class WorldMap:
             self._robot_yaw = float(yaw_rad)
             if record_path:
                 self._path_points.append(pos.copy())
+
+    def _contents_locked(self) -> list[str]:
+        """Compact ``label (x, y)`` strings for every tracked object.
+
+        Caller must hold ``self._lock``. Used by the origin-change log to
+        record where the objects *were* in the frame being dropped, so a
+        log reader can line the two worlds up.
+        """
+        items = [
+            f"marker {mid} ({ms.position[0]:.0f}, {ms.position[1]:.0f})" for mid, ms in sorted(self._aruco.items())
+        ]
+        if self._charger is not None:
+            items.append(f"charger ({self._charger.position[0]:.0f}, {self._charger.position[1]:.0f})")
+        items += [
+            f"cube {to_cube_id(ci)} ({cs.position[0]:.0f}, {cs.position[1]:.0f})"
+            for ci, cs in sorted(self._cubes.items())
+        ]
+        return items
 
     def reset_path(self) -> None:
         """Clear the path trail (e.g. on pick-up or a 'p' key press)."""
@@ -396,7 +444,16 @@ class WorldMap:
                     face_rotation=face_rotation,
                     updated_at=now,
                 )
+                logger.info(
+                    "WorldMap: cube %d first seen at (%.0f, %.0f) — conf %.2f",
+                    to_cube_id(cube_index),
+                    pos_world[0],
+                    pos_world[1],
+                    confidence,
+                )
                 return
+
+            _log_pose_correction(f"cube {to_cube_id(cube_index)}", prev.position, pos_world)
 
             # Position: confidence-weighted exponential smoothing.
             pos_blend = self.smoothing_alpha * float(confidence)
@@ -469,6 +526,9 @@ class WorldMap:
                     label=label,
                     updated_at=now,
                 )
+                # Debug: faces appear and vanish constantly; the presence
+                # epochs are already surfaced by the face pipeline.
+                logger.debug("WorldMap: %s first seen at (%.0f, %.0f)", label, pos_world[0], pos_world[1])
                 return
 
             alpha = self.smoothing_alpha * float(confidence)
@@ -553,7 +613,15 @@ class WorldMap:
                     confidence=confidence,
                     updated_at=now,
                 )
+                logger.info(
+                    "WorldMap: charger marker first seen at (%.0f, %.0f) — conf %.2f",
+                    pos_world[0],
+                    pos_world[1],
+                    confidence,
+                )
                 return
+
+            _log_pose_correction("charger marker", prev.position, pos_world)
 
             alpha = self.smoothing_alpha * float(confidence)
             position = alpha * pos_world + (1.0 - alpha) * prev.position
@@ -642,7 +710,16 @@ class WorldMap:
                     size_mm=size_mm,
                     updated_at=now,
                 )
+                logger.info(
+                    "WorldMap: marker %d first seen at (%.0f, %.0f) — conf %.2f",
+                    marker_id,
+                    pos_world[0],
+                    pos_world[1],
+                    confidence,
+                )
                 return
+
+            _log_pose_correction(f"marker {marker_id}", prev.position, pos_world)
 
             alpha = self.smoothing_alpha * float(confidence)
             position = alpha * pos_world + (1.0 - alpha) * prev.position

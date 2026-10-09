@@ -141,6 +141,11 @@ class Navigator:
             if self.ds.origin_reset_origin_id == cli.pose.origin_id:
                 return
 
+        # Snapshot scalars in the *old* frame: after SetOrigin every pose
+        # read is the new one, so this is the only place the pre-reset
+        # position (where the robot physically stands) can be logged from.
+        # Values, not the object — the client replaces ``pose`` per tick.
+        ox, oy, oyaw = cli.pose.position.x, cli.pose.position.y, cli.pose.rotation.angle_z.radians
         reset_pkt = pycozmo_ng.protocol_encoder.SetOrigin(
             pose_frame_id=cli.pose_frame_id + 1,
             pose_origin_id=cli.pose.origin_id + 1,
@@ -150,7 +155,15 @@ class Navigator:
         with self.ds.lock:
             self.ds.origin_reset_origin_id = cli.pose.origin_id
             self.ds.dock_pose = cli.pose
-        logger.info("Pose origin reset - current pose is now origin")
+        logger.info(
+            "Pose origin reset — robot was (%.0f, %.0f, %.1f deg) in the old frame, now (%.0f, %.0f, %.1f deg)",
+            ox,
+            oy,
+            math.degrees(oyaw),
+            cli.pose.position.x,
+            cli.pose.position.y,
+            math.degrees(cli.pose.rotation.angle_z.radians),
+        )
 
     # ------------------------------------------------------------------
     # Click-to-navigate (COZMO-28 / COZMO-30)

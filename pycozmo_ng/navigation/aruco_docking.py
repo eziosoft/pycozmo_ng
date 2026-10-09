@@ -247,7 +247,7 @@ class ArucoDocking:
                 return
             if not self._reverse_into_charger(job, marker_id):
                 return
-            logger.info("ArUco dock: docked")
+            logger.info("ArUco dock: docked — %s", self._scene(marker_id))
             if self._on_docked is not None:
                 self._on_docked()
         except Exception:  # noqa: BLE001
@@ -264,9 +264,10 @@ class ArucoDocking:
         module docstring. Everything after it is ordinary closed-loop
         driving.
         """
+        logger.info("ArUco dock: start — %s", self._scene(marker_id))
         estimate = self._measure_normal(job, marker_id)
         if estimate is None:
-            logger.warning("ArUco dock: no usable view of marker %d", marker_id)
+            logger.warning("ArUco dock: no usable view of marker %d — %s", marker_id, self._scene(marker_id))
             return False
         if not estimate.usable:
             # Degenerate view: aiming a reverse from this would put the
@@ -274,10 +275,11 @@ class ArucoDocking:
             # dock on a bad estimate — the caller can re-run from a new
             # robot pose, which changes the geometry anyway.
             logger.warning(
-                "ArUco dock: marker %d view too head-on (%.0f deg obliquity, need %.0f) — not docking",
+                "ArUco dock: marker %d view too head-on (%.0f deg obliquity, need %.0f) — not docking — %s",
                 marker_id,
                 estimate.obliquity_deg,
                 MIN_USABLE_OBLIQUITY_DEG,
+                self._scene(marker_id),
             )
             return False
 
@@ -289,14 +291,16 @@ class ArucoDocking:
         # settle" before the alignment check could even measure it.
         heading = math.atan2(estimate.y - standoff_y, estimate.x - standoff_x)
         logger.info(
-            "ArUco dock: standoff (%.0f, %.0f) from marker %d normal — %s",
+            "ArUco dock: standoff (%.0f, %.0f) from marker %d, heading %.1f deg — %s",
             standoff_x,
             standoff_y,
             marker_id,
+            math.degrees(heading),
             estimate.describe(),
         )
         if not self._go(job, standoff_x, standoff_y, heading):
             return False
+        logger.info("ArUco dock: at standoff — %s", self._scene(marker_id))
 
         # The reverse below is open loop — commit only once the robot's rear
         # axis provably points at the marker.
@@ -316,12 +320,16 @@ class ArucoDocking:
         for attempt in range(self.VANTAGE_ATTEMPTS + 1):
             state = self._get_marker_state(marker_id)
             if state is None:
-                logger.warning("ArUco dock: marker %d not in world map", marker_id)
+                logger.warning("ArUco dock: marker %d not in world map — %s", marker_id, self._scene(marker_id))
                 return None
             robot = self.cli.pose
             seed = estimate_normal([state], (robot.position.x, robot.position.y))
             if seed is None:
-                logger.warning("ArUco dock: marker %d has no usable normal to plan a vantage", marker_id)
+                logger.warning(
+                    "ArUco dock: marker %d has no usable normal to plan a vantage — %s",
+                    marker_id,
+                    self._scene(marker_id),
+                )
                 return None
 
             obliquity = TARGET_OBLIQUITY_DEG + attempt * self.VANTAGE_ESCALATION_DEG
@@ -346,14 +354,20 @@ class ArucoDocking:
 
             estimate = estimate_normal(self._collect_samples(marker_id), self._robot_xy())
             if estimate is None:
-                logger.warning("ArUco dock: marker %d lost at the vantage", marker_id)
+                logger.warning("ArUco dock: marker %d lost at the vantage — %s", marker_id, self._scene(marker_id))
                 return None
             if estimate.usable or attempt == self.VANTAGE_ATTEMPTS:
-                logger.info("ArUco dock: marker %d measured — %s", marker_id, estimate.describe())
+                logger.info(
+                    "ArUco dock: marker %d measured — %s | %s",
+                    marker_id,
+                    estimate.describe(),
+                    self._scene(marker_id),
+                )
                 return estimate
             logger.info(
-                "ArUco dock: view still head-on (%.0f deg) — retrying from a wider angle",
+                "ArUco dock: view still head-on (%.0f deg) — retrying from a wider angle — %s",
                 estimate.obliquity_deg,
+                self._scene(marker_id),
             )
         return None
 
@@ -390,6 +404,30 @@ class ArucoDocking:
         reachable without trusting the noisy angle.
         """
         return math.atan2(my - rp.position.y, mx - rp.position.x)
+
+    def _scene(self, marker_id: int) -> str:
+        """One-line geometry snapshot: robot pose, marker pose, and the relation.
+
+        Every dock decision — aim, settle, sweep, reverse — is a statement
+        about where the robot and the marker are, so each milestone and
+        each failure appends this and the log alone reconstructs the
+        attempt (world frame, mm; yaw/bearing in degrees). ``aim`` is
+        bearing minus yaw: how far the camera points off the marker, with
+        positive meaning the marker sits left of the heading.
+        """
+        rp = self.cli.pose
+        yaw = rp.rotation.angle_z.radians
+        head = f"robot ({rp.position.x:.0f}, {rp.position.y:.0f}, {math.degrees(yaw):.1f} deg)"
+        state = self._get_marker_state(marker_id)
+        if state is None:
+            return f"{head}; marker {marker_id} not in world map"
+        mx, my = float(state.position[0]), float(state.position[1])
+        dx, dy = mx - rp.position.x, my - rp.position.y
+        bearing = math.atan2(dy, dx)
+        return (
+            f"{head}; marker {marker_id} ({mx:.0f}, {my:.0f}); range {math.hypot(dx, dy):.0f} mm; "
+            f"bearing {math.degrees(bearing):.1f} deg; aim {math.degrees(wrap_pi(bearing - yaw)):+.1f} deg"
+        )
 
     def _settle_marker(self, marker_id: int, job: MotionToken, dwell_s: float | None = None) -> bool:
         """Dwell until the fused marker pose converges (``dwell_s`` deadline).
@@ -429,12 +467,26 @@ class ArucoDocking:
                 elif stable_since is None:
                     stable_since = time.monotonic()
                 elif time.monotonic() - stable_since >= self.STABLE_WINDOW_S and saw_fresh:
-                    return True
+                    return self._settled(marker_id)
             last = pos
             time.sleep(0.05)
         if not saw_fresh:
-            logger.warning("ArUco dock: marker %d not re-detected during settle", marker_id)
+            logger.warning(
+                "ArUco dock: marker %d not re-detected during settle — %s", marker_id, self._scene(marker_id)
+            )
             return False
+        return self._settled(marker_id)
+
+    def _settled(self, marker_id: int) -> bool:
+        """Debug record of where the marker converged — always returns True."""
+        state = self._get_marker_state(marker_id)
+        if state is not None:
+            logger.debug(
+                "ArUco dock: marker %d settled at (%.0f, %.0f)",
+                marker_id,
+                float(state.position[0]),
+                float(state.position[1]),
+            )
         return True
 
     def _settle_or_search(self, marker_id: int, job: MotionToken, dwell_s: float) -> bool:
@@ -459,15 +511,18 @@ class ArucoDocking:
             return False
         bearing = self._bearing_to(self.cli.pose, float(state.position[0]), float(state.position[1]))
         logger.info(
-            "ArUco dock: marker %d out of view — sweeping ±%.0f deg",
+            "ArUco dock: marker %d out of view — sweeping ±%.0f deg about %.1f deg — %s",
             marker_id,
             self.SEARCH_MAX_OFFSET_DEG,
+            math.degrees(bearing),
+            self._scene(marker_id),
         )
         if not self._search_marker(job, marker_id, bearing):
             logger.warning(
-                "ArUco dock: marker %d not found within ±%.0f deg",
+                "ArUco dock: marker %d not found within ±%.0f deg — %s",
                 marker_id,
                 self.SEARCH_MAX_OFFSET_DEG,
+                self._scene(marker_id),
             )
             return False
         return self._settle_marker(marker_id, job, dwell_s)
@@ -491,9 +546,10 @@ class ArucoDocking:
                     return False
                 if self._marker_seen(marker_id, job):
                     logger.info(
-                        "ArUco dock: marker %d found %.0f deg off the computed bearing",
+                        "ArUco dock: marker %d found %.0f deg off the computed bearing — %s",
                         marker_id,
                         math.degrees(offset),
+                        self._scene(marker_id),
                     )
                     return True
         return False
@@ -574,7 +630,7 @@ class ArucoDocking:
             dx, dy = float(state.position[0]) - rp.position.x, float(state.position[1]) - rp.position.y
             along = dx * math.cos(yaw) + dy * math.sin(yaw)  # range along the centreline
             if along <= 0.0:
-                logger.warning("ArUco dock: robot is behind the marker — cannot centre")
+                logger.warning("ArUco dock: robot is behind the marker — cannot centre — %s", self._scene(marker_id))
                 return False
             # Signed perpendicular offset: how far the marker sits off the
             # robot's centreline, in millimetres.
@@ -584,17 +640,20 @@ class ArucoDocking:
             if attempt == self.ALIGN_RETRIES:
                 break
             logger.info(
-                "ArUco dock: %.0f mm off the marker line — re-aiming (%d/%d)",
+                "ArUco dock: %.0f mm off the marker line — re-aiming (%d/%d) — %s",
                 abs(lateral),
                 attempt + 1,
                 self.ALIGN_RETRIES,
+                self._scene(marker_id),
             )
             # Turn onto the bearing to the marker centre. This is the
             # correction that actually zeroes the offset, it holds the
             # standoff exactly, and it needs no normal to express.
             if not self._go(job, rp.position.x, rp.position.y, math.atan2(dy, dx)):
                 return False
-        logger.warning("ArUco dock: %.0f mm off the marker line — not reversing", abs(lateral))
+        logger.warning(
+            "ArUco dock: %.0f mm off the marker line — not reversing — %s", abs(lateral), self._scene(marker_id)
+        )
         return False
 
     # ------------------------------------------------------------------
@@ -617,6 +676,7 @@ class ArucoDocking:
         """
         state = self._get_marker_state(marker_id)
         if state is None:
+            logger.warning("ArUco dock: marker %d gone before the reverse — %s", marker_id, self._scene(marker_id))
             return False
         mx, my = float(state.position[0]), float(state.position[1])
 
@@ -625,7 +685,11 @@ class ArucoDocking:
         if not self._go(job, pose.position.x, pose.position.y, wrap_pi(pose.rotation.angle_z.radians + math.pi)):
             return False
 
-        logger.info("ArUco dock: reversing into the charger")
+        logger.info(
+            "ArUco dock: reversing into the charger (stop at range ≤ %.0f mm or contacts) — %s",
+            self.DOCKED_MARKER_DIST_MM - self.REVERSE_OVERSHOOT_MM,
+            self._scene(marker_id),
+        )
         deadline = time.monotonic() + self.REVERSE_TIMEOUT_S
         while time.monotonic() < deadline:
             if job.cancelled:
@@ -636,7 +700,8 @@ class ArucoDocking:
                 return True
             if self._at_dock(mx, my):
                 self.cli.stop_all_motors()
-                return self._wait_charging()
+                logger.info("ArUco dock: reached the docked distance — %s", self._scene(marker_id))
+                return self._wait_charging(marker_id)
             self.cli.drive_wheels(
                 lwheel_speed=self.REVERSE_SPEED_MMPS,
                 rwheel_speed=self.REVERSE_SPEED_MMPS,
@@ -646,7 +711,11 @@ class ArucoDocking:
         self.cli.stop_all_motors()
         if self._charging():  # contacts landed as we stopped
             return True
-        logger.warning("ArUco dock: reverse timed out (%.0f s)", self.REVERSE_TIMEOUT_S)
+        logger.warning(
+            "ArUco dock: reverse timed out (%.0f s) — %s",
+            self.REVERSE_TIMEOUT_S,
+            self._scene(marker_id),
+        )
         return False
 
     # ------------------------------------------------------------------
@@ -709,10 +778,17 @@ class ArucoDocking:
         dist_err = math.hypot(x - rp.position.x, y - rp.position.y)
         ang_err = abs(wrap_pi(heading - rp.rotation.angle_z.radians))
         logger.warning(
-            "ArUco dock: target not reached within %.0f s — %.0f mm / %.1f deg off; continuing",
+            "ArUco dock: target (%.0f, %.0f) at %.1f deg not reached within %.0f s — %.0f mm / %.1f deg off, "
+            "continuing; robot (%.0f, %.0f, %.1f deg)",
+            x,
+            y,
+            math.degrees(heading),
             self.ARRIVE_TIMEOUT_S,
             dist_err,
             math.degrees(ang_err),
+            rp.position.x,
+            rp.position.y,
+            math.degrees(rp.rotation.angle_z.radians),
         )
         return True
 
@@ -738,7 +814,11 @@ class ArucoDocking:
             time.sleep(0.03)
 
         cli.stop_all_motors()
-        logger.warning("ArUco dock: turn did not converge (timeout)")
+        logger.warning(
+            "ArUco dock: turn did not converge (timeout) — target %.1f deg, actual %.1f deg",
+            math.degrees(heading),
+            math.degrees(cli.pose.rotation.angle_z.radians),
+        )
         return False
 
     def _at_dock(self, mx: float, my: float) -> bool:
@@ -760,7 +840,7 @@ class ArucoDocking:
             self.DOCKED_MARKER_DIST_MM - self.REVERSE_OVERSHOOT_MM
         )
 
-    def _wait_charging(self) -> bool:
+    def _wait_charging(self, marker_id: int) -> bool:
         """After a distance stop, give the contacts time to register.
 
         Returns the real charging state. The geometric backstop only says
@@ -773,7 +853,10 @@ class ArucoDocking:
         while time.monotonic() < deadline and not self._charging():
             time.sleep(0.05)
         if not self._charging():
-            logger.warning("ArUco dock: reached the docked distance but the contacts did not register — not docked")
+            logger.warning(
+                "ArUco dock: reached the docked distance but the contacts did not register — not docked — %s",
+                self._scene(marker_id),
+            )
             return False
         return True
 
