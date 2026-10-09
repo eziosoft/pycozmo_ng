@@ -25,6 +25,8 @@ testable with no robot and no optional dependencies.
 
 from __future__ import annotations
 
+import base64
+import io
 import math
 import time
 from dataclasses import asdict, is_dataclass
@@ -249,6 +251,30 @@ class Toolset:
                 item["cube_id"] = to_cube_id(int(item.pop("cube_index")))
             out.append(item)
         return {"ok": True, "count": len(out), "detections": out}
+
+    def get_frame(self) -> dict[str, Any]:
+        """Latest camera frame as a base64-encoded JPEG (640x480 max when the camera is enabled and streaming).
+
+        Returns ``{"ok": true, "frame": ...}`` with fields:
+        ``jpeg_base64``, ``width``, ``height``, ``timestamp``. When the
+        camera is stopped or no frame has arrived yet, the tool returns
+        ``{"ok": true, "frame": null}``.
+        """
+        frame = self._cozmo.vision.latest_frame
+        if frame is None:
+            return {"ok": True, "frame": None}
+        buf = io.BytesIO()
+        frame.save(buf, format="JPEG", quality=85)
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return {
+            "ok": True,
+            "frame": {
+                "jpeg_base64": b64,
+                "width": frame.width,
+                "height": frame.height,
+                "timestamp": time.time(),
+            },
+        }
 
     # ------------------------------------------------------------------
     # Motion (job-returning)

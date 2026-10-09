@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 INSTRUCTIONS = (
     "PyCozmo-NG drives a physical Cozmo robot. Frames and units: world frame, "
     "millimetres, headings in radians; cube IDs are 1-3. Read tools "
-    "(get_robot_state, get_world_map, get_sensors, get_detections) return "
+    "(get_robot_state, get_world_map, get_sensors, get_detections, get_frame) return "
     "snapshots and are always safe. Motion tools (navigate_to, approach_cube, "
     "dock, dock_on_aruco) return a job_id immediately — poll get_job or "
     "wait_for_job for the outcome instead of assuming success. say, "
@@ -137,6 +137,7 @@ class McPServer:
             "get_world_map",
             "get_sensors",
             "get_detections",
+            "get_frame",
             # Motion (job-returning)
             "navigate_to",
             "approach_cube",
