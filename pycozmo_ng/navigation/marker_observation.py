@@ -19,10 +19,17 @@ Measured on a 22.5 mm marker at a 200 mm standoff (QVGA, ~230 px focal,
     ==========  ==================  ==================
       2 deg          0.035             43.5 deg
      10 deg          0.174             17.3 deg
+     15 deg          0.259              7.8 deg
      20 deg          0.342              4.4 deg
      30 deg          0.500              2.0 deg
      40 deg          0.643              1.0 deg
     ==========  ==================  ==================
+
+``TARGET_OBLIQUITY_DEG`` sits at 15 deg — lower than the accuracy column
+would like — because at 30 deg the marker can leave the camera frame on a
+real robot, and an unseen marker fails harder than a bearing error. The
+choice is a visibility/accuracy trade, not a free parameter; see the
+constant's docstring.
 
 Two properties of that table drive the design:
 
@@ -61,15 +68,23 @@ __all__ = [
     "vantage_target",
 ]
 
-#: Obliquity the vantage is planned for. 30 deg puts the bearing error near
-#: 2 deg, which is ~7 mm of lateral error at the 200 mm standoff — inside the
-#: charger's capture width. Shallower standoffs cost accuracy linearly.
-TARGET_OBLIQUITY_DEG: float = 30.0
+#: Obliquity the vantage is planned for. 15 deg, not the 30 deg the
+#: accuracy table would prefer: at that angle the marker can leave the
+#: camera frame entirely on a real robot, and an unseen marker is a far
+#: worse outcome than a bearing error. 15 deg still buys most of the
+#: conditioning (bearing error ~7.8 deg vs ~43 deg head-on) while
+#: keeping the marker comfortably in view.
+#:
+#: If the robot's camera turns out to have a wider field of view than
+#: assumed, raise this — it is a straight accuracy/visibility trade.
+TARGET_OBLIQUITY_DEG: float = 15.0
 
 #: Below this, the bearing is not trustworthy enough to aim a reverse from.
-#: 20 deg is ~4.4 deg of bearing error (~15 mm at the standoff). Under this
-#: the caller should re-vantage or accept a degraded aim, not dock blind.
-MIN_USABLE_OBLIQUITY_DEG: float = 20.0
+#: 12 deg is ~9 deg of bearing error. Under this the caller should
+#: re-vantage or accept a degraded aim, not dock blind. Set just below
+#: ``TARGET_OBLIQUITY_DEG`` so a vantage that lands on target passes, with
+#: a little margin for arrival slop.
+MIN_USABLE_OBLIQUITY_DEG: float = 12.0
 
 #: Sanity bound on sample scatter. The per-view bias is systematic, so a wide
 #: spread means the marker was poorly tracked (motion blur, partial view) —

@@ -108,9 +108,11 @@ class ArucoDocking:
     #: sidesteps further, so a couple of attempts cover a robot that
     #: overshot the requested offset.
     VANTAGE_ATTEMPTS: int = 2
-    #: Extra obliquity per retry, so attempt 2 looks from ~45 deg — the
-    #: regime where the bearing error drops under 1 deg.
-    VANTAGE_ESCALATION_DEG: float = 15.0
+    #: Extra obliquity per retry: attempt 2 looks from ~22 deg, attempt 3
+    #: from ~29 deg. Escalation exists for a robot that arrives shallower
+    #: than asked (slipping on the sidestep); it is not the normal case,
+    #: because widening the angle risks losing the marker out of frame.
+    VANTAGE_ESCALATION_DEG: float = 7.0
 
     #: Dwell at the standoff until the fused marker pose converges.
     STANDOFF_DWELL_S: float = 3.0
