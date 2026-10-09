@@ -165,6 +165,23 @@ class ArucoDocking:
     #: corrected against is the converged one, not a moving EMA.
     ALIGN_DWELL_S: float = 1.0
 
+    #: Heading sweep for a marker that is out of view at the standoff.
+    #: The fused marker position carries tens of millimetres of error,
+    #: which at standoff range is ~10 deg of bearing — enough to park the
+    #: marker outside the camera's view (live log: "10 degrees more to
+    #: the left and it will see it"). Steps of ``SEARCH_STEP_DEG`` out to
+    #: ``SEARCH_MAX_OFFSET_DEG`` cover it with margin for the 2 deg turn
+    #: tolerance; ``SEARCH_DWELL_S`` per step is a few detection cycles
+    #: at the camera's frame rate.
+    SEARCH_STEP_DEG: float = 5.0
+    SEARCH_MAX_OFFSET_DEG: float = 15.0
+    SEARCH_DWELL_S: float = 0.4
+    #: A detection this recent counts as "the marker is in view now" —
+    #: comfortably above one camera frame, so a healthy detection stream
+    #: never reads stale, while a marker that left the frame ages out
+    #: after a couple of frames.
+    DETECTION_FRESH_S: float = 0.25
+
     REVERSE_SPEED_MMPS: float = -60.0  # negative = backward
     REVERSE_TIMEOUT_S: float = 15.0
 
@@ -265,7 +282,12 @@ class ArucoDocking:
             return False
 
         standoff_x, standoff_y = estimate.at_range(self.APPROACH_DIST_MM)
-        heading = self._bearing_to_marker(estimate)
+        # Aim from the *standoff*, not from here: the two bearings differ
+        # by the vantage's obliquity (~20 deg at equal range), and
+        # arriving on the here-and-now bearing parked the marker near the
+        # edge of the camera's view — "marker not re-detected during
+        # settle" before the alignment check could even measure it.
+        heading = math.atan2(estimate.y - standoff_y, estimate.x - standoff_x)
         logger.info(
             "ArUco dock: standoff (%.0f, %.0f) from marker %d normal — %s",
             standoff_x,
@@ -359,15 +381,15 @@ class ArucoDocking:
         pose = self.cli.pose
         return pose.position.x, pose.position.y
 
-    def _bearing_to_marker(self, estimate: NormalEstimate) -> float:
-        """Heading from the robot's current pose to the marker centre.
+    @staticmethod
+    def _bearing_to(rp, mx: float, my: float) -> float:
+        """Bearing from the robot pose *rp* to a world-frame point.
 
-        Derived from the marker's *position*, not its normal — position is
-        measured ~20x better than rotation, and facing the centre is what
-        makes the standoff reachable without trusting the noisy angle.
+        Derived from *positions* — they are measured ~20x better than the
+        marker's rotation, so facing the centre is what makes the standoff
+        reachable without trusting the noisy angle.
         """
-        robot = self.cli.pose
-        return math.atan2(estimate.y - robot.position.y, estimate.x - robot.position.x)
+        return math.atan2(my - rp.position.y, mx - rp.position.x)
 
     def _settle_marker(self, marker_id: int, job: MotionToken, dwell_s: float | None = None) -> bool:
         """Dwell until the fused marker pose converges (``dwell_s`` deadline).
@@ -415,6 +437,85 @@ class ArucoDocking:
             return False
         return True
 
+    def _settle_or_search(self, marker_id: int, job: MotionToken, dwell_s: float) -> bool:
+        """Settle — sweeping the heading for the marker when it is out of view.
+
+        The settle needs fresh detections to converge on; when the camera
+        is pointed away from the marker there are none, and aborting the
+        whole dock over it throws away a pose that is one small turn from
+        usable. So the heading sweeps out to ``SEARCH_MAX_OFFSET_DEG``
+        either side of the computed bearing until a detection lands, then
+        settles for real.
+
+        Returns False when cancelled, when the marker is unknown, or when
+        the sweep found nothing within the window.
+        """
+        if self._settle_marker(marker_id, job, dwell_s):
+            return True
+        if job.cancelled:
+            return False
+        state = self._get_marker_state(marker_id)
+        if state is None:
+            return False
+        bearing = self._bearing_to(self.cli.pose, float(state.position[0]), float(state.position[1]))
+        logger.info(
+            "ArUco dock: marker %d out of view — sweeping ±%.0f deg",
+            marker_id,
+            self.SEARCH_MAX_OFFSET_DEG,
+        )
+        if not self._search_marker(job, marker_id, bearing):
+            logger.warning(
+                "ArUco dock: marker %d not found within ±%.0f deg",
+                marker_id,
+                self.SEARCH_MAX_OFFSET_DEG,
+            )
+            return False
+        return self._settle_marker(marker_id, job, dwell_s)
+
+    def _search_marker(self, job: MotionToken, marker_id: int, bearing: float) -> bool:
+        """Sweep the heading about *bearing* until a fresh detection lands.
+
+        The heading at *bearing* itself was just covered by the failed
+        settle, so the sweep starts at the first step off it, alternating
+        sides — the observed miss was to one side, but the sign of the
+        fused-position error is not known.
+
+        Returns False when cancelled or when nothing was seen within
+        ``SEARCH_MAX_OFFSET_DEG``.
+        """
+        step = math.radians(self.SEARCH_STEP_DEG)
+        steps = round(self.SEARCH_MAX_OFFSET_DEG / self.SEARCH_STEP_DEG)
+        for k in range(1, steps + 1):
+            for offset in (k * step, -k * step):
+                if not self._turn_to(job, wrap_pi(bearing + offset)):
+                    return False
+                if self._marker_seen(marker_id, job):
+                    logger.info(
+                        "ArUco dock: marker %d found %.0f deg off the computed bearing",
+                        marker_id,
+                        math.degrees(offset),
+                    )
+                    return True
+        return False
+
+    def _marker_seen(self, marker_id: int, job: MotionToken) -> bool:
+        """True when a detection lands within ``SEARCH_DWELL_S``.
+
+        Freshness is judged by age rather than by an advancing timestamp:
+        the first read after the turn may already carry a detection that
+        arrived during it, and requiring a *second* update would miss it.
+        """
+        deadline = time.monotonic() + self.SEARCH_DWELL_S
+        while time.monotonic() < deadline:
+            if job.cancelled:
+                self.cli.stop_all_motors()
+                return False
+            state = self._get_marker_state(marker_id)
+            if state is not None and time.monotonic() - float(state.updated_at) <= self.DETECTION_FRESH_S:
+                return True
+            time.sleep(0.05)
+        return False
+
     def _align_to_line(self, job: MotionToken, marker_id: int) -> bool:
         """Verify (and correct) that the robot's rear axis points at the marker.
 
@@ -434,16 +535,36 @@ class ArucoDocking:
         sideways would only move the offset around). Turning holds the
         standoff distance exactly, so the reverse distance stays known.
 
+        Two steps run before that check, because a settle needs a marker
+        the camera can actually see:
+
+        * A re-aim onto the *current* bearing — the arrival heading came
+          off the pre-drive plan, and the fused marker position keeps
+          moving while the path executes, so the camera can land pointed
+          away from the marker.
+        * A heading sweep when the settle still comes back with no fresh
+          detection: the fused position carries tens of millimetres of
+          error, which at standoff range is ~10 deg of bearing (live log:
+          "10 degrees more to the left and it will see it"). The heading
+          that finds the marker is also the correct aim — it is where the
+          marker really is.
+
         Returns False when cancelled, when the marker is unknown, or
         when the robot could not be centred within ``ALIGN_RETRIES``
         corrections (the caller must not reverse blind).
         """
+        state = self._get_marker_state(marker_id)
+        if state is None:
+            return False
+        rp = self.cli.pose
+        if not self._turn_to(job, self._bearing_to(rp, float(state.position[0]), float(state.position[1]))):
+            return False
         lateral = float("inf")
         for attempt in range(self.ALIGN_RETRIES + 1):
             # Settle first: the correction target must come off the
             # converged line, not a moving EMA (live log showed the line
             # drifting ~17 mm between the approach and the measurement).
-            if not self._settle_marker(marker_id, job, self.ALIGN_DWELL_S):
+            if not self._settle_or_search(marker_id, job, self.ALIGN_DWELL_S):
                 return False
             state = self._get_marker_state(marker_id)
             if state is None:

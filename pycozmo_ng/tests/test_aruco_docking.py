@@ -31,6 +31,7 @@ from pycozmo_ng.navigation.marker_observation import (
     obliquity_deg,
 )
 from pycozmo_ng.navigation.motion_controller import MotionController
+from pycozmo_ng.navigation.steering import wrap_pi
 from pycozmo_ng.navigation.world_map import ArucoState
 
 
@@ -129,6 +130,51 @@ class _MarkerFeed:
         )
 
 
+class _GatedMarkerFeed:
+    """Marker state that reads fresh only while the camera can see it.
+
+    Models the live failure: while the marker is out of frame the fused
+    position stays at the last (biased) estimate, so the computed bearing
+    misses — and the moment a detection lands, the state snaps to the
+    true position. ``visible_yaw`` is the heading from which the marker
+    really is in view, deliberately off the stale estimate's bearing.
+    """
+
+    def __init__(
+        self,
+        cli,
+        true_xy: tuple[float, float],
+        stale_xy: tuple[float, float],
+        visible_yaw: float,
+        window_deg: float,
+    ):
+        self._cli = cli
+        self._true = true_xy
+        self._stale = stale_xy
+        self._visible_yaw = visible_yaw
+        self._window = math.radians(window_deg)
+        self._frozen_ts = time.monotonic() - 10.0  # long stale
+        z = np.array([1.0, 0.0, 0.0])
+        y_up = np.array([0.0, 0.0, 1.0])
+        self._rot = np.column_stack([np.cross(y_up, z), y_up, z])
+
+    def get(self, marker_id: int):
+        if marker_id != 0:
+            return None
+        yaw = self._cli.pose.rotation.angle_z.radians
+        visible = abs(wrap_pi(yaw - self._visible_yaw)) <= self._window
+        xy = self._true if visible else self._stale
+        return ArucoState(
+            marker_id=0,
+            position=np.array([xy[0], xy[1], 0.0]),
+            rotation_matrix=self._rot,
+            confidence=1.0,
+            size_mm=22.5,
+            age=10,
+            updated_at=time.monotonic() if visible else self._frozen_ts,
+        )
+
+
 def _make(
     marker_known: bool = True,
     x: float = 500.0,
@@ -194,9 +240,14 @@ class TestDockSequence:
         )
         assert TARGET_OBLIQUITY_DEG >= MIN_USABLE_OBLIQUITY_DEG
 
-        # Last drive lands on the standoff ~200 mm out, facing the marker.
+        # Last drive lands on the standoff ~250 mm out, facing the marker
+        # *from the standoff* — not from the vantage, whose bearing
+        # differs by the obliquity and left the marker out of the
+        # camera's view on arrival ("not re-detected during settle").
         standoff = cli.go_to_pose.call_args_list[-1].args[0]
         assert math.isclose(math.hypot(standoff.position.x, standoff.position.y), docking.APPROACH_DIST_MM, rel_tol=0.2)
+        expected_heading = math.atan2(0.0 - standoff.position.y, 0.0 - standoff.position.x)
+        assert abs(wrap_pi(standoff.rotation.angle_z.radians - expected_heading)) < 1e-9
 
         turn = [c for c in cli.drive_wheels.call_args_list if c.kwargs["lwheel_speed"] == -c.kwargs["rwheel_speed"]]
         assert turn
@@ -372,6 +423,80 @@ class TestAlignToLine:
 
         cli.go_to_pose.assert_not_called()
         cli.drive_wheels.assert_not_called()
+
+
+class TestMarkerOutOfFrame:
+    """The standoff settle must survive a marker the camera cannot see yet."""
+
+    def test_sweep_turns_the_camera_onto_the_marker(self):
+        """A stale marker position aims the camera ~10 deg off → the sweep finds it.
+
+        The fused position is only as good as the last detection: while
+        the marker is out of frame it stays biased, so the computed
+        bearing can miss by more than the camera's useful view (live log
+        after the standoff fix: "10 degrees more to the left and it will
+        see it", then ``marker not re-detected during settle``). The
+        settle must sweep the heading instead of aborting the dock — and
+        land aimed at where the marker really is, since that is the
+        heading the open-loop reverse needs.
+        """
+        ds = DockState()
+        motion = MotionController()
+        # At the standoff, facing the stale estimate at the origin.
+        cli = _FakeCli(x=250.0, y=0.0, yaw=math.pi)
+        visible_yaw = math.pi + math.radians(10.0)  # the marker really sits 10 deg to the left
+        true_xy = (
+            cli.pose.position.x + 250.0 * math.cos(visible_yaw),
+            cli.pose.position.y + 250.0 * math.sin(visible_yaw),
+        )
+        feed = _GatedMarkerFeed(
+            cli,
+            true_xy=true_xy,
+            stale_xy=(0.0, 0.0),
+            visible_yaw=visible_yaw,
+            window_deg=8.0,  # wider than the turn tolerance, narrower than the miss
+        )
+        docking = ArucoDocking(
+            cli=cli,
+            get_marker_state=feed.get,
+            dock_state=ds,
+            motion=motion,
+            on_docked=MagicMock(),
+        )
+        docking.ALIGN_DWELL_S = 0.1
+
+        with motion.begin("test_align") as job:
+            assert docking._align_to_line(job, 0) is True
+
+        # Finished aimed at the marker's true position, within the turn
+        # tolerance — the heading the reverse runs on.
+        assert abs(wrap_pi(cli.pose.rotation.angle_z.radians - visible_yaw)) < 0.06
+
+    def test_unfindable_marker_aborts(self):
+        """Never in view within the sweep window → no blind reverse."""
+        ds = DockState()
+        motion = MotionController()
+        cli = _FakeCli(x=250.0, y=0.0, yaw=math.pi)
+        # Visible from nowhere the sweep reaches.
+        feed = _GatedMarkerFeed(
+            cli,
+            true_xy=(250.0, -250.0),
+            stale_xy=(0.0, 0.0),
+            visible_yaw=math.pi + math.radians(40.0),
+            window_deg=2.0,
+        )
+        docking = ArucoDocking(
+            cli=cli,
+            get_marker_state=feed.get,
+            dock_state=ds,
+            motion=motion,
+            on_docked=MagicMock(),
+        )
+        docking.ALIGN_DWELL_S = 0.1
+        docking.SEARCH_DWELL_S = 0.1
+
+        with motion.begin("test_align") as job:
+            assert docking._align_to_line(job, 0) is False
 
 
 class TestZKeyWiring:
