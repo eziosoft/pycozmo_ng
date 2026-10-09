@@ -52,7 +52,7 @@ class McPServer:
         self,
         cozmo: Cozmo,
         host: str = "127.0.0.1",
-        port: int = 8766,
+        port: int = 8767,
         limits: SafetyLimits | None = None,
     ):
         self.host = host

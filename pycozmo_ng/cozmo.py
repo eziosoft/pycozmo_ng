@@ -439,13 +439,13 @@ class McpAPI:
     """MCP server interface — let LLM clients drive Cozmo and read its state.
 
     The server speaks MCP streamable HTTP in-process (like the web
-    viewer), default ``127.0.0.1:8766``. Requires the optional extra::
+    viewer), default ``127.0.0.1:8767``. Requires the optional extra::
 
         pip install 'pycozmo-ng[mcp]'
 
     Example:
         cozmo.mcp.start()
-        # ... point an MCP client at http://127.0.0.1:8766/mcp ...
+        # ... point an MCP client at http://127.0.0.1:8767/mcp ...
         cozmo.mcp.stop()
     """
 
@@ -453,13 +453,13 @@ class McpAPI:
         self._cozmo = cozmo
         self._server: Any = None
 
-    def start(self, host: str = "127.0.0.1", port: int = 8766) -> None:
+    def start(self, host: str = "127.0.0.1", port: int = 8767) -> None:
         """Start the MCP server (no-op when already running).
 
         Args:
             host: Bind address (default localhost — keep it there unless
                 you trust the LAN, the tool surface can move the robot).
-            port: TCP port (default 8766).
+            port: TCP port (default 8767).
 
         Raises:
             RuntimeError: If the ``mcp`` package is not installed.
