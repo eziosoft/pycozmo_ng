@@ -1,214 +1,253 @@
+# PyCozmo-NG
 
-PyCozmo-NG
-=======
+`PyCozmo-NG` is a pure-Python library for controlling a [Cozmo robot](https://www.digitaldreamlabs.com/pages/cozmo)
+directly over Wi-Fi. Your program replaces the official Cozmo app: no phone, no cloud — PyCozmo-NG speaks the robot's
+own UDP protocol and adds the whole off-board stack on top.
 
-`PyCozmo-NG` is a pure-Python communication library, alternative SDK, and application for the
-[Cozmo robot](https://www.digitaldreamlabs.com/pages/cozmo) . It allows controlling a Cozmo robot directly, without
-having to go through a mobile device, running the Cozmo app.
+- **Robot control** — wheels, head, lift, LEDs, camera, speaker; low-level `Client` for raw protocol packets.
+- **Vision** — light-cube marker detection, standard 4x4 ArUco markers with per-ID physical sizes, charger-dock
+  marker detection, face detection, camera calibration read from the robot's NVRAM.
+- **Navigation** — fused world map of robot and cube poses, closed-loop point driving, optional A\* obstacle
+  avoidance, cube approach & stacking, docking by contact or by ArUco marker.
+- **3D web viewer** — live Three.js scene, camera streams, browser driving, click-to-navigate, telemetry HUD.
+- **Speech** — offline text-to-speech (pyttsx3 + espeak-ng), from code or from the browser.
 
-The library is loosely based on the [Anki Cozmo Python SDK](https://github.com/anki/cozmo-python-sdk) and the
-[cozmoclad](https://pypi.org/project/cozmoclad/) ("C-Like Abstract Data") library.
+Current version **0.9.0** — pre-1.0, expect API changes.
 
-This project is a tool for exploring the hardware and software of the Digital Dream Labs (originally Anki) Cozmo robot.
-It is unstable and heavily under development.
+> The distribution is `pycozmo-ng`, the import is `pycozmo_ng` (module names cannot contain hyphens).
+> `pycozmo` is the [upstream project](https://github.com/zayfod/pycozmo) this repository was forked from —
+> importing it gets you the upstream package, not this one.
 
+## How it differs from the Cozmo SDK
 
-Usage
------
+A Cozmo SDK application ("game") talks to the official Cozmo app ("engine") on a phone, which in turn talks to the
+robot. With PyCozmo-NG your program *is* the engine:
 
-Basic:
+```
+With the official SDK:          With PyCozmo-NG:
 
-```python
-import time
-import pycozmo_ng
-
-with pycozmo_ng.connect() as cli:
-    cli.set_head_angle(angle=0.6)
-    time.sleep(1)
+  SDK app ("game")                your program
+        │ USB                           │
+        ▼                               │ UDP / Wi-Fi
+  Cozmo app ("engine")                  │
+        │ UDP / Wi-Fi                   │
+        ▼                               ▼
+  Cozmo robot                      Cozmo robot
 ```
 
-Advanced:
+## Requirements
 
-```python
-import pycozmo_ng
+- Python **3.10+**
+- A Cozmo robot on its own Wi-Fi AP (factory-default address `172.31.1.1`)
+- Optional, for spoken output: `espeak-ng`
+  (`sudo apt-get install espeak-ng` on Linux, `brew install espeak-ng` on macOS)
 
-cli = pycozmo_ng.Client()
-cli.start()
-cli.connect()
-cli.wait_for_robot()
+Python dependencies (numpy, OpenCV, Pillow, SciPy, aiohttp, websockets, python-dotenv, pyttsx3, …) are declared in
+`pyproject.toml` and install automatically with the package.
 
-cli.drive_wheels(lwheel_speed=50.0, rwheel_speed=50.0, duration=2.0)
+## Installation
 
-cli.disconnect()
-cli.stop()
+Not published on PyPI — install from a clone:
+
+```bash
+git clone <repository-url>
+cd pycozmo
+
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
 ```
 
+For development, add the quality tools:
 
-Documentation
--------------
+```bash
+pip install pytest ruff mypy
+```
 
-[https://pycozmo.readthedocs.io/](https://pycozmo.readthedocs.io/)
+## Connecting to the robot
 
+A Wi-Fi connection to the robot must exist before any PyCozmo-NG program runs:
 
-Robot Support
--------------
+1. Wake Cozmo by placing it on its charging platform.
+2. Raise and lower the lift — Cozmo shows its Wi-Fi PSK on its screen.
+3. Join the `Cozmo_XXXXXXXX` network with that PSK (per-OS).
+   [This video](https://www.youtube.com/watch?v=-k_oiQhBa5o) shows the process.
 
-Sensors:
-- [x] Camera
-- [x] Cliff sensor
-- [x] Accelerometers
-- [x] Gyro
-- [x] Battery voltage
-- [x] Cube battery voltage
-- [x] Cube accelerometers
-- [x] Backpack button (v1.5 hardware and newer)
+To let the demo auto-join on Linux (NetworkManager/`nmcli`), put the credentials in `.env` — the same file the
+launcher and the demo read:
 
-Actuators:
-- [x] Wheel motors
-- [x] Head motor
-- [x] Lift motor
-- [x] OLED display
-- [x] Speaker
-- [x] Backpack LEDs
-- [x] IR LED
-- [x] Cube LEDs
-- [x] Platform LEDs (when available)
+```bash
+cp .env.example .env    # then fill in COZMO_WIFI_SSID / COZMO_WIFI_PASSWORD
+```
 
-On-board functions:
-- [x] Wi-Fi AP
-- [x] Bluetooth LE
-- [x] Localization
-- [x] Path tracking
-- [x] NV RAM storage
-- [x] Over-the-air (OTA) firmware updates
+## Quick start
 
-Off-board functions:
-- [x] Procedural face generation
-- [x] Cozmo animations from FlatBuffers .bin files
-- [ ] Personality engine - work in progress
-- [ ] Cozmo behaviors - work in progress
-- [ ] Motion detection
-- [ ] Object (cube and platform) detection
-- [ ] Cube marker recognition
-- [ ] Face detection
-- [ ] Face recognition
-- [ ] Facial expression estimation
+Minimal script — connect, move, speak:
+
+```python
+from pycozmo_ng import Cozmo
+
+cozmo = Cozmo()
+with cozmo.connect():                          # robot AP: 172.31.1.1:5551
+    cozmo.set_head_angle(30.0)                 # degrees
+    cozmo.drive_wheels(left_mmps=50.0, right_mmps=50.0, duration=2.0)
+    cozmo.say("Hello!")
+```
+
+`connect()` defaults to the robot's own AP (`172.31.1.1:5551`); pass `cozmo.connect(host=...)` when the robot sits
+elsewhere on your network.
+
+Full stack — vision, cubes, browser remote control, web viewer:
+
+```python
+from pycozmo_ng import Cozmo
+
+cozmo = Cozmo()
+with cozmo.connect():
+    cozmo.web_viewer.start()                   # → http://<machine-ip>:8765
+    cozmo.vision.start(floor_size_mm=(600.0, 600.0))
+    cozmo.start_cube_lights()                  # BLE keepalive for the light cubes
+    cozmo.discover_cubes()
+    cozmo.enable_remote_control()              # keyboard/click control from the browser
+    cozmo.set_origin()                         # world origin = current pose
+    cozmo.say("Hello, I am Cozmo")
+    cozmo.run()                                # blocks until Ctrl-C
+```
+
+`demo.py` is the full, annotated version of this startup (calibration, annotation options, tuning flags —
+`python demo.py --help`).
+
+### API at a glance
+
+| Access             | What it does                                                             |
+| ------------------ | ------------------------------------------------------------------------ |
+| `cozmo.vision`     | Start/stop the pipeline, latest frame and detections                     |
+| `cozmo.navigator`  | `drive_to`, `approach_cube`, `stack_cube`, `dock`, `dock_on_aruco`, `stop` |
+| `cozmo.cubes`      | Cube discovery and BLE keepalive lights                                  |
+| `cozmo.carry`      | `is_carrying`, `cube_id` — is a cube riding the forks?                   |
+| `cozmo.world_map`  | Fused robot/cube poses and the path trail (world frame, mm)              |
+| `cozmo.sensors`    | Battery voltage, IMU, cliff sensor, wheel speeds, head/lift angles       |
+| `cozmo.web_viewer` | Start/stop the browser viewer                                            |
+| `cozmo.cli`        | The underlying low-level `Client`, for raw protocol access               |
+
+## Running the demo
+
+```bash
+./start.sh              # bootstraps .env + venv, waits for the robot, runs demo.py
+# or, with the venv already active:
+python demo.py
+```
+
+Then open **http://\<machine-ip\>:8765** in a browser.
+
+## The 3D web viewer
+
+One server (port **8765**) serves the page, the streams, and the WebSocket:
+
+- **Left** — live camera feeds (`/annotated-video`, `/floor-video`, MJPEG)
+- **Center** — Three.js scene: robot, cubes, faces, charger marker, planned path, occupancy grid
+- **Right** — telemetry HUD: battery, poses, cube states, carry status
+
+Controls in the browser:
+
+| Input                        | Action                                             |
+| ---------------------------- | -------------------------------------------------- |
+| `W`/`A`/`S`/`D`              | Drive                                              |
+| `R`/`F`                      | Head up/down                                       |
+| `T`/`G`                      | Lift up/down                                       |
+| Click the floor              | Drive there (`Esc` cancels)                        |
+| Click a cube                 | Approach and grab it                               |
+| Click another cube while carrying | Stack the held cube on it                     |
+| `Z`                          | Dock on the charger (ArUco marker 0)               |
+| A\* panel                    | Toggle obstacle-avoiding pathfinding               |
+| Camera panel                 | Gain, exposure, resolution, head light             |
+| Say box                      | Speak text through the robot (offline TTS)         |
+
+Endpoints: `/` (viewer), `/annotated-video`, `/floor-video` (MJPEG), `/aruco-texture?id=N` (marker textures).
+
+## Configuration
+
+| Variable                                  | Purpose                                                                    |
+| ----------------------------------------- | -------------------------------------------------------------------------- |
+| `COZMO_WIFI_SSID`, `COZMO_WIFI_PASSWORD`  | Robot AP credentials in `.env`, used for the automatic Wi-Fi join          |
+| `COZMO_WIFI_HOST`                         | Robot address used by `start.sh` reachability checks (default `172.31.1.1`) |
+| `PYCOZMO_NG_LOG_LEVEL`                    | Log level of the general channel (default `INFO`)                          |
+| `PYCOZMO_NG_PROTOCOL_LOG_LEVEL`           | Log level of the protocol channel (default `INFO`)                         |
+| `PYCOZMO_NG_ROBOT_LOG_LEVEL`              | Log level of the robot channels (default `WARNING`)                        |
+| `PYCOZMO_NG_ARUCO_CONFIG`                 | Path to an ArUco marker-size JSON (see `aruco_markers.json` in the repo)   |
+| `PYCOZMO_NG_DIR`                          | Data directory for assets (default `~/.pycozmo_ng`)                        |
+| `PYCOZMO_NG_LIVE_MOTION`                  | Set to `1` to let the live test suite physically move the robot            |
+
+## Development
+
+All commands run from the repository root, inside the virtual environment:
+
+```bash
+pytest pycozmo_ng/tests/ -v      # unit tests — mocked, no robot needed
+ruff check pycozmo_ng/           # lint
+ruff format --check pycozmo_ng/  # formatting
+mypy pycozmo_ng/                 # types
+```
+
+Against a real robot (join the robot's Wi-Fi first):
+
+```bash
+pytest pycozmo_ng/tests_live/ -v                      # skips everything if unreachable
+PYCOZMO_NG_LIVE_MOTION=1 pytest pycozmo_ng/tests_live/ -v   # also allows motion tests
+```
+
+## Documentation
+
+- `CONTEXT.md` — the canonical coordinate frames and transforms used by the vision/navigation stack; read it before
+  changing that code.
+- [pycozmo.readthedocs.io](https://pycozmo.readthedocs.io/) — wire protocol, hardware, and reverse-engineering
+  documentation inherited from the origin project.
+
+## Robot support
+
+Everything the library drives on the robot itself:
+
+- **Sensors** — camera, cliff sensor, accelerometers, gyro, battery voltage, cube battery & accelerometers,
+  backpack button (v1.5 hardware and newer)
+- **Actuators** — wheel motors, head motor, lift motor, OLED face, speaker, backpack LEDs, IR LED, cube LEDs,
+  platform LEDs (when available)
+- **On-board** — Wi-Fi AP, Bluetooth LE, localization, path tracking, NV RAM storage, OTA firmware updates
+
+Off-board features implemented here:
+
+- [x] Procedural face generation and expressions
+- [x] Cube detection and marker recognition
+- [x] ArUco and charger-marker recognition
+- [x] Face detection
+- [x] Camera calibration (robot NVRAM + robot-center markers)
+- [x] Navigation map building (world map + occupancy grid)
+- [x] Floor projection
+- [x] Text-to-speech
+- [x] 3D web viewer with remote control
+- [ ] Personality engine
+- [ ] Behaviors and reactions
+- [ ] Face recognition and expression estimation
 - [ ] Pet detection
-- [ ] Camera calibration
-- [ ] Navigation map building
-- [ ] Text-to-speech
+- [ ] Voice commands
 - [ ] Songs
 
-Extra off-board functions:
-- [ ] Vector animations from FlatBuffers .bin files
-- [ ] Vector behaviors
-- [x] ArUco marker recognition
-- [ ] Cozmo and Vector robot detection
-- [ ] Drivable area estimation
-- [ ] Voice commands
+## Related projects
 
-If you have ideas for other functionality [share them via GitHub](https://github.com/zayfod/pycozmo/issues).
+Built on this codebase or its origin, [zayfod/pycozmo](https://github.com/zayfod/pycozmo):
 
+- [Expressive Eyes](https://git.brl.ac.uk/ca2-chambers/expressive-eyes) — facial expressions via the
+  `procedural_face` module
+- [ROS2 driver](https://github.com/solosito/cozmo_ros2_ws/)
+- [Another ROS2 driver](https://github.com/brean/cozmo_ros)
 
-PyCozmo-NG In The Wild
--------------------
+## Origin and license
 
-- [Expressive Eyes](https://git.brl.ac.uk/ca2-chambers/expressive-eyes) - rendering various facial expressions using
-    PyCozmo-NG's procedural_face module
-- an [application](https://github.com/paulbaumgarten/paulbaumgarten/blob/6d9025ec715e0b5f133ce9b7e39e74a5389c5334/myp/cozmo/assets/02-camera.py)
-    that recognizes [ArUco markers](https://docs.opencv.org/master/d5/dae/tutorial_aruco_detection.html), using OpenCV
-- a [ROS2 driver](https://github.com/solosito/cozmo_ros2_ws/)
-- another [ROS2 driver](https://github.com/brean/cozmo_ros)
+PyCozmo-NG is a fork of [zayfod/pycozmo](https://github.com/zayfod/pycozmo), credited as the origin of this
+codebase, and is loosely based on the [Anki Cozmo Python SDK](https://github.com/anki/cozmo-python-sdk) and
+[cozmoclad](https://pypi.org/project/cozmoclad/). It starts fresh at v0.9.0 and does not keep the upstream
+`pycozmo` import path.
 
+Licensed under the MIT License — see `LICENSE.md`. Code derived from the Anki Cozmo Python SDK and cozmoclad is
+covered by the Apache License 2.0 — see `NOTICE`.
 
-Connecting to Cozmo over Wi-Fi
-------------------------------
-
-A Wi-Fi connection needs to be established with Cozmo before using PyCozmo-NG applications.
-
-1. Wake up Cozmo by placing it on the charging platform
-2. Make Cozmo display it's Wi-Fi PSK by rising and lowering its lift
-3. Scan for Cozmo's Wi-Fi SSID (depends on the OS)
-4. Connect using Cozmo's Wi-Fi PSK (depends on the OS)
-
-[This video](https://www.youtube.com/watch?v=-k_oiQhBa5o) summarizes the connection process.
-
-
-PyCozmo-NG vs. the Cozmo SDK
--------------------------
-
-A Cozmo SDK application (aka "game") acts as a client to the Cozmo app (aka "engine") that runs on a mobile device.
-The low-level communication happens over USB and is handled by the `cozmoclad` library.
-
-In contrast, an application using PyCozmo-NG basically replaces the Cozmo app and acts as the "engine". PyCozmo-NG handles
-the low-level UDP communication with Cozmo.
-   
-```
-+------------------+                   +------------------+                   +------------------+
-|     SDK app      |     Cozmo SDK     |    Cozmo app     |       Cozmo       |      Cozmo       |
-|      "game"      |     cozmoclad     |     "engine"     |      protocol     |     "robot"      |
-|                  | ----------------> |   Wi-Fi client   | ----------------> |     Wi-Fi AP     |
-|                  |        USB        |    UDP client    |     UDP/Wi-Fi     |    UDP Server    |
-+------------------+                   +------------------+                   +------------------+
-```
-
-
-Requirements
-------------
-
-- [Python](https://www.python.org/downloads/) 3.6.0 or newer
-- [Pillow](https://github.com/python-pillow/Pillow) 6.0.0 - Python image library
-- [FlatBuffers](https://github.com/google/flatbuffers) - serialization library
-- [dpkt](https://github.com/kbandla/dpkt) - TCP/IP packet parsing library 
-
-
-Installation
-------------
-
-Using pip:
-
-```
-pip install --user pycozmo
-
-pycozmo_resources.py download
-```
-
-From source:
-
-```
-git clone https://github.com/zayfod/pycozmo.git
-cd pycozmo
-python setup.py install --user
-
-pycozmo_resources.py download
-```
-
-From source, for development:
-
-```
-git clone git@github.com:zayfod/pycozmo.git
-cd pycozmo
-python setup.py develop --user
-pip install --user -r requirements-dev.txt
-
-pycozmo_resources.py download
-```
-
- 
-Support
--------
-
-Bug reports and changes should be sent via GitHub:
-
-[https://github.com/zayfod/pycozmo](https://github.com/zayfod/pycozmo)
-
-DDL Robot Discord server, channel #development-cozmo:
-
-[https://discord.gg/ew92haS](https://discord.gg/ew92haS)
-
-
-Disclaimer
-----------
-
-This project is not affiliated with [Digital Dream Labs](https://www.digitaldreamlabs.com/) or
-[Anki](https://anki.com/).
+This project is not affiliated with [Digital Dream Labs](https://www.digitaldreamlabs.com/) or [Anki](https://anki.com/).
