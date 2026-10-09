@@ -89,17 +89,17 @@ class ArucoDocking:
 
     JOB_ARUCO_DOCK: str = "aruco_dock"
 
-    #: Standoff in front of the marker. 120 mm (down from 150 mm after
-    #: live testing found the bearing error of the estimated normal still
-    #: too large at 150 mm standoff): shorter reduces the lever arm that
-    #: multiplies bearing error into lateral error and shortens the blind
-    #: reverse. 120 mm keeps the 180° turn clear of the charger
-    #: (half-diagonal ~53 mm, centre-to-charger ~67 mm during the turn).
-    APPROACH_DIST_MM: float = 120.0
+    #: Standoff in front of the marker. 150 mm — the 180° turn at this
+    #: range clears the charger with ~97 mm to the robot's half-diagonal.
+    #: 120 mm was tried but the robot clipped the charger during the turn.
+    #: 150 mm still keeps the lateral-error lever arm reasonable (with 20°
+    #: obliquity, ~11 mm lateral at standoff at 0.25 px noise → ~5 mm at
+    #: dock), and the blinded reverse is 85 mm (150 − 65).
+    APPROACH_DIST_MM: float = 150.0
     #: Distance held from the marker while measuring its normal. 150 mm
     #: gives a clear oblique view at 20° obliquity (marker edge ~101 px
-    #: at QVGA, margin ~59 px). Longer than the standoff because the
-    #: vantage is a measurement pose, not the reverse start.
+    #: at QVGA, margin ~59 px). Equal to the standoff: the reverse-line
+    #: lever arm is the same as the measurement range.
     VANTAGE_DIST_MM: float = 150.0
     #: Dwell at the vantage while the marker is seen obliquely.
     #: Mirrors ``CubeApproach.STANDOFF_DWELL_S``: the world-map EMA (alpha
