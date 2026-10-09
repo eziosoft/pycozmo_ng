@@ -194,10 +194,38 @@ ensure_cozmo_wifi() {
     log "Connected to Cozmo (${COZMO_HOST})."
 }
 
+# --- argument parsing ---------------------------------------------------------
+
+# Extract flags that affect the bootstrap, consume them so they are not passed
+# through to demo.py (demo.py only sees the rest, but its own --mcp flag
+# happens to accept the same value, so leaving it in also works).
+HAS_MCP=0
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --mcp|--mcp=*) HAS_MCP=1; ARGS+=("$1") ;;
+        *) ARGS+=("$1") ;;
+    esac
+    shift
+done
+set -- "${ARGS[@]}"
+
 # --- virtualenv ----------------------------------------------------------------
 
 ensure_venv() {
+    local need_mcp="$1"
+    local pip_cmd="${VENV_DIR}/bin/pip"
     if [[ -d "$VENV_DIR" ]]; then
+        if [[ "$need_mcp" -eq 1 ]]; then
+            # Upgrade the existing venv with the MCP extra if not already present.
+            if ! "$pip_cmd" list 2>/dev/null | grep -q '^mcp[[:space:]]'; then
+                log "Installing MCP extra (needed by --mcp)..."
+                if ! "$pip_cmd" install -e "$REPO_ROOT[mcp]" 2>/dev/null; then
+                    err "pip install .[mcp] failed — see the output above."
+                    exit 5
+                fi
+            fi
+        fi
         return 0
     fi
     if ! command -v python3 >/dev/null 2>&1; then
@@ -209,8 +237,13 @@ ensure_venv() {
         err "Failed to create the virtualenv (on Debian/Ubuntu: sudo apt-get install python3-venv)."
         exit 5
     fi
+    local extra=""
+    if [[ "$need_mcp" -eq 1 ]]; then
+        extra="[mcp]"
+        log "MCP extra requested via --mcp — will install mcp SDK."
+    fi
     log "Installing PyCozmo-NG (first run only, may take a while)..."
-    if ! "${VENV_DIR}/bin/pip" install -e "$REPO_ROOT"; then
+    if ! "$pip_cmd" install -e "$REPO_ROOT${extra}"; then
         err "pip install -e . failed — see the output above."
         exit 5
     fi
@@ -222,7 +255,7 @@ acquire_lock
 
 ensure_cozmo_wifi
 
-ensure_venv
+ensure_venv "$HAS_MCP"
 
 # shellcheck disable=SC1091
 source "${VENV_DIR}/bin/activate"
