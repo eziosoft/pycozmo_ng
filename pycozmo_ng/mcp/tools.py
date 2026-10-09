@@ -34,6 +34,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from PIL import Image
 
 from pycozmo_ng.cubes.identity import to_cube_id
 from pycozmo_ng.logger import logger_mcp
@@ -252,29 +253,101 @@ class Toolset:
             out.append(item)
         return {"ok": True, "count": len(out), "detections": out}
 
-    def get_frame(self) -> dict[str, Any]:
-        """Latest camera frame as a base64-encoded JPEG (640x480 max when the camera is enabled and streaming).
+    def get_frame(
+        self,
+        annotated: bool = False,
+        max_width: int = 0,
+        jpeg_quality: int = 70,
+    ) -> dict[str, Any]:
+        """Latest camera frame as a base64-encoded JPEG, optimised for LLM consumption.
+
+        Args:
+            annotated: When true, return the annotated frame (detection boxes,
+                labels, confidence, distance drawn on the image) instead of the
+                raw camera frame.
+            max_width: Downscale the image so its width is at most this many
+                pixels (aspect ratio preserved). 0 = original resolution. Use
+                320 or 160 for smaller payloads.
+            jpeg_quality: JPEG encoding quality (1-95, default 70). Lower
+                values produce smaller base64 strings at the cost of fidelity.
 
         Returns ``{"ok": true, "frame": ...}`` with fields:
-        ``jpeg_base64``, ``width``, ``height``, ``timestamp``. When the
-        camera is stopped or no frame has arrived yet, the tool returns
-        ``{"ok": true, "frame": null}``.
+        ``jpeg_base64``, ``width``, ``height``, ``timestamp``,
+        ``detections_summary``. When the camera is stopped or no frame has
+        arrived yet returns ``{"ok": true, "frame": null}``.
         """
-        frame = self._cozmo.vision.latest_frame
+        frame = self._cozmo.vision.latest_annotated_frame if annotated else self._cozmo.vision.latest_frame
         if frame is None:
             return {"ok": True, "frame": None}
+
+        # Downscale when max_width is set (preserve aspect ratio).
+        img = frame
+        if max_width > 0 and frame.width > max_width:
+            ratio = max_width / frame.width
+            new_size = (max_width, max(1, int(frame.height * ratio)))
+            img = frame.resize(new_size, Image.LANCZOS)
+
         buf = io.BytesIO()
-        frame.save(buf, format="JPEG", quality=85)
+        jpeg_q = max(1, min(95, int(jpeg_quality)))
+        img.save(buf, format="JPEG", quality=jpeg_q)
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        # Build a text summary of what the vision pipeline sees in this frame.
+        summary = self._frame_summary()
+
         return {
             "ok": True,
             "frame": {
                 "jpeg_base64": b64,
-                "width": frame.width,
-                "height": frame.height,
+                "width": img.width,
+                "height": img.height,
                 "timestamp": time.time(),
+                "detections_summary": summary,
             },
         }
+
+    def _frame_summary(self) -> str:
+        """Plain-English summary of detections visible in the current frame."""
+        parts: list[str] = []
+
+        # Cube detections
+        cubes = self._cozmo.vision.latest_detections
+        if cubes:
+            cube_lines: list[str] = []
+            for det in cubes:
+                cx = det.x + det.width // 2
+                cy = det.y + det.height // 2
+                dist_str = f"{det.distance:.1f}m" if det.distance else "unknown"
+                cube_lines.append(
+                    f"  Cube {det.cube_index + 1} at pixel ({cx}, {cy}), "
+                    f"confidence {det.confidence:.2f}, distance {dist_str}"
+                )
+            parts.append(f"{len(cubes)} cube(s) detected:")
+            parts.extend(cube_lines)
+        else:
+            parts.append("No cubes detected in frame.")
+
+        # Faces, charger, ArUco from the world-map snapshot
+        try:
+            world = self._cozmo.world_map.get_world_state()
+        except RuntimeError:
+            world = {}
+
+        faces = world.get("faces") or {}
+        if faces:
+            face_names = ", ".join(f"Face {fid}" for fid in sorted(faces.keys()))
+            parts.append(f"Face(s) visible: {face_names}.")
+
+        charger = world.get("charger")
+        if charger and isinstance(charger, dict) and charger.get("position"):
+            parts.append("Charger marker visible.")
+
+        arucos = world.get("aruco_markers") or {}
+        if arucos:
+            aruco_desc = ", ".join(f"ArUco #{mid}" for mid in sorted(arucos.keys()))
+            parts.append(f"ArUco marker(s): {aruco_desc}.")
+
+        return " | ".join(parts)
 
     # ------------------------------------------------------------------
     # Motion (job-returning)
