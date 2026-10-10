@@ -20,6 +20,10 @@ Conventions (also stated in the MCP server instructions):
 * **Frame-derived reads report freshness** — ``frame_age_s`` /
   ``stale`` (and ``camera_active``) distinguish "nothing in view" from
   "no frames"; the recovery for the latter is ``camera_toggle``.
+* **Drive tools refuse while the robot cannot move** — on the charger
+  or picked up the firmware ignores wheel commands, so those states are
+  refusals with a physical reason (and a job that still fails says why
+  in its ``reason``) instead of a timeout that explains nothing.
 * **``stop`` is always available** and cancels both motion and jobs.
 
 This module deliberately does not import the ``mcp`` SDK — it stays
@@ -184,6 +188,38 @@ class Toolset:
         if age is None:
             return None, True
         return round(age, 2), age > STALE_FRAME_S
+
+    def _drivable_refusal(self) -> dict[str, Any] | None:
+        """Gate for every tool that turns the wheels, or ``None`` when drivable.
+
+        The firmware ignores wheel commands while the robot is on the
+        charger or picked up, so the command would spin uselessly and
+        come back as a confusing timeout. Refuse up front with the
+        physical reason — the operator has to move the robot first, and
+        no retry will change that.
+        """
+        sensors = self._cozmo.sensors
+        if sensors.picked_up:
+            return self._refusal("Robot is picked up - set it down before driving")
+        if sensors.on_charger or sensors.is_charging:
+            return self._refusal("Robot is on the charger - lift it off and set it down before driving")
+        return None
+
+    def _motion_failure_reason(self, made_progress: bool) -> str:
+        """Why a motion job came back unsuccessful, in terms the caller can act on.
+
+        ``made_progress`` distinguishes "moved, but not far enough"
+        (localization/obstruction — re-read state and retry) from "the
+        wheels never turned" (physical block: charger, pickup, stall).
+        """
+        sensors = self._cozmo.sensors
+        if sensors.picked_up:
+            return "Robot is picked up - set it down before driving"
+        if sensors.on_charger or sensors.is_charging:
+            return "Robot is on the charger - lift it off and set it down before driving"
+        if not made_progress:
+            return "Wheels did not respond - check that the robot is off the charger, set down, and unobstructed"
+        return "Did not complete in time - re-read get_robot_state and retry"
 
     # ------------------------------------------------------------------
     # Reads
@@ -415,10 +451,14 @@ class Toolset:
         """Drive to a world-frame point (mm), following the A* path when enabled. Returns a job_id.
 
         Poll get_job/wait_for_job for {arrived, distance_mm, timed_out}.
-        Rejected beyond the safety extent from the origin. Pass
-        confirm=true when confirmation is required.
+        Refused beyond the safety extent from the origin, while the robot
+        is on the charger or picked up, and (when configured) without
+        confirmation - pass confirm=true then.
         """
         refusal = self._motion_precheck(confirm)
+        if refusal is not None:
+            return refusal
+        refusal = self._drivable_refusal()
         if refusal is not None:
             return refusal
         reason = self.limits.target_error(x, y)
@@ -436,6 +476,8 @@ class Toolset:
         unrelated approach or dock must survive its sibling timing out.
         """
         cozmo = self._cozmo
+        start_x, start_y, _ = self._current_pose()
+        start_distance = math.hypot(x - start_x, y - start_y)
         cozmo.navigator.navigate_to(x, y)
         deadline = time.monotonic() + self.limits.motion_timeout_s
         timed_out = False
@@ -448,22 +490,31 @@ class Toolset:
             cozmo.navigator.cancel_navigation()
         position, _yaw = cozmo.world_map.robot_pose
         distance = math.hypot(x - float(position[0]), y - float(position[1]))
-        return {
-            "arrived": distance <= 25.0 and not timed_out,
+        arrived = distance <= 25.0 and not timed_out
+        result = {
+            "arrived": arrived,
             "distance_mm": round(distance, 1),
             "timed_out": timed_out,
             "target_mm": [x, y],
         }
+        if not arrived:
+            result["reason"] = self._motion_failure_reason(start_distance - distance > 1.0)
+        return result
 
     def move_by(self, distance_mm: float, speed_mmps: float = 60.0, confirm: bool = False) -> dict[str, Any]:
         """Drive straight forward (positive mm) or reverse (negative) from the current pose, keeping the heading. Returns a job_id.
 
         The projected target is checked against the safety extent like
         navigate_to, and speed_mmps is clamped to the safety speed cap.
-        Poll get_job/wait_for_job for {arrived, requested_mm, actual_mm}.
+        Poll get_job/wait_for_job for {arrived, requested_mm, actual_mm}
+        (plus reason when not arrived). Refused on the charger or picked
+        up, and (when configured) without confirm=true.
         Use this for small positioning moves that need no world point.
         """
         refusal = self._motion_precheck(confirm)
+        if refusal is not None:
+            return refusal
+        refusal = self._drivable_refusal()
         if refusal is not None:
             return refusal
         if abs(distance_mm) < 1.0:
@@ -487,20 +538,28 @@ class Toolset:
         arrived = cozmo.navigator.move_by(distance_mm, speed_mmps=speed)
         end_x, end_y, _ = self._current_pose()
         covered = math.hypot(end_x - start_x, end_y - start_y)
-        return {
+        result: dict[str, Any] = {
             "arrived": bool(arrived),
             "requested_mm": distance_mm,
             "actual_mm": round(covered if distance_mm >= 0 else -covered, 1),
         }
+        if not arrived:
+            result["reason"] = self._motion_failure_reason(covered >= 1.0)
+        return result
 
     def turn_by(self, angle_deg: float, confirm: bool = False) -> dict[str, Any]:
         """Turn in place by a relative angle (degrees, positive = CCW/left). Returns a job_id.
 
         Angles past ±180 take the short way around (the target heading
         wraps); beyond ±360 is refused as meaningless. Poll
-        get_job/wait_for_job for {aligned, requested_deg, turned_deg}.
+        get_job/wait_for_job for {aligned, requested_deg, turned_deg}
+        (plus reason when not aligned). Refused on the charger or picked
+        up, and (when configured) without confirm=true.
         """
         refusal = self._motion_precheck(confirm)
+        if refusal is not None:
+            return refusal
+        refusal = self._drivable_refusal()
         if refusal is not None:
             return refusal
         if abs(angle_deg) > 360.0:
@@ -515,11 +574,14 @@ class Toolset:
         aligned = cozmo.navigator.turn_by(angle_deg)
         _, end_yaw = cozmo.world_map.robot_pose
         turned = (math.degrees(float(end_yaw) - float(start_yaw)) + 180.0) % 360.0 - 180.0
-        return {
+        result: dict[str, Any] = {
             "aligned": bool(aligned),
             "requested_deg": angle_deg,
             "turned_deg": round(turned, 1),
         }
+        if not aligned:
+            result["reason"] = self._motion_failure_reason(abs(turned) >= 1.0)
+        return result
 
     def approach_cube(self, cube_id: int, confirm: bool = False) -> dict[str, Any]:
         """Drive to cube 1-3, align, and grab it (stacks the held cube onto it when one is on the forks).
@@ -528,6 +590,9 @@ class Toolset:
         the cube is unknown or another visit is in flight.
         """
         refusal = self._motion_precheck(confirm)
+        if refusal is not None:
+            return refusal
+        refusal = self._drivable_refusal()
         if refusal is not None:
             return refusal
         if cube_id not in (1, 2, 3):
@@ -547,6 +612,9 @@ class Toolset:
         or another visit is in flight.
         """
         refusal = self._motion_precheck(confirm)
+        if refusal is not None:
+            return refusal
+        refusal = self._drivable_refusal()
         if refusal is not None:
             return refusal
         if cube_id not in (1, 2, 3):
@@ -571,6 +639,9 @@ class Toolset:
         Same contract as dock; returns a job_id when the attempt starts.
         """
         refusal = self._motion_precheck(confirm)
+        if refusal is not None:
+            return refusal
+        refusal = self._drivable_refusal()
         if refusal is not None:
             return refusal
         return self._submit_visit(

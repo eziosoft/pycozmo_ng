@@ -37,9 +37,11 @@ INSTRUCTIONS = (
     "set_head_angle and set_lift_height are synchronous; wait(seconds) pauses up to "
     "10 s to let the robot settle instead of re-reading immediately. camera_toggle "
     "turns the video stream off/on - it is the recovery when get_frame returns null "
-    "or get_detections is empty. stop cancels all motion and jobs: call it whenever "
-    "motion looks wrong. Positions come from live localization: treat them as "
-    "estimates, re-read state after motion, and never navigate outside the known map."
+    "or get_detections is empty. Drive tools refuse while the robot is on the charger "
+    "or picked up - get_sensors reports both. stop cancels all motion and jobs: call "
+    "it whenever motion looks wrong. Positions come from live localization: treat "
+    "them as estimates, re-read state after motion, and never navigate outside the "
+    "known map."
 )
 
 

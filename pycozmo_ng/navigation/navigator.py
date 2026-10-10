@@ -34,6 +34,24 @@ if TYPE_CHECKING:
     from pycozmo_ng.navigation.world_map import WorldMap
 
 
+def _pose_signature(pose) -> tuple[float, float, float]:
+    """``(x, y, yaw)`` of a firmware pose — the movement fingerprint."""
+    return (pose.position.x, pose.position.y, pose.rotation.angle_z.radians)
+
+
+def _pose_moved(
+    anchor: tuple[float, float, float],
+    current: tuple[float, float, float],
+    eps_mm: float = 0.5,
+    eps_rad: float = math.radians(0.3),
+) -> bool:
+    """Whether the pose changed beyond localization noise since *anchor*."""
+    return (
+        math.hypot(current[0] - anchor[0], current[1] - anchor[1]) > eps_mm
+        or abs(wrap_pi(current[2] - anchor[2])) > eps_rad
+    )
+
+
 class Navigator:
     """Robot navigation: point-to-point drive, cube approach, docking.
 
@@ -270,6 +288,7 @@ class Navigator:
         speed_mmps: float = 60.0,
         final_heading: float | None = None,
         align_tol_rad: float = 0.06,
+        stall_s: float | None = None,
     ) -> bool:
         """Closed-loop differential drive toward a point, reversing if needed.
 
@@ -291,10 +310,15 @@ class Navigator:
             final_heading: World heading (rad) to align to after arrival
                 (turning in place).
             align_tol_rad: Heading tolerance for the final alignment.
+            stall_s: Give up early when the pose stops changing for this
+                long — the firmware ignores wheel commands while the robot
+                is on the charger or picked up, and waiting out
+                ``timeout_s`` for that says nothing the caller can act on.
+                ``None`` (default) waits out the timeout.
 
         Returns:
             True if the target was reached (within tolerance), False on
-            timeout or when interrupted by :meth:`stop`.
+            timeout, stall, or when interrupted by :meth:`stop`.
         """
         cli = self.cli
         if cli is None:
@@ -305,11 +329,19 @@ class Navigator:
         reached = False
         with self.motion.begin(self.JOB_DRIVE) as job:
             try:
+                anchor = _pose_signature(cli.pose)
+                last_moved = time.monotonic()
                 while time.monotonic() - t0 <= timeout_s:
                     if job.cancelled:
                         logger.info("Drive interrupted by stop()")
                         break
                     pose = cli.pose
+                    signature = _pose_signature(pose)
+                    if _pose_moved(anchor, signature):
+                        anchor, last_moved = signature, time.monotonic()
+                    elif stall_s is not None and time.monotonic() - last_moved > stall_s:
+                        logger.warning("Drive: no robot motion for %.1fs - wheels not responding", stall_s)
+                        break
                     ex, ey = tx - pose.position.x, ty - pose.position.y
                     if math.hypot(ex, ey) <= stop_mm:
                         reached = True
@@ -343,8 +375,15 @@ class Navigator:
         tol_rad: float = 0.06,
         timeout_s: float = 3.0,
         turn_speed_mmps: float = 30.0,
+        stall_s: float | None = None,
     ) -> None:
-        """Turn in place to ``target_heading`` (world frame, radians)."""
+        """Turn in place to ``target_heading`` (world frame, radians).
+
+        ``stall_s`` aborts early when the heading stops changing for that
+        long — the firmware ignores wheel commands while the robot is on
+        the charger or picked up, so waiting out ``timeout_s`` for that
+        only delays an answer the caller cannot act on anyway.
+        """
         cli = self.cli
         if cli is None:
             return
@@ -352,10 +391,17 @@ class Navigator:
         t0 = time.monotonic()
         with self.motion.begin(self.JOB_ALIGN) as job:
             try:
+                anchor_yaw = cli.pose.rotation.angle_z.radians
+                last_moved = time.monotonic()
                 while time.monotonic() - t0 <= timeout_s:
                     if job.cancelled:
                         break
                     yaw = cli.pose.rotation.angle_z.radians
+                    if abs(wrap_pi(yaw - anchor_yaw)) > math.radians(0.25):
+                        anchor_yaw, last_moved = yaw, time.monotonic()
+                    elif stall_s is not None and time.monotonic() - last_moved > stall_s:
+                        logger.warning("Align: no heading response for %.1fs - wheels not responding", stall_s)
+                        break
                     err = wrap_pi(target_heading - yaw)
                     if abs(err) < tol_rad:
                         break
@@ -410,6 +456,7 @@ class Navigator:
         distance_mm: float,
         speed_mmps: float = 60.0,
         timeout_s: float | None = None,
+        stall_s: float | None = 2.0,
     ) -> bool:
         """Drive straight forward (positive) or reverse (negative) by ``distance_mm``.
 
@@ -423,10 +470,12 @@ class Navigator:
             speed_mmps: Cruise wheel speed (mm/s); the caller caps it.
             timeout_s: Overall drive timeout; ``None`` scales with the
                 distance at the requested speed.
+            stall_s: Give up when the pose stops changing for this long
+                (wheels not responding — see :meth:`drive_to_point`).
 
         Returns:
             True when the robot covered the requested distance, False
-            when not connected, interrupted, or timed out.
+            when not connected, stalled, interrupted, or timed out.
         """
         cli = self.cli
         if cli is None:
@@ -448,6 +497,7 @@ class Navigator:
             timeout_s=timeout_s,
             speed_mmps=speed_mmps,
             final_heading=yaw,
+            stall_s=stall_s,
         )
 
     def turn_by(
@@ -455,6 +505,7 @@ class Navigator:
         angle_rad: float,
         tol_rad: float = 0.06,
         timeout_s: float | None = None,
+        stall_s: float | None = 2.0,
     ) -> bool:
         """Turn in place by ``angle_rad`` (positive = CCW/left).
 
@@ -468,10 +519,13 @@ class Navigator:
             tol_rad: Heading error considered aligned.
             timeout_s: Turn timeout; ``None`` scales with the angle at
                 the fixed turn speed (~38°/s).
+            stall_s: Give up when the heading stops changing for this
+                long (wheels not responding — the robot is likely on the
+                charger or picked up). ``None`` waits out the timeout.
 
         Returns:
             True when the heading settled within ``tol_rad``, False when
-            not connected, cancelled, or timed out.
+            not connected, stalled, cancelled, or timed out.
         """
         cli = self.cli
         if cli is None:
@@ -480,7 +534,7 @@ class Navigator:
         if timeout_s is None:
             timeout_s = 3.0 + abs(math.degrees(angle_rad)) / 30.0
         target = wrap_pi(cli.pose.rotation.angle_z.radians + angle_rad)
-        self._align_heading(target, tol_rad=tol_rad, timeout_s=timeout_s)
+        self._align_heading(target, tol_rad=tol_rad, timeout_s=timeout_s, stall_s=stall_s)
         residual = abs(wrap_pi(target - cli.pose.rotation.angle_z.radians))
         return residual <= tol_rad
 
