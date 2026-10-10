@@ -30,13 +30,16 @@ INSTRUCTIONS = (
     "PyCozmo-NG drives a physical Cozmo robot. Frames and units: world frame, "
     "millimetres, headings in radians; cube IDs are 1-3. Read tools "
     "(get_robot_state, get_world_map, get_sensors, get_detections, get_frame) return "
-    "snapshots and are always safe. Motion tools (navigate_to, approach_cube, "
-    "dock, dock_on_aruco) return a job_id immediately — poll get_job or "
-    "wait_for_job for the outcome instead of assuming success. say, "
-    "set_head_angle and set_lift_height are synchronous. stop cancels all "
-    "motion and jobs: call it whenever motion looks wrong. Positions come "
-    "from live localization: treat them as estimates, re-read state after "
-    "motion, and never navigate outside the known map."
+    "snapshots and are always safe; they carry camera_active/frame_age_s so you can "
+    "tell a live frame from a stale one. Motion tools (navigate_to, move_by, turn_by, "
+    "approach_cube, stack_cube, dock, dock_on_aruco) return a job_id immediately - "
+    "poll get_job or wait_for_job for the outcome instead of assuming success. say, "
+    "set_head_angle and set_lift_height are synchronous; wait(seconds) pauses up to "
+    "10 s to let the robot settle instead of re-reading immediately. camera_toggle "
+    "turns the video stream off/on - it is the recovery when get_frame returns null "
+    "or get_detections is empty. stop cancels all motion and jobs: call it whenever "
+    "motion looks wrong. Positions come from live localization: treat them as "
+    "estimates, re-read state after motion, and never navigate outside the known map."
 )
 
 
@@ -130,10 +133,14 @@ class McPServer:
 
         Explicit list rather than ``dir()`` so the private helpers
         (``_refusal``, ``_run_navigate``, ...) can never leak into the
-        tool surface by accident.
+        tool surface by accident. Each tool also gets MCP annotations:
+        reads are flagged read-only (clients may auto-approve them) and
+        side-effect-free repeats are flagged idempotent.
         """
+        from mcp_types import ToolAnnotations
+
         names = (
-            # Reads
+            # Reads (snapshots)
             "get_robot_state",
             "get_world_map",
             "get_sensors",
@@ -141,7 +148,10 @@ class McPServer:
             "get_frame",
             # Motion (job-returning)
             "navigate_to",
+            "move_by",
+            "turn_by",
             "approach_cube",
+            "stack_cube",
             "dock",
             "dock_on_aruco",
             "stop",
@@ -152,17 +162,40 @@ class McPServer:
             "set_origin",
             # Configuration
             "camera_settings",
+            "camera_toggle",
             "astar_toggle",
             # Jobs
             "get_job",
             "wait_for_job",
             "list_jobs",
+            # Utilities
+            "wait",
         )
+        read_only = {
+            "get_robot_state",
+            "get_world_map",
+            "get_sensors",
+            "get_detections",
+            "get_frame",
+            "get_job",
+            "wait_for_job",
+            "list_jobs",
+        }
+        # Repeating these produces the same state; motion and say never do.
+        idempotent = read_only | {"stop", "camera_settings", "camera_toggle", "astar_toggle"}
         for name in names:
             fn = getattr(self.toolset, name)
             if name == "get_frame":
                 fn = self._get_frame_image_wrapper()
-            mcp.add_tool(fn, name=name, structured_output=False)
+            mcp.add_tool(
+                fn,
+                name=name,
+                structured_output=False,
+                annotations=ToolAnnotations(
+                    read_only_hint=name in read_only,
+                    idempotent_hint=name in idempotent,
+                ),
+            )
 
     def _get_frame_image_wrapper(self):
         """Return a ``get_frame`` wrapper that emits real MCP image content.
@@ -187,9 +220,17 @@ class McPServer:
                 return result  # no frame available yet — text snapshot is right
             blocks: list[Any] = [ImageContent(type="image", data=frame["jpeg_base64"], mime_type="image/jpeg")]
             summary = frame.get("detections_summary")
-            meta = f"Frame {frame.get('width')}x{frame.get('height')}px, timestamp {frame.get('timestamp'):.3f}" + (
-                f"\n{summary}" if summary else ""
-            )
+            age = frame.get("age_s")
+            meta = f"Frame {frame.get('width')}x{frame.get('height')}px, timestamp {frame.get('timestamp'):.3f}"
+            if age is not None:
+                meta += f", age {age:.1f}s"
+            if summary:
+                meta += f"\n{summary}"
+            if frame.get("stale"):
+                meta += (
+                    f"\nSTALE: the newest frame is {age if age is not None else '?'}s old - the camera has "
+                    "stopped producing. Call camera_toggle(enabled=true) to restart the stream."
+                )
             blocks.append(TextContent(type="text", text=meta))
             return CallToolResult(content=blocks)
 
@@ -205,8 +246,10 @@ class McPServer:
             "        320 or 160 for smaller payloads.\n"
             "    jpeg_quality: JPEG encoding quality (1-95, default 70). Lower\n"
             "        values produce smaller payloads at the cost of fidelity.\n\n"
-            "Returns an image content block plus a text summary of detections. When "
-            "the camera is stopped or no frame has arrived yet, returns a text "
-            "snapshot with frame: null."
+            "Returns an image content block plus a text summary of detections, "
+            "including the frame's age - a stale marker means the camera stopped "
+            "producing and camera_toggle(enabled=true) restarts it. When the camera "
+            "is stopped or no frame has arrived yet, returns a text snapshot with "
+            "frame: null."
         )
         return _wrapper

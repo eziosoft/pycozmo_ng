@@ -7,6 +7,7 @@ subsystem method fails here instead of raising AttributeError in front of
 a user (the bug this suite guards against).
 """
 
+import time
 from dataclasses import fields
 from unittest.mock import MagicMock
 
@@ -69,6 +70,12 @@ class TestNavigatorFacade:
 
     def test_dock_without_robot_does_not_raise(self, cozmo):
         cozmo.navigator.dock()
+
+    def test_move_by_without_robot_returns_false(self, cozmo):
+        assert cozmo.navigator.move_by(100.0) is False
+
+    def test_turn_by_without_robot_returns_false(self, cozmo):
+        assert cozmo.navigator.turn_by(90.0) is False
 
     def test_approach_unknown_cube_returns_false(self, cozmo):
         assert cozmo.navigator.approach_cube(1) is False
@@ -195,6 +202,20 @@ class TestVisionFacade:
 
     def test_stop_without_connection_is_safe(self, cozmo):
         cozmo.vision.stop()
+
+    def test_camera_inactive_and_no_frame_age_before_start(self, cozmo):
+        assert cozmo.vision.active is False
+        assert cozmo.vision.frame_age_s is None
+
+    def test_frame_age_counts_up_from_the_capture_time(self, cozmo):
+        from PIL import Image
+
+        frame_state = cozmo._brain.frame_state
+        frame_state.latest_raw_frame = Image.new("RGB", (2, 2))
+        frame_state.last_frame_time = time.time() - 1.5
+        age = cozmo.vision.frame_age_s
+        assert age is not None
+        assert age >= 1.5
 
     def test_setup_vision_requires_connection(self, cozmo):
         # Raises before attempting calibration retrieval from the robot.

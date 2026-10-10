@@ -402,6 +402,89 @@ class Navigator:
         return False
 
     # ------------------------------------------------------------------
+    # Relative motion (COZMO-69)
+    # ------------------------------------------------------------------
+
+    def move_by(
+        self,
+        distance_mm: float,
+        speed_mmps: float = 60.0,
+        timeout_s: float | None = None,
+    ) -> bool:
+        """Drive straight forward (positive) or reverse (negative) by ``distance_mm``.
+
+        The target is projected from the current pose along the current
+        heading, and the drive ends aligned to that same heading — so the
+        move changes position, not orientation. It runs as the shared
+        ``drive`` job on :attr:`motion`, which :meth:`stop` cancels.
+
+        Args:
+            distance_mm: Signed distance to cover (mm).
+            speed_mmps: Cruise wheel speed (mm/s); the caller caps it.
+            timeout_s: Overall drive timeout; ``None`` scales with the
+                distance at the requested speed.
+
+        Returns:
+            True when the robot covered the requested distance, False
+            when not connected, interrupted, or timed out.
+        """
+        cli = self.cli
+        if cli is None:
+            logger.warning("Move: no robot connected")
+            return False
+        pose = cli.pose
+        yaw = pose.rotation.angle_z.radians
+        tx = pose.position.x + distance_mm * math.cos(yaw)
+        ty = pose.position.y + distance_mm * math.sin(yaw)
+        # Scale the arrival radius with the request: 20 mm is too coarse
+        # for a 100 mm move, 5 mm needlessly strict for a metre.
+        stop_mm = max(5.0, min(20.0, abs(distance_mm) * 0.15))
+        if timeout_s is None:
+            timeout_s = max(5.0, abs(distance_mm) / max(speed_mmps, 1.0) * 2.0 + 3.0)
+        return self.drive_to_point(
+            tx,
+            ty,
+            stop_mm=stop_mm,
+            timeout_s=timeout_s,
+            speed_mmps=speed_mmps,
+            final_heading=yaw,
+        )
+
+    def turn_by(
+        self,
+        angle_rad: float,
+        tol_rad: float = 0.06,
+        timeout_s: float | None = None,
+    ) -> bool:
+        """Turn in place by ``angle_rad`` (positive = CCW/left).
+
+        The target heading is the current heading plus the angle, wrapped
+        into [-pi, pi) — an angle past ±180° takes the short way around.
+        The turn runs as the ``align`` job on :attr:`motion`, which
+        :meth:`stop` cancels.
+
+        Args:
+            angle_rad: Relative angle to turn (radians).
+            tol_rad: Heading error considered aligned.
+            timeout_s: Turn timeout; ``None`` scales with the angle at
+                the fixed turn speed (~38°/s).
+
+        Returns:
+            True when the heading settled within ``tol_rad``, False when
+            not connected, cancelled, or timed out.
+        """
+        cli = self.cli
+        if cli is None:
+            logger.warning("Turn: no robot connected")
+            return False
+        if timeout_s is None:
+            timeout_s = 3.0 + abs(math.degrees(angle_rad)) / 30.0
+        target = wrap_pi(cli.pose.rotation.angle_z.radians + angle_rad)
+        self._align_heading(target, tol_rad=tol_rad, timeout_s=timeout_s)
+        residual = abs(wrap_pi(target - cli.pose.rotation.angle_z.radians))
+        return residual <= tol_rad
+
+    # ------------------------------------------------------------------
     # Cube approach (COZMO-28 / COZMO-40)
     # ------------------------------------------------------------------
 

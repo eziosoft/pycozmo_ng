@@ -17,6 +17,7 @@ Usage:
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
@@ -78,6 +79,23 @@ class VisionAPI:
     def latest_frame(self):
         """Get the latest raw camera frame."""
         return self._brain.frame_state.latest_raw_frame
+
+    @property
+    def active(self) -> bool:
+        """Whether the camera stream is enabled (frames should be arriving)."""
+        return self._brain.camera.active
+
+    @property
+    def frame_age_s(self) -> float | None:
+        """Seconds since the last decoded frame, or ``None`` before the first.
+
+        The freshness check for every frame-derived read: a populated
+        frame with a growing age means the camera stopped producing.
+        """
+        frame_state = self._brain.frame_state
+        if frame_state.latest_raw_frame is None:
+            return None
+        return max(0.0, time.time() - frame_state.last_frame_time)
 
     @property
     def latest_annotated_frame(self):
@@ -270,6 +288,23 @@ class NavigatorAPI:
         already in flight; observe it through :attr:`active_motions`.
         """
         self._navigator.navigate_to(x, y)
+
+    def move_by(self, distance_mm: float, speed_mmps: float = 60.0) -> bool:
+        """Drive straight forward (positive) or reverse (negative) by ``distance_mm``.
+
+        The move is projected from the current pose and keeps the
+        starting heading. Returns True when the distance was covered
+        (False when not connected, interrupted, or timed out).
+        """
+        return self._navigator.move_by(distance_mm, speed_mmps=speed_mmps)
+
+    def turn_by(self, angle_deg: float) -> bool:
+        """Turn in place by a relative angle (degrees, positive = CCW/left).
+
+        Angles past ±180° take the short way around. Returns True when
+        the heading settled within tolerance.
+        """
+        return self._navigator.turn_by(math.radians(angle_deg))
 
     def cancel_navigation(self) -> None:
         """Cancel background navigation and stop the motors.

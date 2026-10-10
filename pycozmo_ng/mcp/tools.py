@@ -17,6 +17,9 @@ Conventions (also stated in the MCP server instructions):
   background; poll ``get_job``/``wait_for_job``. Refusals (safety,
   not connected, confirmation required) come back as
   ``{"ok": false, "reason": ...}`` *without* starting a job.
+* **Frame-derived reads report freshness** — ``frame_age_s`` /
+  ``stale`` (and ``camera_active``) distinguish "nothing in view" from
+  "no frames"; the recovery for the latter is ``camera_toggle``.
 * **``stop`` is always available** and cancels both motion and jobs.
 
 This module deliberately does not import the ``mcp`` SDK — it stays
@@ -51,6 +54,15 @@ DEFAULT_WAIT_S = 30.0
 
 #: Hard cap for a requested wait (seconds).
 MAX_WAIT_S = 300.0
+
+#: Longest ``wait`` may sleep inside one tool call (seconds). Short
+#: enough to stay under any MCP client's tool timeout.
+MAX_SLEEP_S = 10.0
+
+#: A frame older than this is reported as ``stale`` — the camera has
+#: stopped producing (or the pipeline is not running) and the image the
+#: caller is looking at is history, not the current scene.
+STALE_FRAME_S = 2.0
 
 
 def jsonable(value: Any) -> Any:
@@ -156,21 +168,42 @@ class Toolset:
             time.sleep(0.2)
         return {"finished": False, "reason": f"timed out after {self.limits.visit_timeout_s:.0f}s"}
 
+    def _current_pose(self) -> tuple[float, float, float]:
+        """World pose ``(x, y, yaw)`` from the world map (mm, radians)."""
+        position, yaw = self._cozmo.world_map.robot_pose
+        return float(position[0]), float(position[1]), float(yaw)
+
+    def _frame_freshness(self) -> tuple[float | None, bool]:
+        """``(age_s, stale)`` of the newest decoded frame.
+
+        ``age_s`` is ``None`` before the first frame ever arrived; a frame
+        older than :data:`STALE_FRAME_S` is stale — the camera stopped
+        producing and any image on hand is history.
+        """
+        age = self._cozmo.vision.frame_age_s
+        if age is None:
+            return None, True
+        return round(age, 2), age > STALE_FRAME_S
+
     # ------------------------------------------------------------------
     # Reads
     # ------------------------------------------------------------------
 
     def get_robot_state(self) -> dict[str, Any]:
-        """Merged snapshot: connection status, robot pose, telemetry, carry state, navigation status, and the fused world map (path trails omitted).
+        """Merged snapshot: connection, pose, telemetry, carry, vision freshness, navigation, running jobs, and the fused world map (path trails omitted).
 
         The one call to orient a new turn. Positions are world-frame
         millimetres relative to the last set_origin(); headings radians.
-        For the full map including path trails use get_world_map; for
-        telemetry only use get_sensors.
+        ``vision.frame_age_s``/``camera_active`` say whether the camera is
+        actually producing; ``cubes_connected`` is the BLE link (distinct
+        from the cubes the world map sees); ``jobs_running`` is how many
+        background commands are still going. For the full map including
+        path trails use get_world_map; for telemetry only get_sensors.
         """
         cozmo = self._cozmo
         world = self._world_snapshot(include_trails=False)
         position, yaw = cozmo.world_map.robot_pose
+        frame_age_s, stale = self._frame_freshness()
         return {
             "ok": True,
             "connected": cozmo.is_connected,
@@ -182,10 +215,17 @@ class Toolset:
                 "cube_id": cozmo.carry.cube_id,
                 "on_forks": cozmo.carry.on_forks,
             },
+            "vision": {
+                "camera_active": cozmo.vision.active,
+                "frame_age_s": frame_age_s,
+                "frame_stale": stale,
+            },
+            "cubes_connected": cozmo.cubes.connected,
             "navigation": {
                 "astar_enabled": cozmo.navigator.is_astar_enabled(),
                 "active_motions": list(cozmo.navigator.active_motions),
             },
+            "jobs_running": sum(1 for entry in self.jobs.list() if entry["status"] == "running"),
             "sensors": self.get_sensors().get("sensors", {}),
             "world": world,
         }
@@ -241,8 +281,12 @@ class Toolset:
     def get_detections(self) -> dict[str, Any]:
         """Raw detections from the latest processed camera frame: cubes with pixel boxes, confidence, distance, and cube ID (1-3).
 
-        Empty when vision is not running. The fused, world-frame view
-        lives in get_world_map.
+        Empty when vision is not running — check ``camera_active`` and
+        ``frame_age_s`` to tell "nothing in view" from "no frames" (an
+        empty list with camera_active false or a large frame_age_s means
+        the camera is off/stale, not that the scene is empty; recover
+        with camera_toggle). The fused, world-frame view lives in
+        get_world_map.
         """
         detections = self._cozmo.vision.latest_detections
         out = []
@@ -251,7 +295,15 @@ class Toolset:
             if isinstance(item, dict) and "cube_index" in item:
                 item["cube_id"] = to_cube_id(int(item.pop("cube_index")))
             out.append(item)
-        return {"ok": True, "count": len(out), "detections": out}
+        frame_age_s, stale = self._frame_freshness()
+        return {
+            "ok": True,
+            "count": len(out),
+            "camera_active": self._cozmo.vision.active,
+            "frame_age_s": frame_age_s,
+            "frame_stale": stale,
+            "detections": out,
+        }
 
     def get_frame(
         self,
@@ -272,9 +324,11 @@ class Toolset:
                 values produce smaller base64 strings at the cost of fidelity.
 
         Returns ``{"ok": true, "frame": ...}`` with fields:
-        ``jpeg_base64``, ``width``, ``height``, ``timestamp``,
-        ``detections_summary``. When the camera is stopped or no frame has
-        arrived yet returns ``{"ok": true, "frame": null}``.
+        ``jpeg_base64``, ``width``, ``height``, ``timestamp`` (capture
+        time), ``age_s``, ``stale``, ``detections_summary``. When the
+        camera is stopped or no frame has arrived yet returns
+        ``{"ok": true, "frame": null}`` — recover the stream with
+        camera_toggle.
         """
         frame = self._cozmo.vision.latest_annotated_frame if annotated else self._cozmo.vision.latest_frame
         if frame is None:
@@ -294,6 +348,7 @@ class Toolset:
 
         # Build a text summary of what the vision pipeline sees in this frame.
         summary = self._frame_summary()
+        age_s, stale = self._frame_freshness()
 
         return {
             "ok": True,
@@ -301,7 +356,10 @@ class Toolset:
                 "jpeg_base64": b64,
                 "width": img.width,
                 "height": img.height,
-                "timestamp": time.time(),
+                # Capture time, not serialization time — the point of age_s.
+                "timestamp": time.time() - (age_s or 0.0),
+                "age_s": age_s,
+                "stale": stale,
                 "detections_summary": summary,
             },
         }
@@ -397,6 +455,72 @@ class Toolset:
             "target_mm": [x, y],
         }
 
+    def move_by(self, distance_mm: float, speed_mmps: float = 60.0, confirm: bool = False) -> dict[str, Any]:
+        """Drive straight forward (positive mm) or reverse (negative) from the current pose, keeping the heading. Returns a job_id.
+
+        The projected target is checked against the safety extent like
+        navigate_to, and speed_mmps is clamped to the safety speed cap.
+        Poll get_job/wait_for_job for {arrived, requested_mm, actual_mm}.
+        Use this for small positioning moves that need no world point.
+        """
+        refusal = self._motion_precheck(confirm)
+        if refusal is not None:
+            return refusal
+        if abs(distance_mm) < 1.0:
+            return self._refusal("distance_mm must be at least 1 mm")
+        speed = self.limits.clamp_speed(speed_mmps)
+        start_x, start_y, yaw = self._current_pose()
+        target = (
+            start_x + distance_mm * math.cos(yaw),
+            start_y + distance_mm * math.sin(yaw),
+        )
+        reason = self.limits.target_error(*target)
+        if reason is not None:
+            return self._refusal(reason)
+        job_id = self.jobs.submit("move_by", lambda: self._run_move_by(distance_mm, speed))
+        return {"ok": True, "job_id": job_id, "target_mm": [round(v, 1) for v in target], "speed_mmps": speed}
+
+    def _run_move_by(self, distance_mm: float, speed: float) -> dict[str, Any]:
+        """Run ``navigator.move_by`` and report the displacement actually covered."""
+        cozmo = self._cozmo
+        start_x, start_y, _ = self._current_pose()
+        arrived = cozmo.navigator.move_by(distance_mm, speed_mmps=speed)
+        end_x, end_y, _ = self._current_pose()
+        covered = math.hypot(end_x - start_x, end_y - start_y)
+        return {
+            "arrived": bool(arrived),
+            "requested_mm": distance_mm,
+            "actual_mm": round(covered if distance_mm >= 0 else -covered, 1),
+        }
+
+    def turn_by(self, angle_deg: float, confirm: bool = False) -> dict[str, Any]:
+        """Turn in place by a relative angle (degrees, positive = CCW/left). Returns a job_id.
+
+        Angles past ±180 take the short way around (the target heading
+        wraps); beyond ±360 is refused as meaningless. Poll
+        get_job/wait_for_job for {aligned, requested_deg, turned_deg}.
+        """
+        refusal = self._motion_precheck(confirm)
+        if refusal is not None:
+            return refusal
+        if abs(angle_deg) > 360.0:
+            return self._refusal(f"angle_deg must be within ±360 (got {angle_deg:.0f})")
+        job_id = self.jobs.submit("turn_by", lambda: self._run_turn(angle_deg))
+        return {"ok": True, "job_id": job_id}
+
+    def _run_turn(self, angle_deg: float) -> dict[str, Any]:
+        """Run ``navigator.turn_by`` and report the heading actually swept."""
+        cozmo = self._cozmo
+        _, start_yaw = cozmo.world_map.robot_pose
+        aligned = cozmo.navigator.turn_by(angle_deg)
+        _, end_yaw = cozmo.world_map.robot_pose
+        turned = (math.degrees(float(end_yaw) - float(start_yaw)) + 180.0) % 360.0 - 180.0
+        return {
+            "aligned": bool(aligned),
+            "requested_deg": angle_deg,
+            "turned_deg": round(turned, 1),
+        }
+
     def approach_cube(self, cube_id: int, confirm: bool = False) -> dict[str, Any]:
         """Drive to cube 1-3, align, and grab it (stacks the held cube onto it when one is on the forks).
 
@@ -412,6 +536,25 @@ class Toolset:
             "approach_cube",
             self._cozmo.navigator.approach_cube(cube_id),
             "approach",
+        )
+
+    def stack_cube(self, cube_id: int, confirm: bool = False) -> dict[str, Any]:
+        """Carry the cube on the raised forks to cube 1-3 and stack it on top.
+
+        Requires a cube already on the forks (get_robot_state's carry
+        block). Returns a job_id when the stack starts; refused
+        (ok=false) when nothing is on the forks, the target is unknown,
+        or another visit is in flight.
+        """
+        refusal = self._motion_precheck(confirm)
+        if refusal is not None:
+            return refusal
+        if cube_id not in (1, 2, 3):
+            return self._refusal(f"cube_id must be 1, 2 or 3 (got {cube_id})")
+        return self._submit_visit(
+            "stack_cube",
+            self._cozmo.navigator.stack_cube(cube_id),
+            "stack",
         )
 
     def dock(self, confirm: bool = False) -> dict[str, Any]:
@@ -539,6 +682,29 @@ class Toolset:
             return {"ok": True, "settings": jsonable(self._cozmo.vision.camera_settings)}
         return {"ok": True, "settings": jsonable(self._cozmo.vision.apply_settings(settings))}
 
+    def camera_toggle(self, enabled: bool) -> dict[str, Any]:
+        """Enable or disable the camera stream, echoing the state after (idempotent).
+
+        Enabling restores the settings already in force (resolution,
+        exposure, ...), so a toggle off/on loses no configuration.
+        This is the recovery path when get_frame returns null or
+        get_detections stays empty with camera_active false; disabling
+        frees the robot's Wi-Fi bandwidth while you work from the map.
+        """
+        refusal = self._require_connected()
+        if refusal is not None:
+            return refusal
+        vision = self._cozmo.vision
+        try:
+            if enabled and not vision.active:
+                settings = dict(vision.camera_settings)
+                self._cozmo.enable_camera(resolution=settings.pop("resolution", None), **settings)
+            elif not enabled and vision.active:
+                vision.stop()
+        except RuntimeError as exc:
+            return self._refusal(str(exc))
+        return {"ok": True, "camera_active": vision.active}
+
     def astar_toggle(self, enabled: bool) -> dict[str, Any]:
         """Enable or disable A* obstacle-avoiding pathfinding for navigate commands.
 
@@ -575,3 +741,20 @@ class Toolset:
     def list_jobs(self) -> dict[str, Any]:
         """List all background jobs (newest first) with status, result, and error."""
         return {"ok": True, "jobs": self.jobs.list()}
+
+    # ------------------------------------------------------------------
+    # Utilities
+    # ------------------------------------------------------------------
+
+    def wait(self, seconds: float) -> dict[str, Any]:
+        """Sleep up to 10 s inside the tool call, then report how long it actually slept.
+
+        Use it to let the robot settle — a turn to finish, fresh camera
+        frames to arrive, cube lights to refresh — instead of hammering
+        the read tools back to back. For a motion job's outcome prefer
+        wait_for_job, which returns as soon as the job ends.
+        """
+        started = time.monotonic()
+        time.sleep(min(max(0.0, float(seconds)), MAX_SLEEP_S))
+        slept = time.monotonic() - started
+        return {"ok": True, "slept_s": round(slept, 2), "requested_s": seconds}

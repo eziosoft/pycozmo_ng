@@ -128,8 +128,13 @@ class TestReads:
         state = toolset.get_robot_state()
         assert state["ok"] is True
         assert state["connected"] is False
-        for key in ("pose", "carry", "navigation", "sensors", "world"):
+        for key in ("pose", "carry", "vision", "cubes_connected", "navigation", "jobs_running", "sensors", "world"):
             assert key in state
+        # Orientation extras: camera freshness, BLE links, running jobs.
+        assert state["vision"]["camera_active"] is False
+        assert state["vision"]["frame_stale"] is True
+        assert state["cubes_connected"] == []
+        assert state["jobs_running"] == 0
         # Lean snapshot: trails excluded.
         assert "path_points" not in state["world"]
         json.dumps(state)  # must be JSON-serializable
@@ -152,7 +157,14 @@ class TestReads:
 
     def test_get_detections_empty_without_vision(self, toolset):
         result = toolset.get_detections()
-        assert result == {"ok": True, "count": 0, "detections": []}
+        assert result == {
+            "ok": True,
+            "count": 0,
+            "camera_active": False,
+            "frame_age_s": None,
+            "frame_stale": True,
+            "detections": [],
+        }
 
 
 class TestMotionRefusals:
@@ -198,6 +210,108 @@ class TestStop:
         assert result == {"ok": True, "cancelled_jobs": []}
 
 
+class TestRelativeMotion:
+    """move_by / turn_by — the small positioning moves world-point navigate cannot express."""
+
+    def test_move_by_not_connected(self, toolset):
+        assert toolset.move_by(100.0)["ok"] is False
+
+    def test_move_by_rejects_tiny_distance(self, cozmo, toolset):
+        with _connected(cozmo):
+            result = toolset.move_by(0.1)
+        assert result["ok"] is False
+        assert "at least 1" in result["reason"]
+
+    def test_move_by_extent_rejected(self, cozmo, toolset):
+        with _connected(cozmo):
+            result = toolset.move_by(5000.0)
+        assert result["ok"] is False
+        assert "extent" in result["reason"]
+        assert toolset.jobs.list() == []  # refusal starts no job
+
+    def test_move_by_submits_job_and_clamps_speed(self, cozmo, toolset):
+        with _connected(cozmo):
+            result = toolset.move_by(100.0, speed_mmps=999.0)
+        assert result["ok"] is True
+        assert result["speed_mmps"] == toolset.limits.speed_mmps  # safety cap applied
+        assert result["target_mm"][0] == pytest.approx(100.0, abs=0.2)
+        entry = toolset.jobs.wait(result["job_id"], timeout_s=5.0)
+        assert entry["status"] == "done"
+        assert entry["result"]["requested_mm"] == 100.0
+        assert entry["result"]["arrived"] is False  # no robot to drive
+
+    def test_turn_by_not_connected(self, toolset):
+        assert toolset.turn_by(90.0)["ok"] is False
+
+    def test_turn_by_rejects_full_spins(self, cozmo, toolset):
+        with _connected(cozmo):
+            result = toolset.turn_by(720.0)
+        assert result["ok"] is False
+        assert "360" in result["reason"]
+        assert toolset.jobs.list() == []
+
+    def test_turn_by_submits_job(self, cozmo, toolset):
+        with _connected(cozmo):
+            result = toolset.turn_by(-45.0)
+        assert result["ok"] is True
+        entry = toolset.jobs.wait(result["job_id"], timeout_s=5.0)
+        assert entry["status"] == "done"
+        assert entry["result"]["requested_deg"] == -45.0
+        assert entry["result"]["aligned"] is False  # no robot to turn
+
+
+class TestStackCube:
+    def test_not_connected(self, toolset):
+        assert toolset.stack_cube(1)["ok"] is False
+
+    def test_cube_id_validation(self, cozmo, toolset):
+        with _connected(cozmo):
+            result = toolset.stack_cube(7)
+        assert result["ok"] is False
+        assert "1, 2 or 3" in result["reason"]
+
+    def test_refused_without_cube_on_forks(self, cozmo, toolset):
+        with _connected(cozmo):
+            result = toolset.stack_cube(2)
+        assert result["ok"] is False
+        assert toolset.jobs.list() == []  # refusal starts no job
+
+
+class TestCameraToggle:
+    def test_not_connected(self, toolset):
+        assert toolset.camera_toggle(False)["ok"] is False
+
+    def test_disable_when_already_off_is_a_noop(self, cozmo, toolset):
+        with _connected(cozmo):
+            result = toolset.camera_toggle(False)
+        assert result == {"ok": True, "camera_active": False}
+
+    def test_enable_without_camera_client_is_refused(self, cozmo, toolset):
+        # is_connected says yes but the camera service has no client to
+        # send the enable to — must surface as a refusal, never a raise.
+        with _connected(cozmo):
+            result = toolset.camera_toggle(True)
+        assert result["ok"] is False
+        assert result["reason"]
+
+
+class TestWait:
+    def test_sleeps_up_to_the_request(self, toolset):
+        result = toolset.wait(0.05)
+        assert result["ok"] is True
+        assert result["slept_s"] >= 0.04
+
+    def test_negative_request_returns_immediately(self, toolset):
+        result = toolset.wait(-5.0)
+        assert result["ok"] is True
+        assert result["slept_s"] < 1.0
+
+    def test_sleep_cap_stays_under_client_timeouts(self):
+        from pycozmo_ng.mcp.tools import MAX_SLEEP_S
+
+        assert MAX_SLEEP_S == 10.0
+
+
 class TestJobTools:
     def test_wait_for_job_unknown_id(self, toolset):
         result = toolset.wait_for_job("missing")
@@ -230,8 +344,16 @@ class TestServer:
         assert "navigate_to" in names
         assert "get_robot_state" in names
         assert "stop" in names
+        for added in ("move_by", "turn_by", "stack_cube", "camera_toggle", "wait"):
+            assert added in names
         # Docstrings double as tool descriptions.
         assert all(tool.description for tool in tools)
+        # Reads advertise themselves read-only (clients may auto-approve);
+        # motion does not.
+        hints = {tool.name: tool.annotations.read_only_hint for tool in tools}
+        assert hints["get_sensors"] is True
+        assert hints["navigate_to"] is False
+        assert hints["move_by"] is False
 
 
 class TestGetFrameImageContent:
@@ -281,3 +403,40 @@ class TestGetFrameImageContent:
         assert result.is_error is False
         assert all(isinstance(b, TextContent) for b in result.content)
         assert not any(isinstance(b, ImageContent) for b in result.content)
+
+    def test_frame_reports_capture_age_and_staleness(self, cozmo):
+        """A stopped camera must not present an old frame as current."""
+        import time
+
+        from PIL import Image as PILImage
+
+        frame_state = cozmo._brain.frame_state
+        frame_state.latest_raw_frame = PILImage.new("RGB", (8, 8))
+        toolset = Toolset(cozmo)
+
+        frame_state.last_frame_time = time.time()
+        fresh = toolset.get_frame()["frame"]
+        assert fresh["stale"] is False
+        assert fresh["age_s"] < 2.0
+
+        frame_state.last_frame_time = time.time() - 30.0
+        stale = toolset.get_frame()["frame"]
+        assert stale["stale"] is True
+        assert stale["age_s"] >= 30.0
+
+    def test_stale_frame_is_called_out_in_the_text_block(self, cozmo):
+        pytest.importorskip("mcp")
+        import asyncio
+        import time
+
+        from mcp_types import TextContent
+        from PIL import Image as PILImage
+
+        frame_state = cozmo._brain.frame_state
+        frame_state.latest_raw_frame = PILImage.new("RGB", (8, 8))
+        frame_state.last_frame_time = time.time() - 30.0
+        sdk = self._server(cozmo)
+        result = asyncio.run(sdk.call_tool("get_frame", {}))
+        texts = [b for b in result.content if isinstance(b, TextContent)]
+        assert any("STALE" in block.text for block in texts)
+        assert any("camera_toggle" in block.text for block in texts)
