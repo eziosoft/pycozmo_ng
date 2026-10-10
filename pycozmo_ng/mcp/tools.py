@@ -180,14 +180,16 @@ class Toolset:
     def _frame_freshness(self) -> tuple[float | None, bool]:
         """``(age_s, stale)`` of the newest decoded frame.
 
-        ``age_s`` is ``None`` before the first frame ever arrived; a frame
-        older than :data:`STALE_FRAME_S` is stale — the camera stopped
-        producing and any image on hand is history.
+        ``age_s`` is ``None`` before the first frame ever arrived. A
+        frame is stale when it is older than :data:`STALE_FRAME_S` *or*
+        the camera has been stopped — a stopped camera produces nothing
+        new, so whatever is on hand is history however recent it looks.
         """
         age = self._cozmo.vision.frame_age_s
         if age is None:
             return None, True
-        return round(age, 2), age > STALE_FRAME_S
+        stale = age > STALE_FRAME_S or not self._cozmo.vision.active
+        return round(age, 2), stale
 
     def _drivable_refusal(self) -> dict[str, Any] | None:
         """Gate for every tool that turns the wheels, or ``None`` when drivable.
@@ -362,8 +364,9 @@ class Toolset:
         Returns ``{"ok": true, "frame": ...}`` with fields:
         ``jpeg_base64``, ``width``, ``height``, ``timestamp`` (capture
         time), ``age_s``, ``stale``, ``detections_summary``. When the
-        camera is stopped or no frame has arrived yet returns
-        ``{"ok": true, "frame": null}`` — recover the stream with
+        camera is stopped the newest frame is still returned but marked
+        ``stale`` — history, not a live view; when no frame has ever
+        arrived ``frame`` is ``null``. Recover the stream with
         camera_toggle.
         """
         frame = self._cozmo.vision.latest_annotated_frame if annotated else self._cozmo.vision.latest_frame

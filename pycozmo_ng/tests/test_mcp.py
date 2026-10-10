@@ -466,6 +466,7 @@ class TestGetFrameImageContent:
 
         frame_state = cozmo._brain.frame_state
         frame_state.latest_raw_frame = PILImage.new("RGB", (8, 8))
+        cozmo._brain.camera._active = True  # stream on — the fresh case
         toolset = Toolset(cozmo)
 
         frame_state.last_frame_time = time.time()
@@ -477,6 +478,21 @@ class TestGetFrameImageContent:
         stale = toolset.get_frame()["frame"]
         assert stale["stale"] is True
         assert stale["age_s"] >= 30.0
+
+    def test_stopped_camera_marks_even_the_newest_frame_stale(self, cozmo):
+        """camera_toggle(false) freezes the last frame — it is history, not live."""
+        import time
+
+        from PIL import Image as PILImage
+
+        frame_state = cozmo._brain.frame_state
+        frame_state.latest_raw_frame = PILImage.new("RGB", (8, 8))
+        frame_state.last_frame_time = time.time()  # captured a moment ago...
+        cozmo._brain.camera._active = False  # ...but the stream is off
+        toolset = Toolset(cozmo)
+
+        assert toolset.get_frame()["frame"]["stale"] is True
+        assert toolset.get_detections()["frame_stale"] is True
 
     def test_stale_frame_is_called_out_in_the_text_block(self, cozmo):
         pytest.importorskip("mcp")
