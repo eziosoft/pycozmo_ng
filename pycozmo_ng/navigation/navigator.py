@@ -108,6 +108,10 @@ class Navigator:
         # object, so a grab and a stack can never interleave (and cannot
         # be wired onto separate locks by accident).
         self._cube_visit = CubeVisit(self.motion.spawn)
+        # Serialises origin resets so the two callers that fire together
+        # on a successful dock — the on_charger/on_charging event threads
+        # and _on_aruco_docked — cannot each send a SetOrigin packet.
+        self._origin_reset_lock = threading.Lock()
 
     @property
     def cli(self) -> Any:
@@ -151,36 +155,76 @@ class Navigator:
 
         Sends SetOrigin so the robot's current pose becomes the new
         world frame (0,0,0) and records it as the dock pose. (COZMO-28)
+
+        ``_origin_reset_lock`` serialises the send + confirmation so that
+        the two callers that fire together on a successful dock — the
+        ``on_charging_change``/``on_charger_change`` event threads and
+        :meth:`_on_aruco_docked` — cannot each send a SetOrigin packet
+        and double-anchor the origin.
+
+        After sending, polls for the origin id to echo back in telemetry
+        rather than sleeping a fixed 0.5 s. The world map is cleared on
+        the origin change (by ``update_robot_pose`` in
+        ``Brain._on_robot_state``), and :meth:`_snap_marker_dock_pose`
+        runs immediately after this method returns — it must land on the
+        *cleared* map, not be wiped by a delayed origin-change clear
+        (COZMO-72).
         """
         cli = self.cli
         if cli is None:
             return
-        with self.ds.lock:
-            if self.ds.origin_reset_origin_id == cli.pose.origin_id:
-                return
+        with self._origin_reset_lock:
+            with self.ds.lock:
+                if self.ds.origin_reset_origin_id == cli.pose.origin_id:
+                    return
 
-        # Snapshot scalars in the *old* frame: after SetOrigin every pose
-        # read is the new one, so this is the only place the pre-reset
-        # position (where the robot physically stands) can be logged from.
-        # Values, not the object — the client replaces ``pose`` per tick.
-        ox, oy, oyaw = cli.pose.position.x, cli.pose.position.y, cli.pose.rotation.angle_z.radians
-        reset_pkt = pycozmo_ng.protocol_encoder.SetOrigin(
-            pose_frame_id=cli.pose_frame_id + 1,
-            pose_origin_id=cli.pose.origin_id + 1,
-        )
-        cli.conn.send(reset_pkt)
-        time.sleep(0.5)
-        with self.ds.lock:
-            self.ds.origin_reset_origin_id = cli.pose.origin_id
-            self.ds.dock_pose = cli.pose
+                # Snapshot scalars in the *old* frame: after SetOrigin every
+                # pose read is the new one, so this is the only place the
+                # pre-reset position (where the robot physically stands)
+                # can be logged from. Values, not the object — the client
+                # replaces ``pose`` per tick.
+                ox, oy, oyaw = (
+                    cli.pose.position.x,
+                    cli.pose.position.y,
+                    cli.pose.rotation.angle_z.radians,
+                )
+                new_origin_id = cli.pose.origin_id + 1
+                reset_pkt = pycozmo_ng.protocol_encoder.SetOrigin(
+                    pose_frame_id=cli.pose_frame_id + 1,
+                    pose_origin_id=new_origin_id,
+                )
+            cli.conn.send(reset_pkt)
+
+            # Wait for the origin change to echo back in telemetry. The
+            # robot-state handler updates cli.pose atomically (new origin_id,
+            # position reset to 0,0,0) before dispatching EvtRobotStateUpdated,
+            # whose Brain handler then clears the world map via
+            # update_robot_pose. Polling the origin_id guarantees the map
+            # clear has happened before _snap_marker_dock_pose runs —
+            # otherwise the marker it sets is immediately discarded.
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                if cli.pose.origin_id == new_origin_id:
+                    break
+                time.sleep(0.05)
+
+            with self.ds.lock:
+                nx, ny, nyaw = (
+                    cli.pose.position.x,
+                    cli.pose.position.y,
+                    cli.pose.rotation.angle_z.radians,
+                )
+                self.ds.origin_reset_origin_id = cli.pose.origin_id
+                self.ds.dock_pose = cli.pose
+
         logger.info(
             "Pose origin reset — robot was (%.0f, %.0f, %.1f deg) in the old frame, now (%.0f, %.0f, %.1f deg)",
             ox,
             oy,
             math.degrees(oyaw),
-            cli.pose.position.x,
-            cli.pose.position.y,
-            math.degrees(cli.pose.rotation.angle_z.radians),
+            nx,
+            ny,
+            math.degrees(nyaw),
         )
 
     # ------------------------------------------------------------------
