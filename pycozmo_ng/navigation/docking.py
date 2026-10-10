@@ -57,7 +57,7 @@ class Docking:
         self,
         dock_state: DockState,
         motion: MotionController,
-        reset_origin: Callable[[], None],
+        reset_origin: Callable[[], bool],
     ) -> None:
         self.ds = dock_state
         self.motion = motion

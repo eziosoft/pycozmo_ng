@@ -150,7 +150,7 @@ class Navigator:
             logger.info("Charging detected")
             threading.Thread(target=self._reset_pose_origin, daemon=True).start()
 
-    def _reset_pose_origin(self) -> None:
+    def _reset_pose_origin(self) -> bool:
         """Re-anchor the localization origin at the current pose.
 
         Sends SetOrigin so the robot's current pose becomes the new
@@ -169,14 +169,23 @@ class Navigator:
         runs immediately after this method returns — it must land on the
         *cleared* map, not be wiped by a delayed origin-change clear
         (COZMO-72).
+
+        Returns:
+            True when the new origin id was confirmed in telemetry (the
+            origin was actually re-anchored and the world map cleared).
+            False when the poll timed out — the caller should treat the
+            reset as inconclusive (it may have landed or may have been
+            lost on the wire) and **must not** set the DockState guard
+            origin id, so that the next charger event retries the send
+            instead of silently skipping it (COZMO-72 follow-up).
         """
         cli = self.cli
         if cli is None:
-            return
+            return False
         with self._origin_reset_lock:
             with self.ds.lock:
                 if self.ds.origin_reset_origin_id == cli.pose.origin_id:
-                    return
+                    return True
 
                 # Snapshot scalars in the *old* frame: after SetOrigin every
                 # pose read is the new one, so this is the only place the
@@ -203,8 +212,10 @@ class Navigator:
             # clear has happened before _snap_marker_dock_pose runs —
             # otherwise the marker it sets is immediately discarded.
             deadline = time.monotonic() + 2.0
+            origin_confirmed = False
             while time.monotonic() < deadline:
                 if cli.pose.origin_id == new_origin_id:
+                    origin_confirmed = True
                     break
                 time.sleep(0.05)
 
@@ -214,18 +225,37 @@ class Navigator:
                     cli.pose.position.y,
                     cli.pose.rotation.angle_z.radians,
                 )
-                self.ds.origin_reset_origin_id = cli.pose.origin_id
+                # Only record the confirmed origin id as "reset" so the
+                # guard doesn't poison itself on a telemetry timeout:
+                # if the echo never arrived (packet loss on Cozmo's Wi-Fi),
+                # cli.pose.origin_id is still the *old* id — recording it
+                # would make the guard skip every future charger reset
+                # permanently (COZMO-72 follow-up).
+                if origin_confirmed:
+                    self.ds.origin_reset_origin_id = cli.pose.origin_id
                 self.ds.dock_pose = cli.pose
 
-        logger.info(
-            "Pose origin reset — robot was (%.0f, %.0f, %.1f deg) in the old frame, now (%.0f, %.0f, %.1f deg)",
-            ox,
-            oy,
-            math.degrees(oyaw),
-            nx,
-            ny,
-            math.degrees(nyaw),
-        )
+        if origin_confirmed:
+            logger.info(
+                "Pose origin reset — robot was (%.0f, %.0f, %.1f deg) in the old frame, now (%.0f, %.0f, %.1f deg)",
+                ox,
+                oy,
+                math.degrees(oyaw),
+                nx,
+                ny,
+                math.degrees(nyaw),
+            )
+        else:
+            logger.warning(
+                "Pose origin reset timed out after %.1fs — origin id did not "
+                "echo (sent id %d, telemetry still at %d). The SetOrigin "
+                "packet may have been lost on the wire; the next charger "
+                "event will retry the send.",
+                time.monotonic() - (deadline - 2.0),
+                new_origin_id,
+                cli.pose.origin_id,
+            )
+        return origin_confirmed
 
     # ------------------------------------------------------------------
     # Click-to-navigate (COZMO-28 / COZMO-30)
@@ -768,8 +798,18 @@ class Navigator:
         Resets the pose origin (the docked robot pose becomes the world
         origin — the point 65 mm in front of the marker), then snaps the
         marker to its exact docked position.
+
+        If the origin reset did not confirm (telemetry timeout), the
+        robot's world pose is not at (0, 0, 0) and snapping the marker
+        would place it at a wrong spot — so the snap is skipped and the
+        marker stays at whatever the vision pipeline last fused.
         """
-        self._reset_pose_origin()
+        if not self._reset_pose_origin():
+            logger.warning(
+                "ArUco dock: origin reset not confirmed — skipping marker %d snap",
+                marker_id,
+            )
+            return
         self._snap_marker_dock_pose(marker_id)
 
     def _snap_marker_dock_pose(self, marker_id: int = 0) -> None:

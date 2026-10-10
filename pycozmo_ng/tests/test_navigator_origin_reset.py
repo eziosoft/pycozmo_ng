@@ -7,15 +7,24 @@ at the same time:
 * ``_on_aruco_docked`` (the ArucoDocking job that just finished its reverse).
 
 The bug: ``_reset_pose_origin`` slept a fixed 0.5 s and then read
-``cli.pose.origin_id`` — if the origin-change telemetry hadn't arrived yet,
+``cli.pose.origin_id`` -- if the origin-change telemetry hadn't arrived yet,
 ``origin_reset_origin_id`` was set to the *stale* id, and
 ``_snap_marker_dock_pose`` (which runs immediately after) ran before the
-world map's ``update_robot_pose`` had cleared on the origin change — so the
+world map's ``update_robot_pose`` had cleared on the origin change -- so the
 marker it just set was wiped a moment later by the late telemetry.
 
 The fix: ``_reset_pose_origin`` now polls for the new origin id in telemetry
-(instead of a blind sleep) and serialises the send + confirmation behind
-``_origin_reset_lock`` so the two callers never both send SetOrigin.
+instead of a blind sleep, serialises the send + confirmation behind
+``_origin_reset_lock`` so the two callers never both send SetOrigin, and
+returns a bool so callers can skip the marker snap when the origin was not
+confirmed (e.g. telemetry lost on Cozmo's lossy Wi-Fi).
+
+Follow-up bug (still COZMO-72): on poll timeout the old code set
+``origin_reset_origin_id = cli.pose.origin_id`` *before* the echo arrived --
+i.e. to the stale id -- which permanently poisoned the guard and made every
+subsequent charger event skip the origin reset.  The fix leaves the guard
+untouched on timeout so the next event retries, and only snaps the marker
+when the reset was confirmed.
 """
 
 import math
@@ -31,7 +40,7 @@ from pycozmo_ng.util import Angle, Pose
 
 class _FakeCli:
     """Mock CLI whose ``pose.origin_id`` advances only when telemetry
-    echoes back — never immediately on ``send``.
+    echoes back -- never immediately on ``send``.
 
     ``delay_s`` controls when the echo arrives (default 0 = immediate),
     simulating the telemetry round-trip that the real robot incurs after
@@ -67,7 +76,7 @@ class _FakeCli:
         return self._conn
 
     def _on_send(self, pkt) -> None:
-        """Called by conn.send() — mimics the firmware accepting SetOrigin."""
+        """Called by conn.send() -- mimics the firmware accepting SetOrigin."""
         self.set_origin_count += 1
         self._pending_origin_id = pkt.pose_origin_id
         if self.delay_s > 0:
@@ -118,13 +127,22 @@ class TestResetPoseOrigin:
         assert nav.ds.origin_reset_origin_id == 6  # confirmed, not stale 5
         assert nav.ds.dock_pose is not None
 
+    def test_returns_true_on_success(self):
+        """Successful reset returns True (confirmed via telemetry)."""
+        nav, _cli = _make_nav(origin_id=5)
+        nav.ds.origin_reset_origin_id = None
+        result = nav._reset_pose_origin()
+        assert result is True
+
     def test_guard_skips_already_reset_origin(self):
-        """A second reset for the same origin id sends no SetOrigin."""
+        """A second reset for the same origin id sends no SetOrigin and
+        returns True (a prior reset is sufficient)."""
         nav, cli = _make_nav(origin_id=5)
         nav.ds.origin_reset_origin_id = 5  # already reset for this origin
 
-        nav._reset_pose_origin()
+        result = nav._reset_pose_origin()
 
+        assert result is True
         assert cli.set_origin_count == 0
 
     def test_double_sender_only_one_set_origin(self):
@@ -177,7 +195,64 @@ class TestResetPoseOrigin:
 
 
 # -------------------------------------------------------------------
-# _snap_marker_dock_pose — survives the map clear
+# _reset_pose_origin -- timeout handling (COZMO-72 follow-up)
+# -------------------------------------------------------------------
+
+
+class TestResetTimeout:
+    """When telemetry doesn't echo within the poll window (Cozmo's Wi-Fi
+    drops the packet), the old code set origin_reset_origin_id to the stale
+    id and permanently poisoned the guard.  These tests verify the fix."""
+
+    def test_timeout_returns_false(self):
+        """Poll timeout returns False so callers know the reset was not
+        confirmed."""
+        nav, cli = _make_nav(origin_id=5, delay_s=5.0)  # never echoes
+        nav.ds.origin_reset_origin_id = None
+
+        t0 = time.monotonic()
+        result = nav._reset_pose_origin()
+        elapsed = time.monotonic() - t0
+
+        assert result is False
+        assert elapsed < 3.0, f"poll should have timed out at ~2s, took {elapsed:.2f}s"
+        assert cli.set_origin_count == 1
+
+    def test_timeout_leaves_guard_untouched(self):
+        """On timeout, origin_reset_origin_id must NOT be set to the stale
+        origin id -- otherwise the guard permanently blocks future resets.
+
+        This is the core of the follow-up: the old code did
+        ``ds.origin_reset_origin_id = cli.pose.origin_id`` unconditionally,
+        which after a timeout set it to the *old* id (the echo never arrived),
+        making the guard return True forever.
+        """
+        nav, _cli = _make_nav(origin_id=5, delay_s=5.0)
+        nav.ds.origin_reset_origin_id = None
+
+        nav._reset_pose_origin()  # times out
+
+        # Guard must NOT be poisoned: origin_reset_origin_id stays None,
+        # so the next call will see None != 5 and send SetOrigin again.
+        assert nav.ds.origin_reset_origin_id is None
+
+    def test_timeout_then_retry_sends_set_origin(self):
+        """After a timeout, a subsequent _reset_pose_origin call must send
+        SetOrigin again (the guard did not permanently skip it)."""
+        nav, cli = _make_nav(origin_id=5, delay_s=5.0)
+        nav.ds.origin_reset_origin_id = None
+
+        # First call times out.
+        nav._reset_pose_origin()
+        assert nav.ds.origin_reset_origin_id is None
+
+        # Second call -- origin_id hasn't changed, guard should NOT skip.
+        nav._reset_pose_origin()
+        assert cli.set_origin_count == 2, "guard poisoned by timeout -- second SetOrigin never sent"
+
+
+# -------------------------------------------------------------------
+# _snap_marker_dock_pose -- survives the map clear
 # -------------------------------------------------------------------
 
 
@@ -187,7 +262,7 @@ class TestSnapMarkerAfterReset:
         confirmed the origin-id echo in telemetry.
 
         On the real robot the telemetry echo triggers
-        Brain._on_robot_state → update_robot_pose, which clears the
+        Brain._on_robot_state -> update_robot_pose, which clears the
         world map (including _aruco) on the origin change.  If the
         marker were set before that clear it would be wiped.  We verify
         the ordering by recording events in a shared list.
@@ -197,7 +272,7 @@ class TestSnapMarkerAfterReset:
         # delay_s must exceed the old 0.5 s fixed sleep to expose the
         # stale-telemetry race: with delay > 0.5 s the old code returned
         # before the echo arrived, then _snap_marker_dock_pose ran on a
-        # not-yet-cleared map — the marker was wiped later.
+        # not-yet-cleared map -- the marker was wiped later.
         nav, cli = _make_nav(yaw=0.0, origin_id=5, delay_s=0.7)
         nav.ds.origin_reset_origin_id = None
 
@@ -223,7 +298,7 @@ class TestSnapMarkerAfterReset:
         assert "telemetry" in events, "telemetry echo never arrived"
         assert "set_aruco" in events, "marker was never snapped"
         assert events.index("telemetry") < events.index("set_aruco"), (
-            "marker set BEFORE the origin-change telemetry — it will be wiped by the delayed map clear (COZMO-72)"
+            "marker set BEFORE the origin-change telemetry -- it will be wiped by the delayed map clear (COZMO-72)"
         )
 
     def test_snap_marker_position_on_the_normal(self):
@@ -260,12 +335,27 @@ class TestSnapMarkerAfterReset:
         world_map = MagicMock(spec=WorldMap)
         nav, _cli = _make_nav(yaw=math.radians(30.0), origin_id=2, world_map=world_map)
         nav.ds.origin_reset_origin_id = None
-        nav._reset_pose_origin = MagicMock()
+        nav._reset_pose_origin = MagicMock(return_value=True)
 
         nav._on_aruco_docked(0)
 
         nav._reset_pose_origin.assert_called_once()
         world_map.set_aruco_world_pose.assert_called_once()
+
+    def test_snap_skipped_when_origin_reset_not_confirmed(self):
+        """When _reset_pose_origin times out (returns False),
+        _snap_marker_dock_pose must NOT run -- the robot's world pose is
+        not at (0,0,0) so the marker would be snapped to the wrong spot."""
+        nav, _cli = _make_nav(yaw=0.0, origin_id=5, delay_s=5.0)
+        nav.ds.origin_reset_origin_id = None
+
+        world_map = MagicMock(spec=WorldMap)
+        nav.world_map = world_map
+
+        nav._on_aruco_docked(0)
+
+        world_map.set_aruco_world_pose.assert_not_called()
+        assert nav.ds.origin_reset_origin_id is None
 
     def test_snap_marker_no_world_map_or_cli_is_safe(self):
         """Guard: no-op when world_map or cli is missing."""
@@ -275,6 +365,11 @@ class TestSnapMarkerAfterReset:
         nav2, _ = _make_nav(origin_id=1)
         nav2.world_map = None
         nav2._snap_marker_dock_pose(0)  # must not raise
+
+
+# -------------------------------------------------------------------
+# Concurrent reset + snap
+# -------------------------------------------------------------------
 
 
 class TestDockingResetIntegration:
