@@ -671,14 +671,19 @@ class Navigator:
     def dock_on_aruco(self, marker_id: int = 0) -> bool:
         """Dock on an ArUco marker: approach, refresh pose, reverse in.
 
-        Drives to a point 20 cm in front of the marker facing it so the
-        camera sees it and the world map refreshes its fused pose,
-        dwells until that pose converges, corrects the approach point,
-        verifies the robot is centred on the marker's normal line (the
-        reverse is open loop), then turns 180° and reverses into the
-        charger until charging is detected (the real stop) or the robot
-        has deliberately overshot the docked distance to bump the back
-        of the charger (15 s timeout).
+        Drives to a standoff on the line of sight to the marker (25 cm
+        out, facing it) so the camera sees it and the world map refreshes
+        its fused pose, dwells until that pose converges, verifies the
+        robot is centred on the marker (the reverse is open loop), then
+        turns 180° and reverses into the charger until charging is
+        detected (the real stop) or the robot has deliberately overshot
+        the docked distance to bump the back of the charger (15 s
+        timeout).
+
+        The marker sits at the *end* of the docking station, so it is not
+        reliably visible from the side — there is no sideways vantage and
+        no estimate of the marker's normal anywhere in the sequence (see
+        :mod:`pycozmo_ng.navigation.aruco_docking`).
 
         After a successful dock the pose origin is reset — the robot's
         docked position becomes the world origin (the point 65 mm in

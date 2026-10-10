@@ -2,42 +2,71 @@
 
 The sequence, mirroring the cube approach:
 
-1. Sidestep to a **vantage** offset from the marker's normal and look back
-   at it, so the marker's face is seen obliquely.
-2. Dwell and read the marker's normal *there* — an oblique view is what
-   makes the normal measurable at all (see
-   :mod:`pycozmo_ng.navigation.marker_observation`).
-3. Drive to the standoff on the normal, facing the marker *centre*.
-4. Verify the robot is centred on the normal line, then turn 180° and
-   reverse in until the charging contacts detect — the real stop.
+1. Drive to a **standoff** on the line of sight to the marker — the ray
+   from the marker through the robot, held at ``APPROACH_DIST_MM`` — so
+   the camera keeps the marker in view the whole way in.
+2. Re-aim onto the marker and settle until the fused pose converges.
+3. Verify the robot is centred on the marker, then turn 180° and reverse
+   in until the charging contacts detect — the real stop.
 
-Why step 1 exists
------------------
-Driving straight at the marker — the obvious approach — puts the camera
-fronto-parallel to the marker's face, which is the worst-conditioned
-geometry for recovering its normal: the horizontal component that defines
-the normal's *bearing* collapses toward zero, so normalising it amplifies
-pixel noise without bound (measured: ~43 deg of bearing error, ~150 mm of
-lateral error at a 200 mm standoff, against a ~15 mm capture width).
-Step 4's reverse line runs on that bearing, so the robot aimed off the
-normal line by metres.
+Why there is no sideways vantage
+--------------------------------
+An earlier revision sidestepped ~20° off the marker's normal to measure
+that normal from an oblique view, because a planar marker viewed head-on
+yields a normal whose *bearing* is meaningless (~43° of error at 2° of
+obliquity, which a 250 mm standoff turns into hundreds of millimetres of
+lateral error at the charger — the reason the vantage existed at all).
 
-Averaging does not fix this — the error is a systematic bias of the
-ill-conditioned solve, so more frames and a second symmetric vantage both
-converge to the same offset. Only the viewing angle moves it. Hence one
-sideways look, and the normal is then used for *aiming only*.
+That cannot work on this dock. **The marker sits on a post at the back
+end of the charging station, inside its rim.** From the side it is
+heavily foreshortened and rides the edge of the frame, where the
+detector drops any quad that touches the image border. Live failure:
 
-Where the normal is deliberately **not** used
---------------------------------------------
-* Lateral centring is measured against the robot's own heading, not the
-  normal: "the marker is 12 mm to my left" is well conditioned and directly
-  actionable, where re-deriving a normal from the same bad rotation is not.
-* The reverse heading is ``heading + pi`` — the robot is already facing the
-  marker centre, so turning about its own axis needs no landmark estimate.
+    ArUco dock: view still head-on (12 deg) — retrying from a wider angle
+    ArUco dock: marker 0 not re-detected during settle — robot (162, -129)
+    ArUco dock: no usable view of marker 0
 
-What remains open-loop is the reverse itself: once the robot turns away the
-marker is out of view, so the line it reverses along is fixed by the pose it
-turned from. That is why step 4 is verified rather than trusted.
+The retry had pushed the robot 32° off the normal, where the marker sat
+at the frame edge and no detection landed for a whole dwell — so the
+dock aborted before it ever tried to reverse. Measured afterwards on the
+robot: marker 0 is detected at every angle from −40° to +30° **as long
+as the robot is pointed at it**; the vantage lost it by pointing the
+camera from a stale plan instead of at the marker.
+
+So the normal is not used anywhere, and nothing about the dock depends
+on the marker being seen from the side.
+
+Where the accuracy actually comes from
+--------------------------------------
+The standoff is placed on the **line of sight**, which is computed from
+two *positions* — the fused marker and the robot pose — measured ~20×
+better than the marker's rotation. Facing the marker from it is exact by
+construction, so the camera is on the marker at every settle and a
+settle can never fail for lack of a detection.
+
+The reverse line is fixed by the robot's own heading (``yaw + π``) and
+the centring check is measured against that heading — "the marker is
+27 mm off my centreline" is well conditioned and directly actionable.
+Landing the rear on the marker's centre is what matters, because the
+marker is the dock's centre; the reverse needs no landmark estimate
+beyond that.
+
+The one quantity the line of sight cannot give is how far the robot is
+turned away from the dock's own axis: the reverse inherits whatever
+obliquity the robot started with, because centring only ever points the
+robot *at* the marker — never *along* the dock. There is deliberately no
+guard on that angle. The obvious signal would be the marker's fused
+rotation, but that is the ill-conditioned normal again: at a head-on
+start it is off by tens of degrees (the same ~43 deg the vantage existed
+to avoid), so gating on it would refuse the poses that dock best. In
+practice the angle is bounded anyway — a flat marker at the end of the
+dock is not detectable from far off its own axis, so if the dock could
+be planned at all the robot was already facing roughly the right way.
+
+What remains open-loop is the reverse itself: once the robot turns away
+the marker is out of view, so the line it reverses along is fixed by the
+pose it turned from. That is why the centring step is verified rather
+than trusted.
 
 On success ``on_docked`` runs — the caller resets the pose origin (the
 docked robot pose becomes the world origin, 65 mm in front of the
@@ -51,13 +80,6 @@ import time
 
 from pycozmo_ng.logger import logger
 from pycozmo_ng.navigation.dock_state import DockState
-from pycozmo_ng.navigation.marker_observation import (
-    MIN_USABLE_OBLIQUITY_DEG,
-    TARGET_OBLIQUITY_DEG,
-    NormalEstimate,
-    estimate_normal,
-    vantage_target,
-)
 from pycozmo_ng.navigation.motion_controller import MotionController
 from pycozmo_ng.navigation.motion_token import MotionToken
 from pycozmo_ng.navigation.steering import wrap_pi
@@ -89,37 +111,11 @@ class ArucoDocking:
 
     JOB_ARUCO_DOCK: str = "aruco_dock"
 
-    #: Standoff in front of the marker. 250 mm — increased from 200 mm
-    #: after the robot was still clipping the charger body during the
-    #: sidestep (first waypoint). The alignment correction
-    #: (LATERAL_TOL_MM=10) handles the longer lever arm: after a
-    #: correction turn, the residual at dock is 65*sin(2° turn tol)
-    #: ≈ 2.3 mm regardless of standoff range.
+    #: Standoff in front of the marker, held on the line of sight. 250 mm
+    #: — far enough that the reverse covers the distance in a straight
+    #: line, near enough that the marker is large and unambiguous in the
+    #: frame (~20 px wide at QVGA).
     APPROACH_DIST_MM: float = 250.0
-    #: Distance held from the marker while measuring its normal. 250 mm
-    #: — increased in sync with the standoff so the sidestep clears the
-    #: charger's physical body. Corner precision is still adequate (marker
-    #: half-width ~10 px at QVGA).
-    VANTAGE_DIST_MM: float = 250.0
-    #: Dwell at the vantage while the marker is seen obliquely.
-    #: Mirrors ``CubeApproach.STANDOFF_DWELL_S``: the world-map EMA (alpha
-    #: 0.15/frame) needs dozens of frames to absorb the pose jump from the
-    #: sidestep, and correcting off a still-moving pose defeats the point.
-    VANTAGE_DWELL_S: float = 3.0
-    #: Extra window, after the settle, over which the fused marker state is
-    #: sampled for the median. Runs once per vantage attempt.
-    SAMPLE_WINDOW_S: float = 0.5
-    #: Re-vantage this many times if the view comes back too
-    #: fronto-parallel to aim from (see ``marker_observation``). Each retry
-    #: sidesteps further, so a couple of attempts cover a robot that
-    #: overshot the requested offset.
-    VANTAGE_ATTEMPTS: int = 2
-    #: Extra obliquity per retry: attempt 2 looks from ~22 deg, attempt 3
-    #: from ~29 deg. Escalation exists for a robot that arrives shallower
-    #: than asked (slipping on the sidestep); it is not the normal case,
-    #: because widening the angle risks losing the marker out of frame.
-    VANTAGE_ESCALATION_DEG: float = 7.0
-
     #: Dwell at the standoff until the fused marker pose converges.
     STANDOFF_DWELL_S: float = 3.0
     #: Convergence criterion: the fused position must move less than
@@ -254,141 +250,72 @@ class ArucoDocking:
             logger.exception("ArUco dock error")
 
     # ------------------------------------------------------------------
-    # 1-3. Measure the normal obliquely, drive the standoff, re-aim
+    # 1-2. Drive the line of sight, settle, re-aim
     # ------------------------------------------------------------------
 
     def _approach(self, job: MotionToken, marker_id: int) -> bool:
-        """Sidestep, read the normal obliquely, then drive the standoff.
+        """Drive the standoff on the line of sight, then centre on the marker.
 
-        The vantage exists purely to make the normal measurable — see the
-        module docstring. Everything after it is ordinary closed-loop
-        driving.
+        The standoff is computed from positions alone (see the module
+        docstring), so the marker stays in view on the way in and no
+        measurement of the marker's rotation is ever needed.
         """
         logger.info("ArUco dock: start — %s", self._scene(marker_id))
-        estimate = self._measure_normal(job, marker_id)
-        if estimate is None:
+        standoff_x, standoff_y, heading = self._standoff_target(marker_id)
+        if standoff_x is None:
             logger.warning("ArUco dock: no usable view of marker %d — %s", marker_id, self._scene(marker_id))
             return False
-        if not estimate.usable:
-            # Degenerate view: aiming a reverse from this would put the
-            # robot far off the marker's normal line. Refuse rather than
-            # dock on a bad estimate — the caller can re-run from a new
-            # robot pose, which changes the geometry anyway.
-            logger.warning(
-                "ArUco dock: marker %d view too head-on (%.0f deg obliquity, need %.0f) — not docking — %s",
-                marker_id,
-                estimate.obliquity_deg,
-                MIN_USABLE_OBLIQUITY_DEG,
-                self._scene(marker_id),
-            )
-            return False
-
-        standoff_x, standoff_y = estimate.at_range(self.APPROACH_DIST_MM)
-        # Aim from the *standoff*, not from here: the two bearings differ
-        # by the vantage's obliquity (~20 deg at equal range), and
-        # arriving on the here-and-now bearing parked the marker near the
-        # edge of the camera's view — "marker not re-detected during
-        # settle" before the alignment check could even measure it.
-        heading = math.atan2(estimate.y - standoff_y, estimate.x - standoff_x)
         logger.info(
             "ArUco dock: standoff (%.0f, %.0f) from marker %d, heading %.1f deg — %s",
             standoff_x,
             standoff_y,
             marker_id,
             math.degrees(heading),
-            estimate.describe(),
+            self._scene(marker_id),
         )
         if not self._go(job, standoff_x, standoff_y, heading):
             return False
         logger.info("ArUco dock: at standoff — %s", self._scene(marker_id))
 
+        # Let the world-map EMA absorb the drive before anything measures
+        # off it: the alignment below reads the fused pose, and a settle
+        # that still has the marker moving corrects against a line the
+        # robot is not actually on.
+        if not self._settle_or_search(marker_id, job, self.STANDOFF_DWELL_S):
+            return False
+
         # The reverse below is open loop — commit only once the robot's rear
         # axis provably points at the marker.
         return self._align_to_line(job, marker_id)
 
-    def _measure_normal(self, job: MotionToken, marker_id: int) -> NormalEstimate | None:
-        """Sidestep to an oblique vantage and read the marker's normal there.
+    def _standoff_target(self, marker_id: int) -> tuple[float | None, float, float]:
+        """Plan the standoff pose from the line of sight to the marker.
 
-        Retries from a progressively wider angle when the view comes back
-        too fronto-parallel to aim from (the robot may overshoot the
-        requested offset, or the marker may sit where one sidestep does not
-        clear the line).
+        The standoff sits on the ray from the marker through the robot, so
+        the drive keeps the camera pointed at the marker and the final
+        heading is the bearing back to it. Both come from *positions*,
+        which are measured ~20× better than the marker's rotation — there
+        is no ill-conditioned normal anywhere in the estimate.
 
-        Returns None when the marker was never seen or the job was
-        cancelled.
+        Returns:
+            ``(x, y, heading)``, or ``(None, 0, 0)`` when the marker is
+            unknown or the robot is on top of it.
         """
-        for attempt in range(self.VANTAGE_ATTEMPTS + 1):
-            state = self._get_marker_state(marker_id)
-            if state is None:
-                logger.warning("ArUco dock: marker %d not in world map — %s", marker_id, self._scene(marker_id))
-                return None
-            robot = self.cli.pose
-            seed = estimate_normal([state], (robot.position.x, robot.position.y))
-            if seed is None:
-                logger.warning(
-                    "ArUco dock: marker %d has no usable normal to plan a vantage — %s",
-                    marker_id,
-                    self._scene(marker_id),
-                )
-                return None
-
-            obliquity = TARGET_OBLIQUITY_DEG + attempt * self.VANTAGE_ESCALATION_DEG
-            vx, vy, vheading = vantage_target(
-                seed,
-                (robot.position.x, robot.position.y),
-                self.VANTAGE_DIST_MM,
-                obliquity,
-            )
-            if attempt == 0:
-                logger.info(
-                    "ArUco dock: viewing marker %d from (%.0f, %.0f) — %.0f deg off its normal",
-                    marker_id,
-                    vx,
-                    vy,
-                    obliquity,
-                )
-            if not self._go(job, vx, vy, vheading):
-                return None
-            if not self._settle_marker(marker_id, job, self.VANTAGE_DWELL_S):
-                return None
-
-            estimate = estimate_normal(self._collect_samples(marker_id), self._robot_xy())
-            if estimate is None:
-                logger.warning("ArUco dock: marker %d lost at the vantage — %s", marker_id, self._scene(marker_id))
-                return None
-            if estimate.usable or attempt == self.VANTAGE_ATTEMPTS:
-                logger.info(
-                    "ArUco dock: marker %d measured — %s | %s",
-                    marker_id,
-                    estimate.describe(),
-                    self._scene(marker_id),
-                )
-                return estimate
-            logger.info(
-                "ArUco dock: view still head-on (%.0f deg) — retrying from a wider angle — %s",
-                estimate.obliquity_deg,
-                self._scene(marker_id),
-            )
-        return None
-
-    def _collect_samples(self, marker_id: int) -> list:
-        """Snapshot the fused marker state over one settle window.
-
-        The world map already smooths each update; reading the state once
-        more per poll tick widens the sample set so
-        :func:`~pycozmo_ng.navigation.marker_observation.estimate_normal`
-        can take a median and drop an outlier a single frame would
-        otherwise dominate. This screens outliers — it does not reduce the
-        systematic error of a head-on view (see that module's docstring).
-        """
-        samples = []
-        deadline = time.monotonic() + self.SAMPLE_WINDOW_S
-        while time.monotonic() < deadline:
-            state = self._get_marker_state(marker_id)
-            if state is not None:
-                samples.append(state)
-            time.sleep(0.02)
-        return samples
+        state = self._get_marker_state(marker_id)
+        if state is None:
+            logger.warning("ArUco dock: marker %d not in world map — %s", marker_id, self._scene(marker_id))
+            return None, 0.0, 0.0
+        mx, my = float(state.position[0]), float(state.position[1])
+        rx, ry = self._robot_xy()
+        dx, dy = rx - mx, ry - my
+        rng = math.hypot(dx, dy)
+        if rng < 1e-6:
+            logger.warning("ArUco dock: robot is on marker %d — %s", marker_id, self._scene(marker_id))
+            return None, 0.0, 0.0
+        ux, uy = dx / rng, dy / rng
+        standoff_x = mx + ux * self.APPROACH_DIST_MM
+        standoff_y = my + uy * self.APPROACH_DIST_MM
+        return standoff_x, standoff_y, math.atan2(my - standoff_y, mx - standoff_x)
 
     def _robot_xy(self) -> tuple[float, float]:
         """The robot's XY position (mm, world frame)."""
@@ -429,7 +356,7 @@ class ArucoDocking:
             f"bearing {math.degrees(bearing):.1f} deg; aim {math.degrees(wrap_pi(bearing - yaw)):+.1f} deg"
         )
 
-    def _settle_marker(self, marker_id: int, job: MotionToken, dwell_s: float | None = None) -> bool:
+    def _settle_marker(self, marker_id: int, job: MotionToken, dwell_s: float) -> bool:
         """Dwell until the fused marker pose converges (``dwell_s`` deadline).
 
         Mirrors ``CubeApproach._dwell_for_smoothing``: the world-map EMA
@@ -441,8 +368,6 @@ class ArucoDocking:
         Returns False when cancelled or when the marker was not
         re-detected (the caller must not dock on a stale pose).
         """
-        if dwell_s is None:
-            dwell_s = self.STANDOFF_DWELL_S
         deadline = time.monotonic() + dwell_s
         base_ts: float | None = None
         saw_fresh = False
@@ -582,9 +507,10 @@ class ArucoDocking:
         robot's own centreline — how far off its centreline the marker
         sits. That is measured against the **robot's heading**, not the
         marker's normal: the marker position is ~20x better measured than
-        the marker's rotation, so this inherits none of the normal's error.
+        the marker's rotation, so this inherits none of a rotation's error.
         Re-deriving a normal here would reintroduce exactly the
-        ill-conditioned estimate the vantage step exists to avoid.
+        ill-conditioned estimate the line-of-sight approach exists to
+        avoid.
 
         The correction is a *turn* onto the bearing to the marker: aiming
         the robot at the marker is what zeroes the offset (sliding
@@ -832,8 +758,8 @@ class ArucoDocking:
         which remains the real stop.
 
         A plain range check: the marker position is measured ~20x better
-        than its rotation, and by this point the robot is on the normal
-        line, so range and "distance along the normal" agree.
+        than its rotation, and by this point the robot is on the marker's
+        centreline, so range and "distance along the centreline" agree.
         """
         rp = self.cli.pose
         return math.hypot(rp.position.x - mx, rp.position.y - my) <= (
