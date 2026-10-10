@@ -2,7 +2,7 @@
 
 The robot used through these tests is a kinematic double: its pose only
 changes when ``drive_wheels`` is called, so a command the firmware would
-ignore (``stuck=True`` — the on-charger / picked-up case) leaves the pose
+ignore (``stuck=True`` — the picked-up / blocked case) leaves the pose
 frozen and the loop has to notice on its own.
 """
 
@@ -62,7 +62,7 @@ class TestTurnBy:
         assert abs(math.degrees(robot.yaw) - 30.0) <= math.degrees(0.06)
 
     def test_stalls_out_fast_when_wheels_are_ignored(self):
-        """On the charger the pose never changes — fail in ~stall_s, not at timeout."""
+        """A held or blocked robot never moves — fail in ~stall_s, not at timeout."""
         robot = FakeRobot(stuck=True)
         started = time.monotonic()
         aligned = _navigator(robot).turn_by(math.radians(90.0), timeout_s=30.0, stall_s=0.2)

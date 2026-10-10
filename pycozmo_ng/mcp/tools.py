@@ -20,10 +20,12 @@ Conventions (also stated in the MCP server instructions):
 * **Frame-derived reads report freshness** — ``frame_age_s`` /
   ``stale`` (and ``camera_active``) distinguish "nothing in view" from
   "no frames"; the recovery for the latter is ``camera_toggle``.
-* **Drive tools refuse while the robot cannot move** — on the charger
-  or picked up the firmware ignores wheel commands, so those states are
-  refusals with a physical reason (and a job that still fails says why
-  in its ``reason``) instead of a timeout that explains nothing.
+* **Drive tools refuse only while the robot is picked up** — the
+  firmware holds its wheels then, and only the operator can put it
+  back down. A robot on the charger just drives off, so the charger is
+  reported by get_sensors but never a refusal; a wheel command that
+  goes unanswered is caught by stall detection and the job's ``reason``
+  instead of a timeout that explains nothing.
 * **``stop`` is always available** and cancels both motion and jobs.
 
 This module deliberately does not import the ``mcp`` SDK — it stays
@@ -194,17 +196,15 @@ class Toolset:
     def _drivable_refusal(self) -> dict[str, Any] | None:
         """Gate for every tool that turns the wheels, or ``None`` when drivable.
 
-        The firmware ignores wheel commands while the robot is on the
-        charger or picked up, so the command would spin uselessly and
-        come back as a confusing timeout. Refuse up front with the
-        physical reason — the operator has to move the robot first, and
-        no retry will change that.
+        Only a picked-up robot is refused: the firmware holds its wheels
+        then, and only the operator can put it back down. A robot on the
+        charger is *not* blocked — it simply drives off — so the charger
+        is reported by get_sensors but never a refusal; a wheel command
+        that genuinely goes unanswered is caught by the stall detection
+        and reported through the job's ``reason``.
         """
-        sensors = self._cozmo.sensors
-        if sensors.picked_up:
+        if self._cozmo.sensors.picked_up:
             return self._refusal("Robot is picked up - set it down before driving")
-        if sensors.on_charger or sensors.is_charging:
-            return self._refusal("Robot is on the charger - lift it off and set it down before driving")
         return None
 
     def _motion_failure_reason(self, made_progress: bool) -> str:
@@ -212,15 +212,13 @@ class Toolset:
 
         ``made_progress`` distinguishes "moved, but not far enough"
         (localization/obstruction — re-read state and retry) from "the
-        wheels never turned" (physical block: charger, pickup, stall).
+        wheels never turned" (the robot is being held, or something
+        physically blocks it).
         """
-        sensors = self._cozmo.sensors
-        if sensors.picked_up:
+        if self._cozmo.sensors.picked_up:
             return "Robot is picked up - set it down before driving"
-        if sensors.on_charger or sensors.is_charging:
-            return "Robot is on the charger - lift it off and set it down before driving"
         if not made_progress:
-            return "Wheels did not respond - check that the robot is off the charger, set down, and unobstructed"
+            return "Wheels did not respond - is the robot picked up or obstructed?"
         return "Did not complete in time - re-read get_robot_state and retry"
 
     # ------------------------------------------------------------------
@@ -453,10 +451,10 @@ class Toolset:
     def navigate_to(self, x: float, y: float, confirm: bool = False) -> dict[str, Any]:
         """Drive to a world-frame point (mm), following the A* path when enabled. Returns a job_id.
 
-        Poll get_job/wait_for_job for {arrived, distance_mm, timed_out}.
-        Refused beyond the safety extent from the origin, while the robot
-        is on the charger or picked up, and (when configured) without
-        confirmation - pass confirm=true then.
+        Poll get_job/wait_for_job for {arrived, distance_mm, timed_out}
+        (plus reason when not arrived). Refused beyond the safety extent
+        from the origin, while the robot is picked up, and (when
+        configured) without confirmation - pass confirm=true then.
         """
         refusal = self._motion_precheck(confirm)
         if refusal is not None:
@@ -510,7 +508,7 @@ class Toolset:
         The projected target is checked against the safety extent like
         navigate_to, and speed_mmps is clamped to the safety speed cap.
         Poll get_job/wait_for_job for {arrived, requested_mm, actual_mm}
-        (plus reason when not arrived). Refused on the charger or picked
+        (plus reason when not arrived). Refused while the robot is picked
         up, and (when configured) without confirm=true.
         Use this for small positioning moves that need no world point.
         """
@@ -556,7 +554,7 @@ class Toolset:
         Angles past ±180 take the short way around (the target heading
         wraps); beyond ±360 is refused as meaningless. Poll
         get_job/wait_for_job for {aligned, requested_deg, turned_deg}
-        (plus reason when not aligned). Refused on the charger or picked
+        (plus reason when not aligned). Refused while the robot is picked
         up, and (when configured) without confirm=true.
         """
         refusal = self._motion_precheck(confirm)

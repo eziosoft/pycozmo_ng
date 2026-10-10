@@ -311,9 +311,9 @@ class Navigator:
                 (turning in place).
             align_tol_rad: Heading tolerance for the final alignment.
             stall_s: Give up early when the pose stops changing for this
-                long — the firmware ignores wheel commands while the robot
-                is on the charger or picked up, and waiting out
-                ``timeout_s`` for that says nothing the caller can act on.
+                long — a picked-up or physically blocked robot never
+                moves, and waiting out ``timeout_s`` for that says
+                nothing the caller can act on.
                 ``None`` (default) waits out the timeout.
 
         Returns:
@@ -380,9 +380,9 @@ class Navigator:
         """Turn in place to ``target_heading`` (world frame, radians).
 
         ``stall_s`` aborts early when the heading stops changing for that
-        long — the firmware ignores wheel commands while the robot is on
-        the charger or picked up, so waiting out ``timeout_s`` for that
-        only delays an answer the caller cannot act on anyway.
+        long — a picked-up or physically blocked robot never turns, so
+        waiting out ``timeout_s`` for that only delays an answer the
+        caller cannot act on anyway.
         """
         cli = self.cli
         if cli is None:
@@ -520,8 +520,8 @@ class Navigator:
             timeout_s: Turn timeout; ``None`` scales with the angle at
                 the fixed turn speed (~38°/s).
             stall_s: Give up when the heading stops changing for this
-                long (wheels not responding — the robot is likely on the
-                charger or picked up). ``None`` waits out the timeout.
+                long (wheels not responding — the robot is likely picked
+                up or obstructed). ``None`` waits out the timeout.
 
         Returns:
             True when the heading settled within ``tol_rad``, False when

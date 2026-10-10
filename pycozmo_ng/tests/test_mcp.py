@@ -281,54 +281,61 @@ class TestStackCube:
 
 
 class TestDrivableGate:
-    """Firmware ignores wheel commands on the charger / when picked up — refuse up front."""
+    """Only a picked-up robot is refused — the firmware holds its wheels then.
 
-    def test_on_charger_blocks_turn(self, cozmo, toolset):
-        cozmo._brain.dock_state.on_charger = True
+    A robot on the charger is *not* blocked: it simply drives off, so
+    the charger never gates a drive tool.
+    """
+
+    def test_picked_up_blocks_turn(self, cozmo, toolset):
+        cozmo._brain.cli = MagicMock()  # sensors.picked_up reads the client
         with _connected(cozmo):
             result = toolset.turn_by(90.0)
         assert result["ok"] is False
-        assert "charger" in result["reason"]
+        assert "picked up" in result["reason"]
         assert toolset.jobs.list() == []  # refused before any job started
 
-    def test_charging_blocks_move(self, cozmo, toolset):
-        cozmo._brain.dock_state.charging = True
+    def test_picked_up_blocks_move(self, cozmo, toolset):
+        cozmo._brain.cli = MagicMock()
         with _connected(cozmo):
             result = toolset.move_by(100.0)
         assert result["ok"] is False
-        assert "charger" in result["reason"]
-
-    def test_picked_up_blocks_navigate(self, cozmo, toolset):
-        cozmo._brain.cli = MagicMock()  # sensors.picked_up reads the client
-        with _connected(cozmo):
-            result = toolset.navigate_to(100.0, 0.0)
-        assert result["ok"] is False
         assert "picked up" in result["reason"]
 
-    def test_on_charger_blocks_cube_visits_and_dock(self, cozmo, toolset):
-        cozmo._brain.dock_state.on_charger = True
+    def test_picked_up_blocks_cube_visits_and_dock(self, cozmo, toolset):
+        cozmo._brain.cli = MagicMock()
         with _connected(cozmo):
             assert toolset.approach_cube(1)["ok"] is False
             assert toolset.stack_cube(2)["ok"] is False
             assert toolset.dock()["ok"] is False
 
-    def test_say_is_not_gated_by_the_charger(self, cozmo, toolset):
-        """Head/lift/say have no wheels — only drive tools consult the gate."""
+    def test_on_charger_does_not_block_driving(self, cozmo, toolset):
+        """The robot drives off the charger — only pickup holds the wheels."""
+        cozmo._brain.cli = None  # sensors fall back to DockState
         cozmo._brain.dock_state.on_charger = True
+        cozmo._brain.dock_state.charging = True
+        with _connected(cozmo):
+            assert toolset._drivable_refusal() is None
+            assert toolset.turn_by(90.0)["ok"] is True
+            assert toolset.move_by(100.0)["ok"] is True
+
+    def test_say_is_not_gated_by_pickup(self, cozmo, toolset):
+        """Head/lift/say have no wheels — only drive tools consult the gate."""
+        cozmo._brain.cli = MagicMock()
         cozmo._cli = MagicMock()
         with _connected(cozmo):
             result = toolset.say("hello")
         assert result["ok"] is True
-
-    def test_failure_reason_names_the_charger(self, cozmo, toolset):
-        cozmo._brain.dock_state.on_charger = True
-        assert "charger" in toolset._motion_failure_reason(made_progress=True)
 
     def test_failure_reason_without_wheel_response(self, toolset):
         assert "did not respond" in toolset._motion_failure_reason(made_progress=False)
 
     def test_failure_reason_when_it_moved_but_missed(self, toolset):
         assert "retry" in toolset._motion_failure_reason(made_progress=True)
+
+    def test_failure_reason_names_pickup(self, cozmo, toolset):
+        cozmo._brain.cli = MagicMock()
+        assert "picked up" in toolset._motion_failure_reason(made_progress=True)
 
 
 class TestCameraToggle:
