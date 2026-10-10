@@ -331,6 +331,22 @@ class Client(event.Dispatcher):
 
         self.dispatch(event.EvtNewRawCameraImage, self, image)
 
+    @property
+    def robot_on_charger(self) -> bool:
+        """Whether the robot reports sitting on the charger.
+
+        Read live from the status bits rather than from charger-change
+        events: a robot already docked when the connection came up
+        produces no change event at all, so an event-mirrored flag would
+        stay false for the whole session.
+        """
+        return bool(self.robot_status & robot.RobotStatusFlag.IS_ON_CHARGER)
+
+    @property
+    def robot_charging(self) -> bool:
+        """Whether the robot reports actively charging (live status bits)."""
+        return bool(self.robot_status & robot.RobotStatusFlag.IS_CHARGING)
+
     def _on_robot_state(self, cli, pkt: protocol_encoder.RobotState):
         del cli
         self.pose_frame_id = pkt.pose_frame_id

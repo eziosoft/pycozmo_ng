@@ -427,12 +427,21 @@ class SensorsAPI:
     @property
     def is_charging(self) -> bool:
         """Whether the robot reports charging right now."""
+        cli = self._brain.cli
+        if cli is not None:
+            # Live status bits: a robot docked before the connection came
+            # up emits no charger-change event, so the event-mirrored
+            # DockState can miss it for the whole session.
+            return bool(cli.robot_charging)
         with self._brain.dock_state.lock:
             return self._brain.dock_state.charging
 
     @property
     def on_charger(self) -> bool:
         """Whether the robot believes it is on the charger."""
+        cli = self._brain.cli
+        if cli is not None:
+            return bool(cli.robot_on_charger)
         with self._brain.dock_state.lock:
             return self._brain.dock_state.on_charger
 

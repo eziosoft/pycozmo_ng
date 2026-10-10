@@ -184,6 +184,35 @@ class TestSensorsFacade:
         assert cozmo.sensors.head_angle == 0.0
         assert cozmo.sensors.lift_height == 0.0
 
+    def test_charger_flags_read_live_status_bits(self, cozmo):
+        """A robot docked *before* the connection emits no change event —
+        the sensors must read the status bits refreshed on every
+        RobotState, not the event-mirrored DockState."""
+        from pycozmo_ng.client import Client
+        from pycozmo_ng.util.robot import RobotStatusFlag
+
+        assert cozmo.sensors.on_charger is False
+        assert cozmo.sensors.is_charging is False
+
+        # Same shape as Client: flags computed live from robot_status.
+        cli = object.__new__(Client)
+        cli.robot_status = RobotStatusFlag.IS_ON_CHARGER | RobotStatusFlag.IS_CHARGING
+        cozmo._brain.cli = cli
+        assert cozmo.sensors.on_charger is True
+        assert cozmo.sensors.is_charging is True
+
+        cli.robot_status = 0
+        assert cozmo.sensors.on_charger is False
+        assert cozmo.sensors.is_charging is False
+
+    def test_charger_flags_fall_back_to_dock_state(self, cozmo):
+        """Without a client the event-mirrored DockState is all there is."""
+        cozmo._brain.cli = None
+        cozmo._brain.dock_state.on_charger = True
+        cozmo._brain.dock_state.charging = True
+        assert cozmo.sensors.on_charger is True
+        assert cozmo.sensors.is_charging is True
+
 
 class TestVisionFacade:
     def test_frames_empty_before_start(self, cozmo):
