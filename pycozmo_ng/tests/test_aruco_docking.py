@@ -1,4 +1,4 @@
-"""Tests for ArucoDocking — line-of-sight standoff, centring, reverse into the charger.
+"""Tests for ArucoDocking — standoff on the marker's normal, centring, reverse into the charger.
 
 ``ArucoDocking`` is constructible from plain dependencies (mock client,
 marker feed, dock state, motion controller) so the whole sequence runs
@@ -8,11 +8,12 @@ pose too far off the marker's axis, the ``on_docked`` callback that
 anchors the world origin, the refusal to anchor after a failed dock, the
 timeout that gives up without docking, and cancellation.
 
-The sequence approaches along the line of sight and never estimates the
-marker's normal: the marker sits at the back end of the docking station,
-so it is not reliably visible from the side — and a head-on view is the
-ill-conditioned case for a planar normal anyway. The tests below pin
-that structure down as well as the outcome.
+The sequence approaches on the marker's outward normal and never estimates
+the marker's bearing from its rotation — the standoff heading comes from
+positions (the bearing back to the marker), so facing the marker from the
+standoff is exact by construction. The marker sits at the back end of the
+dock, on its centreline, so a normal standoff lands the robot on the
+charger's centreline and the open-loop reverse runs straight in.
 
 The last class covers the browser wiring: the Z key must reach
 ``Navigator.dock_on_aruco`` — not the legacy pose-based dock.
@@ -207,14 +208,14 @@ class TestDockGuards:
 
 
 class TestDockSequence:
-    def test_standoff_is_on_the_line_of_sight(self):
-        """One drive: straight out along the line of sight, then reverse.
+    def test_standoff_is_on_the_marker_normal(self):
+        """One drive: straight ahead along the marker's normal, then reverse.
 
-        The standoff sits on the ray from the marker through the robot, so
-        the approach keeps the camera on the marker the whole way in and
-        the final heading is the bearing back to it. There is no sideways
-        step at all — the marker is at the end of the dock and is not
-        reliably visible from the side.
+        The standoff sits on the marker's outward normal, so the robot
+        arrives on the charger's centreline. The robot starts on the
+        normal axis (at (500, 0) with the marker's normal along +x), so
+        the standoff is dead ahead at 250 mm — on the normal, with no
+        lateral step.
         """
         docking, cli, ds, motion, on_docked = _make()
         ds.charging = True  # contacts detect immediately on reverse
@@ -224,45 +225,46 @@ class TestDockSequence:
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names)
 
         # The whole approach is one path segment: the robot starts at
-        # (500, 0) with the marker at the origin, so the standoff is dead
-        # ahead at 250 mm — on the line of sight, with no lateral step.
+        # (500, 0) with the marker at the origin (normal along +x), so the
+        # standoff is dead ahead at 250 mm — on the marker's normal.
         assert cli.go_to_pose.call_count >= 1
         standoff = cli.go_to_pose.call_args_list[0].args[0]
         assert math.isclose(standoff.position.x, docking.APPROACH_DIST_MM, rel_tol=0.05)
-        assert abs(standoff.position.y) < 1e-6, "the standoff must sit on the line of sight, not off to the side"
+        assert abs(standoff.position.y) < 1e-6, "the standoff must sit on the marker's normal, not off to the side"
         assert abs(wrap_pi(standoff.rotation.angle_z.radians - math.pi)) < 1e-9
 
         turn = [c for c in cli.drive_wheels.call_args_list if c.kwargs["lwheel_speed"] == -c.kwargs["rwheel_speed"]]
         assert turn
         assert on_docked.call_count == 1
 
-    def test_far_off_axis_start_still_docks(self):
-        """An off-axis start is inherited, not refused.
+    def test_off_axis_start_standoff_is_on_the_normal_not_the_line_of_sight(self):
+        """An off-axis start lands on the marker's normal, not the line of sight.
 
-        The reverse can only ever run along the robot's own line of sight
-        to the marker — centring points the robot *at* the marker, never
-        *along* the dock. Gating on that angle would take the marker's
-        fused rotation, which is the ill-conditioned normal again (off by
-        tens of degrees at a head-on start), so a guard would refuse the
-        poses that dock best. The dock proceeds and the centring step does
-        what it can.
+        The standoff is on the marker's outward normal, so regardless of
+        where the robot starts it arrives on the charger's centreline —
+        the reverse then runs straight back into the dock's back posts.
+        Gating on the marker's normal-derived obliquity would take the
+        marker's fused rotation, which is ill-conditioned (off by tens of
+        degrees at a head-on start), so a guard would refuse the poses
+        that dock best. The dock proceeds and the centring step does what
+        it can.
         """
         docking, cli, ds, motion, on_docked = _make()
         ds.charging = True
-        # Robot 45 deg off the marker's axis (normal along +x).
+        # Robot 45 deg off the marker's axis (marker normal along +x).
         cli.pose = _pose(350.0, 350.0, 0.0)
 
         assert docking.dock(0) is True
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
 
-        # The standoff is still planned on the line of sight: dead ahead
-        # along the robot's own bearing, 250 mm out.
+        # The standoff is on the marker's normal: at 250 mm along +x from
+        # the origin — NOT on the line of sight from (350, 350) which would
+        # land at ~(177, 177).
         standoff = cli.go_to_pose.call_args_list[0].args[0]
-        bearing = math.atan2(0.0 - 350.0, 0.0 - 350.0)
-        assert math.isclose(
-            math.hypot(standoff.position.x, standoff.position.y), docking.APPROACH_DIST_MM, rel_tol=0.05
-        )
-        assert abs(wrap_pi(standoff.rotation.angle_z.radians - bearing)) < 1e-9
+        assert math.isclose(standoff.position.x, docking.APPROACH_DIST_MM, rel_tol=0.05)
+        assert abs(standoff.position.y) < 1e-6, "standoff must be on the marker's normal (+x), not on the line of sight"
+        # Heading is the bearing from the standoff back to the marker: pi.
+        assert abs(wrap_pi(standoff.rotation.angle_z.radians - math.pi)) < 1e-9
         assert on_docked.call_count == 1
 
     def test_reverse_starts_from_rest_after_the_turn(self):

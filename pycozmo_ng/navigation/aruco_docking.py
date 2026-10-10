@@ -1,64 +1,52 @@
 """ArucoDocking — dock on the ArUco charger marker (marker 0).
 
-The sequence, mirroring the cube approach:
+The sequence:
 
-1. Drive to a **standoff** on the line of sight to the marker — the ray
-   from the marker through the robot, held at ``APPROACH_DIST_MM`` — so
-   the camera keeps the marker in view the whole way in.
-2. Re-aim onto the marker and settle until the fused pose converges.
+1. Drive to a **standoff** on the marker's outward normal — the ray from
+   the marker centre along its Z axis — held at ``APPROACH_DIST_MM``
+   (250 mm). The standoff sits on the charger's centreline, so the
+   open-loop reverse (step 3) drives straight back into the dock's back
+   posts. The heading at the standoff is the bearing back to the marker,
+   so the camera faces it the whole way in.
+2. Re-aim onto the marker and settle until the fused pose converges. A
+   short dwell lets the world-map EMA absorb the approach drive before
+   anything measures off it. If the marker is out of view at the
+   standoff (the approach pointed the camera away), a heading sweep
+   finds it.
 3. Verify the robot is centred on the marker, then turn 180° and reverse
    in until the charging contacts detect — the real stop.
 
-Why there is no sideways vantage
---------------------------------
-An earlier revision sidestepped ~20° off the marker's normal to measure
-that normal from an oblique view, because a planar marker viewed head-on
-yields a normal whose *bearing* is meaningless (~43° of error at 2° of
-obliquity, which a 250 mm standoff turns into hundreds of millimetres of
-lateral error at the charger — the reason the vantage existed at all).
+Why the normal is used for the standoff
+----------------------------------------
+The marker sits on a post at the back end of the charging station, on
+its centreline. A standoff on the marker's normal lands the robot on
+that same centreline, so the reverse runs straight toward the dock's
+back posts. A line-of-sight standoff (ray from marker through the
+robot) would instead inherit whatever obliquity the robot started with:
+off-axis to begin with, the reverse would miss the charger every time.
 
-That cannot work on this dock. **The marker sits on a post at the back
-end of the charging station, inside its rim.** From the side it is
-heavily foreshortened and rides the edge of the frame, where the
-detector drops any quad that touches the image border. Live failure:
-
-    ArUco dock: view still head-on (12 deg) — retrying from a wider angle
-    ArUco dock: marker 0 not re-detected during settle — robot (162, -129)
-    ArUco dock: no usable view of marker 0
-
-The retry had pushed the robot 32° off the normal, where the marker sat
-at the frame edge and no detection landed for a whole dwell — so the
-dock aborted before it ever tried to reverse. Measured afterwards on the
-robot: marker 0 is detected at every angle from −40° to +30° **as long
-as the robot is pointed at it**; the vantage lost it by pointing the
-camera from a stale plan instead of at the marker.
-
-So the normal is not used anywhere, and nothing about the dock depends
-on the marker being seen from the side.
+The *heading* at the standoff, however, comes from *positions* — the
+bearing back to the marker. Facing the marker from the standoff is exact
+by construction, so the camera is on the marker at every settle and a
+settle can never fail for lack of a detection. The normal is only used
+to *place* the standoff, not to *aim* the robot.
 
 Where the accuracy actually comes from
 --------------------------------------
-The standoff is placed on the **line of sight**, which is computed from
-two *positions* — the fused marker and the robot pose — measured ~20×
-better than the marker's rotation. Facing the marker from it is exact by
-construction, so the camera is on the marker at every settle and a
-settle can never fail for lack of a detection.
+The centring check measures the marker's lateral offset from the
+robot's own centreline — "the marker is 27 mm off my centreline" — a
+millimetre quantity derived from the marker *position* (measured ~20×
+better than the marker's rotation) and the robot's *heading*, not from
+the marker's normal. The correction is a turn onto the bearing to the
+marker, which zeroes the offset while holding the standoff distance
+exactly.
 
-The reverse line is fixed by the robot's own heading (``yaw + π``) and
-the centring check is measured against that heading — "the marker is
-27 mm off my centreline" is well conditioned and directly actionable.
-Landing the rear on the marker's centre is what matters, because the
-marker is the dock's centre; the reverse needs no landmark estimate
-beyond that.
-
-The one quantity the line of sight cannot give is how far the robot is
-turned away from the dock's own axis: the reverse inherits whatever
-obliquity the robot started with, because centring only ever points the
-robot *at* the marker — never *along* the dock. There is deliberately no
-guard on that angle. The obvious signal would be the marker's fused
-rotation, but that is the ill-conditioned normal again: at a head-on
-start it is off by tens of degrees (the same ~43 deg the vantage existed
-to avoid), so gating on it would refuse the poses that dock best. In
+The one quantity the standoff cannot give is how far the robot is turned
+away from the dock's own axis: centring only ever points the robot *at*
+the marker — never *along* the dock. There is deliberately no guard on
+that angle. The obvious signal would be the marker's fused rotation, but
+that is the ill-conditioned normal: at a head-on start it is off by tens
+of degrees, so gating on it would refuse the poses that dock best. In
 practice the angle is bounded anyway — a flat marker at the end of the
 dock is not detectable from far off its own axis, so if the dock could
 be planned at all the robot was already facing roughly the right way.
@@ -71,7 +59,8 @@ starts on a stationary robot and drives straight. Commanding the reverse
 while the 180° turn was still coasting met treads loaded the other way:
 one side spun up first and twisted the chassis ~5° before it drove
 straight, and that line missed the charger every time. That is why the
-centring step is verified rather than trusted.
+centring step is verified rather than trusted, and why the turn is
+followed by a settle-and-re-aim pause before the reverse.
 
 On success ``on_docked`` runs — the caller resets the pose origin (the
 docked robot pose becomes the world origin, 65 mm in front of the
@@ -273,11 +262,13 @@ class ArucoDocking:
     # ------------------------------------------------------------------
 
     def _approach(self, job: MotionToken, marker_id: int) -> bool:
-        """Drive the standoff on the line of sight, then centre on the marker.
+        """Drive the standoff on the marker's normal, then centre on the marker.
 
-        The standoff is computed from positions alone (see the module
-        docstring), so the marker stays in view on the way in and no
-        measurement of the marker's rotation is ever needed.
+        The standoff is placed on the marker's outward normal so the robot
+        arrives on the charger's centreline — the reverse then runs straight
+        back into the dock's back posts (see the module docstring). The
+        heading at the standoff is the bearing back to the marker, keeping
+        the camera on it the whole way in.
         """
         logger.info("ArUco dock: start — %s", self._scene(marker_id))
         standoff_x, standoff_y, heading = self._standoff_target(marker_id)
@@ -308,32 +299,53 @@ class ArucoDocking:
         return self._align_to_line(job, marker_id)
 
     def _standoff_target(self, marker_id: int) -> tuple[float | None, float, float]:
-        """Plan the standoff pose from the line of sight to the marker.
+        """Plan the standoff pose on the marker's outward normal.
 
-        The standoff sits on the ray from the marker through the robot, so
-        the drive keeps the camera pointed at the marker and the final
-        heading is the bearing back to it. Both come from *positions*,
-        which are measured ~20× better than the marker's rotation — there
-        is no ill-conditioned normal anywhere in the estimate.
+        The standoff sits on the marker's Z axis (outward-facing normal —
+        the direction the marker faces, which is the charger's centreline
+        toward the robot when docked) at ``APPROACH_DIST_MM``. This lands
+        the robot on the charger's centreline so the open-loop reverse
+        drives straight back into the dock's back posts. The heading is
+        the bearing back to the marker, so the camera faces it at the
+        standoff and every settle keeps a detection in view.
+
+        The normal is only used to *place* the standoff, not to *aim*:
+        the heading comes from positions (the bearing from the standoff
+        to the marker), which are measured ~20× better than the marker's
+        rotation. Facing the marker from the standoff is exact by
+        construction. The centring step downstream corrects any residual
+        lateral offset from normal error.
 
         Returns:
             ``(x, y, heading)``, or ``(None, 0, 0)`` when the marker is
-            unknown or the robot is on top of it.
+            unknown, the normal is degenerate, or the robot is on top of
+            it.
         """
         state = self._get_marker_state(marker_id)
         if state is None:
             logger.warning("ArUco dock: marker %d not in world map — %s", marker_id, self._scene(marker_id))
             return None, 0.0, 0.0
         mx, my = float(state.position[0]), float(state.position[1])
-        rx, ry = self._robot_xy()
-        dx, dy = rx - mx, ry - my
-        rng = math.hypot(dx, dy)
-        if rng < 1e-6:
-            logger.warning("ArUco dock: robot is on marker %d — %s", marker_id, self._scene(marker_id))
-            return None, 0.0, 0.0
-        ux, uy = dx / rng, dy / rng
-        standoff_x = mx + ux * self.APPROACH_DIST_MM
-        standoff_y = my + uy * self.APPROACH_DIST_MM
+        # The marker's Z axis (rotation_matrix[:, 2]) is its outward normal —
+        # the direction the marker faces, i.e. the charger's centreline
+        # toward the robot when docked.
+        nx = float(state.rotation_matrix[0, 2])
+        ny = float(state.rotation_matrix[1, 2])
+        nlen = math.hypot(nx, ny)
+        if nlen < 1e-6:
+            # Degenerate normal (marker viewed edge-on or normal unresolved) —
+            # fall back to the line-of-sight direction (marker → robot).
+            rx, ry = self._robot_xy()
+            dx, dy = rx - mx, ry - my
+            rng = math.hypot(dx, dy)
+            if rng < 1e-6:
+                logger.warning("ArUco dock: robot is on marker %d — %s", marker_id, self._scene(marker_id))
+                return None, 0.0, 0.0
+            nx, ny = dx / rng, dy / rng
+        else:
+            nx, ny = nx / nlen, ny / nlen
+        standoff_x = mx + nx * self.APPROACH_DIST_MM
+        standoff_y = my + ny * self.APPROACH_DIST_MM
         return standoff_x, standoff_y, math.atan2(my - standoff_y, mx - standoff_x)
 
     def _robot_xy(self) -> tuple[float, float]:
@@ -526,10 +538,11 @@ class ArucoDocking:
         robot's own centreline — how far off its centreline the marker
         sits. That is measured against the **robot's heading**, not the
         marker's normal: the marker position is ~20x better measured than
-        the marker's rotation, so this inherits none of a rotation's error.
-        Re-deriving a normal here would reintroduce exactly the
-        ill-conditioned estimate the line-of-sight approach exists to
-        avoid.
+        the marker's rotation, so this inherits none of a rotation's
+        error. Re-deriving a normal here would reintroduce the
+        ill-conditioned estimate the standoff already accepts (see the
+        module docstring — the standoff is on the normal, but the
+        *aim* is from positions).
 
         The correction is a *turn* onto the bearing to the marker: aiming
         the robot at the marker is what zeroes the offset (sliding

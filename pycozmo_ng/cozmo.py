@@ -268,11 +268,11 @@ class NavigatorAPI:
     def dock_on_aruco(self, marker_id: int = 0) -> bool:
         """Drive to an ArUco marker and reverse into it until charging.
 
-        The robot drives to 15 cm in front of the marker (id=0 by default
-        — the charger marker) facing it, then reverses at low speed until
-        the charger contacts are detected or a timeout fires.  Returns
-        True if the dock attempt was started (marker known), False
-        otherwise.
+        The robot drives to 25 cm in front of the marker (id=0 by default
+        — the charger marker) on its outward normal, facing it, then
+        reverses at low speed until the charger contacts are detected or
+        a timeout fires.  Returns True if the dock attempt was started
+        (marker known), False otherwise.
         """
         return self._navigator.dock_on_aruco(marker_id)
 
