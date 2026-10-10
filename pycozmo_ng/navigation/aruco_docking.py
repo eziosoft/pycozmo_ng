@@ -65,8 +65,13 @@ be planned at all the robot was already facing roughly the right way.
 
 What remains open-loop is the reverse itself: once the robot turns away
 the marker is out of view, so the line it reverses along is fixed by the
-pose it turned from. That is why the centring step is verified rather
-than trusted.
+pose it turned from. The robot therefore comes to a full stop before
+reversing — the same condition as the browser's reverse key, which always
+starts on a stationary robot and drives straight. Commanding the reverse
+while the 180° turn was still coasting met treads loaded the other way:
+one side spun up first and twisted the chassis ~5° before it drove
+straight, and that line missed the charger every time. That is why the
+centring step is verified rather than trusted.
 
 On success ``on_docked`` runs — the caller resets the pose origin (the
 docked robot pose becomes the world origin, 65 mm in front of the
@@ -180,6 +185,20 @@ class ArucoDocking:
 
     REVERSE_SPEED_MMPS: float = -60.0  # negative = backward
     REVERSE_TIMEOUT_S: float = 15.0
+
+    #: The turn is followed by a full stop before the first reverse
+    #: command. ``_turn_to`` returns the moment the wheels stop, but the
+    #: chassis is still coasting, and driving into that meets treads
+    #: loaded the other way by the turn — one side spins up first and
+    #: twists the robot ~5° before it goes straight, which carried the
+    #: reverse line off the charger every time. A robot at rest reverses
+    #: straight, which is why the browser's reverse key never shows the
+    #: twist; 0.3 s mirrors ``Docking``'s post-turn pause.
+    REVERSE_TURN_SETTLE_S: float = 0.3
+    #: Short pause after the re-aim, so the reverse itself also starts
+    #: from rest. That re-aim exits at near-zero speed within
+    #: ``TURN_TOL_RAD``, so it needs only a moment to come down.
+    REVERSE_AIM_SETTLE_S: float = 0.15
 
     #: After a distance-based stop, give the contacts this long to
     #: register before declaring the dock complete.
@@ -599,6 +618,11 @@ class ArucoDocking:
         by ``REVERSE_OVERSHOOT_MM`` — a deliberate overshoot so it bumps
         the back of the charger instead of stopping short, while still
         bounding how long the wheels can push with a lagging flag.
+
+        The turn is followed by :meth:`_settle_and_aim` — stop fully,
+        re-aim — so the reverse starts on a stationary robot, the same
+        condition as the browser's reverse key. The command itself is
+        unchanged: both treads at ``REVERSE_SPEED_MMPS``.
         """
         state = self._get_marker_state(marker_id)
         if state is None:
@@ -608,7 +632,10 @@ class ArucoDocking:
 
         # Turn in place: rear toward the charger.
         pose = self.cli.pose
-        if not self._go(job, pose.position.x, pose.position.y, wrap_pi(pose.rotation.angle_z.radians + math.pi)):
+        reverse_heading = wrap_pi(pose.rotation.angle_z.radians + math.pi)
+        if not self._go(job, pose.position.x, pose.position.y, reverse_heading):
+            return False
+        if not self._settle_and_aim(job, reverse_heading):
             return False
 
         logger.info(
@@ -647,6 +674,46 @@ class ArucoDocking:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _settle_and_aim(self, job: MotionToken, heading: float) -> bool:
+        """Let the turn come to a complete stop, then re-aim onto *heading*.
+
+        :meth:`_turn_to` stops the wheels the moment the measured error
+        drops under the tolerance, so the chassis is still coasting when
+        it returns. Commanding the reverse straight away meets treads
+        that were just tensioned the other way by the turn: one side
+        spins up before the other and twists the chassis a few degrees
+        before both settle — observed live as ~5°, enough to carry the
+        open-loop reverse line past the charger. A robot at rest reverses
+        straight: the browser's reverse key always starts from a
+        stationary robot and never shows the twist, so the dock does the
+        same. Mirrors ``Docking``'s 0.3 s post-turn pause.
+
+        The re-aim after the pause measures a robot that has actually
+        stopped (coast folded into the error, so it gets corrected), and
+        its own exit is at near-zero speed within ``TURN_TOL_RAD`` — the
+        second, shorter pause lets that come down before the reverse.
+
+        Returns False when cancelled or when the heading does not converge.
+        """
+        if not self._pause(job, self.REVERSE_TURN_SETTLE_S):
+            return False
+        if not self._turn_to(job, heading):
+            return False
+        return self._pause(job, self.REVERSE_AIM_SETTLE_S)
+
+    def _pause(self, job: MotionToken, seconds: float) -> bool:
+        """Sleep *seconds*, stopping the motors on cancellation.
+
+        Returns False when cancelled, True when the pause ran out.
+        """
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if job.cancelled:
+                self.cli.stop_all_motors()
+                return False
+            time.sleep(0.05)
+        return True
 
     def _go(self, job: MotionToken, x: float, y: float, heading: float) -> bool:
         """Drive/turn to (*x*, *y*, *heading*) with cancellation.

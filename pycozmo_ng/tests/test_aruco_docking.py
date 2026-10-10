@@ -192,6 +192,8 @@ def _make(
     # keep the tests fast: every dwell is a couple of poll ticks
     docking.STANDOFF_DWELL_S = 0.1
     docking.ALIGN_DWELL_S = 0.1
+    docking.REVERSE_TURN_SETTLE_S = 0.05
+    docking.REVERSE_AIM_SETTLE_S = 0.05
     return docking, cli, ds, motion, on_docked
 
 
@@ -262,6 +264,51 @@ class TestDockSequence:
         )
         assert abs(wrap_pi(standoff.rotation.angle_z.radians - bearing)) < 1e-9
         assert on_docked.call_count == 1
+
+    def test_reverse_starts_from_rest_after_the_turn(self):
+        """No reverse command until the turn has stopped and settled.
+
+        The browser's reverse key always starts on a stationary robot and
+        drives straight; the dock used to command the reverse while the
+        180 deg turn was still coasting, one tread spun up first, and the
+        chassis twisted ~5 deg off the line — enough to carry the
+        open-loop reverse past the charger. Pin the ordering the fix
+        relies on: turn -> stop -> settle -> re-aim stop -> settle ->
+        reverse.
+        """
+        docking, cli, _ds, motion, _on_docked = _make()
+        docking.REVERSE_TURN_SETTLE_S = 0.25
+        docking.REVERSE_AIM_SETTLE_S = 0.15
+        docking.REVERSE_TIMEOUT_S = 0.3  # a few reverse ticks, then give up
+
+        events: list[tuple[float, str]] = []
+        real_drive = cli.drive_wheels.side_effect
+
+        def drive(*args, **kwargs):
+            both = kwargs["lwheel_speed"] == kwargs["rwheel_speed"]
+            kind = "reverse" if both and kwargs["lwheel_speed"] == docking.REVERSE_SPEED_MMPS else "turn"
+            events.append((time.monotonic(), kind))
+            return real_drive(*args, **kwargs)
+
+        def stop(*args, **kwargs):
+            del args, kwargs
+            events.append((time.monotonic(), "stop"))
+
+        cli.drive_wheels.side_effect = drive
+        cli.stop_all_motors.side_effect = stop
+
+        with motion.begin("test_reverse") as job:
+            assert docking._reverse_into_charger(job, 0) is False  # timed out, never docked
+
+        assert any(kind == "turn" for _t, kind in events), "the 180 deg turn must have run"
+        stops = [t for t, kind in events if kind == "stop"]
+        revs = [t for t, kind in events if kind == "reverse"]
+        assert len(stops) >= 2, "the turn stops, then the re-aim stops again"
+        # Turn -> full stop -> settle -> re-aim (measures the stopped
+        # robot) -> stop -> settle -> only then the first reverse tick.
+        assert stops[1] - stops[0] >= docking.REVERSE_TURN_SETTLE_S - 1e-3
+        assert revs, "the robot must have tried to reverse"
+        assert revs[0] - stops[1] >= docking.REVERSE_AIM_SETTLE_S - 1e-3
 
     def test_no_charging_does_not_reanchor_the_world(self):
         """Reaching the docked distance is not the same as docking.
