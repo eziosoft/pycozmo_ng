@@ -136,7 +136,7 @@ class TestResetPoseOrigin:
 
     def test_guard_skips_already_reset_origin(self):
         """A second reset for the same origin id sends no SetOrigin and
-        returns True (a prior reset is sufficient)."""
+        returns True when the robot is still at (0, 0)."""
         nav, cli = _make_nav(origin_id=5)
         nav.ds.origin_reset_origin_id = 5  # already reset for this origin
 
@@ -144,6 +144,23 @@ class TestResetPoseOrigin:
 
         assert result is True
         assert cli.set_origin_count == 0
+
+    def test_guard_resets_when_robot_drove_away_and_came_back(self):
+        """The 'resets only once' bug: after the first charger reset the
+        robot drives away, walks around, and returns.  The origin_id hasn't
+        changed (no pick-up to bump it via _on_robot_picked_up), but the
+        position is no longer (0, 0).  The guard must detect this and
+        re-anchor the origin -- not silently skip because the origin_id
+        matches.
+        """
+        nav, cli = _make_nav(x=100.0, y=0.0, origin_id=5, delay_s=0.1)
+        nav.ds.origin_reset_origin_id = 5  # already reset for this origin
+
+        result = nav._reset_pose_origin()
+
+        assert result is True
+        assert cli.set_origin_count == 1, "guard skipped — origin never re-anchored"
+        assert nav.ds.origin_reset_origin_id == 6  # new origin confirmed
 
     def test_double_sender_only_one_set_origin(self):
         """Two callers racing on the same origin id must not double-send.

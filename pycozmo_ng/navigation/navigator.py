@@ -73,6 +73,13 @@ class Navigator:
     JOB_ALIGN: ClassVar[str] = "align"
     JOB_TEST_MODE: ClassVar[str] = "test_mode"
 
+    #: When the robot is on the charger but its distance from the world
+    #: origin exceeds this tolerance (mm) the origin must be re-anchored
+    #: even if the origin id hasn't changed -- the robot drove away and
+    #: came back without a lift/pick-up cycle to bump the origin id.
+    #: (COZMO-72 follow-up)
+    ORIGIN_AT_ORIGIN_TOLERANCE_MM: ClassVar[float] = 10.0
+
     def __init__(
         self,
         dock_state: DockState,
@@ -185,7 +192,20 @@ class Navigator:
         with self._origin_reset_lock:
             with self.ds.lock:
                 if self.ds.origin_reset_origin_id == cli.pose.origin_id:
-                    return True
+                    # Origin id hasn't changed since the last reset.  But the
+                    # robot may have driven *away* from the charger and come
+                    # back without a pick-up cycle (which is what bumps the
+                    # origin id via _on_robot_picked_up).  In that case the
+                    # position is no longer (0, 0) even though the id is the
+                    # same -- the origin must be re-anchored.  Only skip when
+                    # the robot is genuinely sitting at the origin.
+                    dist_from_origin = math.hypot(
+                        cli.pose.position.x,
+                        cli.pose.position.y,
+                    )
+                    if dist_from_origin < self.ORIGIN_AT_ORIGIN_TOLERANCE_MM:
+                        return True  # already at origin for this origin id
+                    # Fall through: robot on charger but not at (0, 0) — reset.
 
                 # Snapshot scalars in the *old* frame: after SetOrigin every
                 # pose read is the new one, so this is the only place the
