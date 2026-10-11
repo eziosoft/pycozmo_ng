@@ -29,11 +29,17 @@ if TYPE_CHECKING:
 INSTRUCTIONS = (
     "PyCozmo-NG drives a physical Cozmo robot. Frames and units: world frame, "
     "millimetres, headings in radians; cube IDs are 1-3. Read tools "
-    "(get_robot_state, get_world_map, get_sensors, get_detections, get_frame) return "
+    "(get_robot_state, get_world_map, get_occupancy_map, get_sensors, get_detections, get_frame) return "
     "snapshots and are always safe; they carry camera_active/frame_age_s so you can "
-    "tell a live frame from a stale one. Motion tools (navigate_to, move_by, turn_by, "
+    "tell a live frame from a stale one. get_occupancy_map is the world you have "
+    "explored drawn top-down: '#' is an obstacle you must not drive into, '.' is "
+    "proven floor, '?' is fog you have never seen - look before driving into it. "
+    "Motion tools (navigate_to, move_by, turn_by, "
     "approach_cube, stack_cube, dock, dock_on_aruco) return a job_id immediately - "
-    "poll get_job or wait_for_job for the outcome instead of assuming success. say, "
+    "poll get_job or wait_for_job for the outcome instead of assuming success. "
+    "navigate_to is the way to cross the room: enable A* once at the start "
+    "(astar_toggle(true)) and it plans around the map's obstacles; move_by and "
+    "turn_by are for short steps and looking. say, "
     "set_head_angle and set_lift_height are synchronous; wait(seconds) pauses up to "
     "10 s to let the robot settle instead of re-reading immediately. camera_toggle "
     "turns the video stream off/on - it is the recovery when get_frame is marked "
@@ -145,6 +151,7 @@ class McPServer:
             # Reads (snapshots)
             "get_robot_state",
             "get_world_map",
+            "get_occupancy_map",
             "get_sensors",
             "get_detections",
             "get_frame",
@@ -176,6 +183,7 @@ class McPServer:
         read_only = {
             "get_robot_state",
             "get_world_map",
+            "get_occupancy_map",
             "get_sensors",
             "get_detections",
             "get_frame",
@@ -185,10 +193,14 @@ class McPServer:
         }
         # Repeating these produces the same state; motion and say never do.
         idempotent = read_only | {"stop", "camera_settings", "camera_toggle", "astar_toggle"}
+        # Wrappers that repack tool results into real MCP image content
+        # (the SDK is in scope here; the Toolset stays SDK-free).
+        wrappers = {
+            "get_frame": self._get_frame_image_wrapper(),
+            "get_occupancy_map": self._get_occupancy_map_image_wrapper(),
+        }
         for name in names:
-            fn = getattr(self.toolset, name)
-            if name == "get_frame":
-                fn = self._get_frame_image_wrapper()
+            fn = wrappers.get(name) or getattr(self.toolset, name)
             mcp.add_tool(
                 fn,
                 name=name,
@@ -255,4 +267,53 @@ class McPServer:
             "STALE; when no frame has ever arrived, returns a text snapshot "
             "with frame: null."
         )
+        return _wrapper
+
+    def _get_occupancy_map_image_wrapper(self):
+        """Return a ``get_occupancy_map`` wrapper that emits real MCP image content.
+
+        Same seam as :meth:`_get_frame_image_wrapper`: the Toolset hands
+        back JSON (a colour PNG as base64 text), and this wrapper —
+        built where the SDK is in scope — turns it into an
+        ``ImageContent`` block beside a text block that spells the
+        legend out and then draws the ASCII grid, so the map reads the
+        same whether the client "sees" images or not. A refusal
+        (occupancy map disabled) passes through as the plain dict.
+        """
+        from mcp_types import CallToolResult, ImageContent, TextContent
+
+        occupancy_fn = self.toolset.get_occupancy_map
+
+        @functools.wraps(occupancy_fn)
+        def _wrapper(**kwargs: Any) -> Any:
+            result = occupancy_fn(**kwargs)
+            occ = result.get("occupancy")
+            if not occ or not occ.get("png_base64"):
+                return result  # refusal (or no map) — the dict is the answer
+            legend = "\n".join(f"  {symbol} = {meaning}" for symbol, meaning in occ["legend"].items())
+            counts = occ["counts"]
+            meta = f"{occ['view']}\nLegend:\n{legend}\n"
+            meta += (
+                f"Robot at ({occ['robot']['x_mm']:.0f}, {occ['robot']['y_mm']:.0f}) mm; "
+                f"grid {occ['grid_size_mm']:.0f} mm at {occ['render_cell_size_mm']:.0f} mm/cell, "
+                f"origin ({occ['origin_mm'][0]:.0f}, {occ['origin_mm'][1]:.0f}) mm\n"
+            )
+            meta += (
+                f"{counts['occupied']} occupied, {counts['free']} free, {counts['unknown']} unknown "
+                f"({counts['explored_percent']}% explored)\n"
+            )
+            age = occ.get("frame_age_s")
+            if occ.get("frame_stale"):
+                meta += (
+                    f"STALE: the map only grows while frames arrive, and the newest frame is "
+                    f"{f'{age:.1f}' if age is not None else '?'}s old - call camera_toggle(enabled=true) "
+                    "to keep exploring.\n"
+                )
+            meta += "\n".join(occ["map"])
+            blocks: list[Any] = [
+                ImageContent(type="image", data=occ["png_base64"], mime_type="image/png"),
+                TextContent(type="text", text=meta),
+            ]
+            return CallToolResult(content=blocks)
+
         return _wrapper

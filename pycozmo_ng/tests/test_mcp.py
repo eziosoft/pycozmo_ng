@@ -19,6 +19,7 @@ from pycozmo_ng import Cozmo
 from pycozmo_ng.mcp import JobRegistry, SafetyLimits, Toolset
 from pycozmo_ng.mcp.tools import jsonable
 from pycozmo_ng.vision.cube_detector.detection_pipeline import CubeDetection
+from pycozmo_ng.vision.occupancy_map import FREE, OCCUPIED, OccupancyMap
 
 
 @pytest.fixture
@@ -165,6 +166,67 @@ class TestReads:
             "frame_stale": True,
             "detections": [],
         }
+
+
+class TestGetOccupancyMap:
+    """The explored world, rendered the way an agent reads a map: top-down, world frame.
+
+    Grid indices are ``grid[row=y, col=x]`` (see ``OccupancyMap.update``);
+    the tool draws the same grid with +X forward *up* and +Y left *left*,
+    so an obstacle ahead-left lands in the top-left corner.
+    """
+
+    @pytest.fixture
+    def occupancy(self, cozmo) -> OccupancyMap:
+        occ = OccupancyMap(grid_size_mm=400.0, cell_size_mm=100.0)  # 4x4 cells
+        cozmo._brain.floor_pipeline = MagicMock(occupancy_map=occ)
+        return occ
+
+    def test_refusal_when_disabled(self, toolset):
+        result = toolset.get_occupancy_map()
+        assert result["ok"] is False
+        assert "occupancy" in result["reason"].lower()
+        assert "floor pipeline" in result["reason"]
+
+    def test_ascii_is_top_down_in_world_frame(self, toolset, occupancy):
+        occupancy.grid[3, 3] = OCCUPIED  # (+150, +150): ahead-left
+        occupancy.grid[2, 3] = OCCUPIED  # (+150, 0): straight ahead
+        occupancy.grid[3, 0] = FREE  # (-150, +150): behind-left
+
+        result = toolset.get_occupancy_map()
+        assert result["ok"] is True
+        occ = result["occupancy"]
+        # Top row = the most forward cells; the robot ('R') is at (0, 0).
+        assert occ["map"] == ["##??", "?R??", "????", ".???"]
+        assert occ["robot"]["cell"] == {"row": 1, "col": 1}
+        assert occ["counts"] == {"occupied": 2, "free": 1, "unknown": 13, "explored_percent": 18.8}
+        assert occ["legend"]["?"]  # the fog is named, not just drawn
+        json.dumps(result)  # JSON-able by contract
+
+    def test_png_is_attached_at_readable_size(self, toolset, occupancy):
+        import base64
+        import io
+
+        from PIL import Image as PILImage
+
+        png = toolset.get_occupancy_map()["occupancy"]["png_base64"]
+        img = PILImage.open(io.BytesIO(base64.b64decode(png)))
+        assert img.format == "PNG"
+        assert img.size == (320, 320)  # nearest-upscaled so the cells are visible
+
+    def test_occupied_cell_survives_downsampling(self, toolset, occupancy):
+        """Larger grids are block-downsampled to the ASCII cap — but an obstacle may never disappear into its block."""
+        occupancy.grid[3, 3] = OCCUPIED
+        occupancy.grid[3, 2] = FREE  # same block as the obstacle
+        occupancy.grid[0, 0] = FREE
+
+        with patch("pycozmo_ng.mcp.tools.MAX_ASCII_CELLS", 2):
+            occ = toolset.get_occupancy_map()["occupancy"]
+        # The robot's own block is the occupied one: '#' is kept (never
+        # hidden by the marker) and robot.cell locates the robot.
+        assert occ["map"] == ["#?", "?."]
+        assert occ["robot"]["cell"] == {"row": 0, "col": 0}
+        assert occ["render_cell_size_mm"] == 200.0
 
 
 class TestMotionRefusals:
@@ -405,7 +467,7 @@ class TestServer:
         assert "navigate_to" in names
         assert "get_robot_state" in names
         assert "stop" in names
-        for added in ("move_by", "turn_by", "stack_cube", "camera_toggle", "wait"):
+        for added in ("move_by", "turn_by", "stack_cube", "camera_toggle", "wait", "get_occupancy_map"):
             assert added in names
         # Docstrings double as tool descriptions.
         assert all(tool.description for tool in tools)
@@ -413,8 +475,13 @@ class TestServer:
         # motion does not.
         hints = {tool.name: tool.annotations.read_only_hint for tool in tools}
         assert hints["get_sensors"] is True
+        assert hints["get_occupancy_map"] is True
         assert hints["navigate_to"] is False
         assert hints["move_by"] is False
+        # The handshake tells the agent to prefer A* navigation.
+        from pycozmo_ng.mcp.server import INSTRUCTIONS
+
+        assert "astar_toggle" in INSTRUCTIONS
 
 
 class TestGetFrameImageContent:
@@ -517,3 +584,55 @@ class TestGetFrameImageContent:
         texts = [b for b in result.content if isinstance(b, TextContent)]
         assert any("STALE" in block.text for block in texts)
         assert any("camera_toggle" in block.text for block in texts)
+
+
+class TestGetOccupancyMapImageContent:
+    """The occupancy map leaves the endpoint as an image plus a drawn ASCII grid — the same map whether the client sees images or reads text."""
+
+    def _server(self, cozmo):
+        from mcp.server.mcpserver import MCPServer as SdkServer
+
+        from pycozmo_ng.mcp.server import McPServer
+
+        sdk = SdkServer(name="test")
+        McPServer(cozmo)._register_tools(sdk)
+        return sdk
+
+    def _with_map(self, cozmo) -> OccupancyMap:
+        occ = OccupancyMap(grid_size_mm=400.0, cell_size_mm=100.0)
+        cozmo._brain.floor_pipeline = MagicMock(occupancy_map=occ)
+        return occ
+
+    def test_map_returns_image_content_plus_ascii(self, cozmo):
+        pytest.importorskip("mcp")
+        import asyncio
+        import base64
+        import io
+
+        from mcp_types import ImageContent, TextContent
+        from PIL import Image as PILImage
+
+        self._with_map(cozmo)
+        sdk = self._server(cozmo)
+        result = asyncio.run(sdk.call_tool("get_occupancy_map", {}))
+        assert result.is_error is False
+        images = [b for b in result.content if isinstance(b, ImageContent)]
+        texts = [b for b in result.content if isinstance(b, TextContent)]
+        assert len(images) == 1
+        assert images[0].mime_type == "image/png"
+        assert PILImage.open(io.BytesIO(base64.b64decode(images[0].data))).size == (320, 320)
+        assert len(texts) == 1
+        text = texts[0].text
+        assert "fog" in text  # the legend is spelled out, not just symbols
+        assert "????" in text  # ...and the grid itself is drawn
+
+    def test_disabled_map_stays_a_plain_dict(self, cozmo):
+        pytest.importorskip("mcp")
+        import asyncio
+
+        from mcp_types import ImageContent
+
+        sdk = self._server(cozmo)
+        result = asyncio.run(sdk.call_tool("get_occupancy_map", {}))
+        assert result.is_error is False
+        assert not any(isinstance(b, ImageContent) for b in result.content)

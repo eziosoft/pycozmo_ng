@@ -239,6 +239,7 @@ class TestVisionFacade:
         assert cozmo.vision.detection_pipeline is None
         assert cozmo.vision.camera_calibration is None
         assert cozmo.vision.annotation is None
+        assert cozmo.vision.occupancy_map is None  # only the floor pipeline builds it
 
     def test_start_requires_connection(self, cozmo):
         with pytest.raises(RuntimeError):

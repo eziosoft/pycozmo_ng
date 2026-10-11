@@ -125,7 +125,10 @@ in one frame, an established one survives several contradictory frames, then
 clears. Decay is off by default (a decaying map fades to UNKNOWN outside the
 FOV — rejected live, COZMO-DOC-9). Grid contract for consumers: int8 with
 `FREE`/`OCCUPIED`/`UNKNOWN`; knobs are the `occupancy_*` fields of
-`VisionSetup`.
+`VisionSetup`. Readers: `AStarPlanner` (planning), the web viewer overlay
+(`OccupancyDelivery` — throttled PNG), and the MCP agent tool
+`get_occupancy_map` (the grid drawn top-down as ASCII `'#'`/`'.'`/`'?'`/`'R'`
+plus a colour PNG, reached through the read-only `Cozmo.vision.occupancy_map`).
 _Avoid_: brightness thresholds / Canny edges for occupancy (deleted —
 misfired on shadows and texture in both directions); voting the whole
 projected silhouette (smears occupied cells past the obstacle base); decaying

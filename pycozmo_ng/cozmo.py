@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+    from pycozmo_ng.vision.occupancy_map import OccupancyMap
+
 import pycozmo_ng
 from pycozmo_ng.brain import Brain
 from pycozmo_ng.cubes.carry_state import CarryState
@@ -112,6 +114,18 @@ class VisionAPI:
     def detection_pipeline(self) -> DetectionPipeline | None:
         """Access the underlying detection pipeline for advanced use."""
         return self._brain.detection_pipeline
+
+    @property
+    def occupancy_map(self) -> OccupancyMap | None:
+        """World-frame occupancy grid (free/occupied/unknown), or ``None`` when disabled.
+
+        Built by the vision floor pipeline (``setup_vision(enable_occupancy_map=True)``)
+        and read-only from here — the same grid ``AStarPlanner`` plans on.
+        """
+        floor_pipeline = self._brain.floor_pipeline
+        if floor_pipeline is None:
+            return None
+        return floor_pipeline.occupancy_map
 
     @property
     def camera_calibration(self):

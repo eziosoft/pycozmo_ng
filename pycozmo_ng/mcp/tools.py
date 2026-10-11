@@ -20,6 +20,10 @@ Conventions (also stated in the MCP server instructions):
 * **Frame-derived reads report freshness** — ``frame_age_s`` /
   ``stale`` (and ``camera_active``) distinguish "nothing in view" from
   "no frames"; the recovery for the latter is ``camera_toggle``.
+  ``get_occupancy_map`` carries the same freshness: the grid only grows
+  while frames arrive, and it renders the explored world for the agent
+  as an ASCII top-down map ('#' obstacle, '.' free, '?' fog, 'R' robot)
+  plus a colour PNG.
 * **Drive tools refuse only while the robot is picked up** — the
   firmware holds its wheels then, and only the operator can put it
   back down. A robot on the charger just drives off, so the charger is
@@ -50,6 +54,7 @@ from pycozmo_ng.logger import logger_mcp
 from pycozmo_ng.mcp.jobs import JobRegistry
 from pycozmo_ng.mcp.safety import SafetyLimits
 from pycozmo_ng.util.robot import MAX_HEAD_ANGLE, MAX_LIFT_HEIGHT, MIN_HEAD_ANGLE, MIN_LIFT_HEIGHT
+from pycozmo_ng.vision.occupancy_map import FREE, OCCUPIED
 
 if TYPE_CHECKING:
     from pycozmo_ng.cozmo import Cozmo
@@ -69,6 +74,16 @@ MAX_SLEEP_S = 10.0
 #: stopped producing (or the pipeline is not running) and the image the
 #: caller is looking at is history, not the current scene.
 STALE_FRAME_S = 2.0
+
+#: Longest side, in cells, of the ASCII grid ``get_occupancy_map``
+#: returns. Larger maps are block-downsampled to fit — an LLM reads a
+#: grid it can hold in attention, and an occupied cell survives its
+#: block, so coarsening never hides an obstacle.
+MAX_ASCII_CELLS = 40
+
+#: Longest side, in pixels, of the colour PNG ``get_occupancy_map``
+#: attaches (nearest-neighbour upscale — the grid is flat colour).
+MAX_OCCUPANCY_PNG_PX = 320
 
 
 def jsonable(value: Any) -> Any:
@@ -289,6 +304,117 @@ class Toolset:
             world.pop("astar_path", None)
         return jsonable(world)
 
+    def get_occupancy_map(self) -> dict[str, Any]:
+        """Top-down occupancy map of the world you have explored: '#' is an obstacle, '.' proven floor, '?' fog you have never seen, 'R' is you.
+
+        Read it as a map laid in front of you: the top row is ahead (+X
+        forward), the left column is to your left (+Y left) — the same
+        world frame, millimetres, as navigate_to and get_world_map. Each
+        character is one cell of ``render_cell_size_mm``.
+
+        '#' is the inflated base of something standing on the floor: do
+        not plan a path through it. '?' is not empty space — it is
+        unexplored: look (get_frame) or creep closer before navigating
+        there, and prefer A*-guided navigate (astar_toggle) which plans
+        on this very grid.
+
+        The grid accumulates only while camera frames arrive, so
+        ``camera_active`` / ``frame_stale`` say whether this is a live
+        map or a snapshot frozen when the camera stopped. A colour PNG
+        of the same grid (red = obstacle, green = free, grey = fog) is
+        attached by the MCP server as image content.
+
+        Refused when the occupancy map is disabled — the vision floor
+        pipeline is off.
+        """
+        occ = self._cozmo.vision.occupancy_map
+        if occ is None:
+            return self._refusal(
+                "Occupancy map is not enabled - the vision floor pipeline is off "
+                "(setup_vision(enable_occupancy_map=True))"
+            )
+
+        grid = occ.grid
+        cells = int(grid.shape[0])
+        # Block-downsample grids larger than the ASCII cap; an occupied
+        # cell always wins its block — the drawing may coarsen, an
+        # obstacle may never disappear into one.
+        factor = max(1, -(-cells // MAX_ASCII_CELLS))
+        rows = cells // factor
+
+        lines: list[str] = []
+        counts = {"occupied": 0, "free": 0, "unknown": 0}
+        for i in range(rows):
+            x_block = rows - 1 - i  # display rows run from +X (ahead) down
+            chars: list[str] = []
+            for j in range(rows):
+                y_block = rows - 1 - j  # ...columns from +Y (left) right
+                block = grid[y_block * factor : (y_block + 1) * factor, x_block * factor : (x_block + 1) * factor]
+                if (block == OCCUPIED).any():
+                    chars.append("#")
+                    counts["occupied"] += 1
+                elif (block == FREE).any():
+                    chars.append(".")
+                    counts["free"] += 1
+                else:
+                    chars.append("?")
+                    counts["unknown"] += 1
+            lines.append("".join(chars))
+
+        # 'R' marks the robot — which cell *I* stand on matters more than
+        # that cell's class underneath. An occupied block keeps its '#':
+        # coarsening may never hide an obstacle — robot.cell says where
+        # I am instead.
+        rx, ry, ryaw = self._current_pose()
+        origin_x, origin_y = occ.origin
+        half = occ.grid_size_mm / 2.0
+        x_idx = (rx - origin_x + half) / occ.cell_size_mm
+        y_idx = (ry - origin_y + half) / occ.cell_size_mm
+        robot_cell = None
+        if 0.0 <= x_idx < cells and 0.0 <= y_idx < cells:
+            i = rows - 1 - int(x_idx) // factor
+            j = rows - 1 - int(y_idx) // factor
+            if lines[i][j] != "#":
+                lines[i] = lines[i][:j] + "R" + lines[i][j + 1 :]
+            robot_cell = {"row": i, "col": j}
+
+        # Colour render for the image content block (to_color_image is
+        # already in the ASCII orientation: +X forward, +Y left).
+        img = occ.to_color_image()
+        png = Image.fromarray(np.ascontiguousarray(img[:, :, ::-1]))
+        scale = max(1, MAX_OCCUPANCY_PNG_PX // cells)
+        if scale > 1:
+            png = png.resize((cells * scale, cells * scale), Image.Resampling.NEAREST)
+        buf = io.BytesIO()
+        png.save(buf, format="PNG")
+
+        age_s, stale = self._frame_freshness()
+        total = rows * rows
+        explored = counts["occupied"] + counts["free"]
+        return {
+            "ok": True,
+            "occupancy": {
+                "grid_size_mm": float(occ.grid_size_mm),
+                "cell_size_mm": float(occ.cell_size_mm),
+                "render_cell_size_mm": float(occ.cell_size_mm) * factor,
+                "origin_mm": [float(origin_x), float(origin_y)],
+                "view": "top-down: top = +X forward, left = +Y left (world frame, mm); one char per cell",
+                "legend": {
+                    "#": "occupied - the base of an obstacle, do not drive into",
+                    ".": "free - floor that has been seen",
+                    "?": "unknown - fog, never observed; look before driving there",
+                    "R": "robot - you are here (a cell that is also occupied stays '#'; robot.cell locates you)",
+                },
+                "map": lines,
+                "robot": {"x_mm": rx, "y_mm": ry, "yaw_rad": ryaw, "cell": robot_cell},
+                "counts": {**counts, "explored_percent": round(100.0 * explored / total, 1) if total else 0.0},
+                "png_base64": base64.b64encode(buf.getvalue()).decode("ascii"),
+                "camera_active": self._cozmo.vision.active,
+                "frame_age_s": age_s,
+                "frame_stale": stale,
+            },
+        }
+
     def get_sensors(self) -> dict[str, Any]:
         """Telemetry only: battery voltage, head angle, lift height, wheel speeds, IMU, cliff, charging/on-charger, picked-up/moving.
 
@@ -449,12 +575,18 @@ class Toolset:
     # ------------------------------------------------------------------
 
     def navigate_to(self, x: float, y: float, confirm: bool = False) -> dict[str, Any]:
-        """Drive to a world-frame point (mm), following the A* path when enabled. Returns a job_id.
+        """Drive to a world-frame point (mm). Returns a job_id.
 
-        Poll get_job/wait_for_job for {arrived, distance_mm, timed_out}
-        (plus reason when not arrived). Refused beyond the safety extent
-        from the origin, while the robot is picked up, and (when
-        configured) without confirmation - pass confirm=true then.
+        This is the way to cross the room: with A* enabled
+        (astar_toggle(true), the recommended default — turn it on once
+        and leave it on) the route is planned around the obstacles in
+        the occupancy map and re-planned live if the way ahead fills
+        in; without it the robot drives straight at the target. Poll
+        get_job/wait_for_job for {arrived, distance_mm, timed_out}
+        (plus reason when not arrived). Refused beyond the safety
+        extent from the origin, while the robot is picked up, and
+        (when configured) without confirmation - pass confirm=true
+        then. For short in-place steps use move_by/turn_by instead.
         """
         refusal = self._motion_precheck(confirm)
         if refusal is not None:
@@ -778,9 +910,14 @@ class Toolset:
         return {"ok": True, "camera_active": vision.active}
 
     def astar_toggle(self, enabled: bool) -> dict[str, Any]:
-        """Enable or disable A* obstacle-avoiding pathfinding for navigate commands.
+        """Turn A* obstacle-avoiding pathfinding for navigate_to on or off.
 
-        Needs an occupancy map (vision floor pipeline enabled).
+        Recommended: enable it once at the start of a session and leave
+        it on. It needs an occupancy map (vision floor pipeline
+        enabled); without one - or when no route exists through the
+        map - navigate_to quietly falls back to driving straight at the
+        target, so a stubborn arrival usually means the target is
+        walled off in get_occupancy_map, not that navigation is broken.
         """
         self._cozmo.navigator.set_astar_enabled(bool(enabled))
         return {"ok": True, "astar_enabled": self._cozmo.navigator.is_astar_enabled()}
