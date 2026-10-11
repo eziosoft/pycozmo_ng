@@ -187,9 +187,15 @@ class Brain:
                 occupancy_grid_size_mm=setup.occupancy_grid_size_mm,
                 occupancy_cell_size_mm=setup.occupancy_cell_size_mm,
                 occupancy_inflation_radius=setup.occupancy_inflation_radius,
-                occupancy_vote_cap=setup.occupancy_vote_cap,
+                occupancy_logodds_hit=setup.occupancy_logodds_hit,
+                occupancy_logodds_miss=setup.occupancy_logodds_miss,
+                occupancy_logodds_max=setup.occupancy_logodds_max,
+                occupancy_logodds_decay=setup.occupancy_logodds_decay,
+                occupancy_floor_distance_threshold=setup.occupancy_floor_distance_threshold,
+                occupancy_floor_light_weight=setup.occupancy_floor_light_weight,
+                occupancy_floor_model_ema=setup.occupancy_floor_model_ema,
                 occupancy_valid_min_brightness=setup.occupancy_valid_min_brightness,
-                occupancy_edge_margin_px=setup.occupancy_edge_margin_px,
+                occupancy_silhouette_margin_px=setup.occupancy_silhouette_margin_px,
                 floor_edge_margin_px=setup.floor_edge_margin_px,
             )
 

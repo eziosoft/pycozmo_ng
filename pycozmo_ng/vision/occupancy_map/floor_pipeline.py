@@ -30,12 +30,26 @@ class FloorPipeline:
         enable_occupancy_map: Enable world-frame occupancy accumulation.
         occupancy_grid_size_mm: Physical extent of the occupancy grid (mm).
         occupancy_cell_size_mm: Millimetres per occupancy grid cell.
-        occupancy_inflation_radius: Dilate edge mask by this many iterations.
-        occupancy_vote_cap: Saturation cap on each cell's vote accumulator.
+        occupancy_inflation_radius: Dilate the obstacle contact line by this
+            many 3x3 iterations.
+        occupancy_logodds_hit: Occupied evidence per contact-line cell per
+            frame (log-odds).
+        occupancy_logodds_miss: Free evidence per free-floor cell per frame
+            (log-odds).
+        occupancy_logodds_max: Clamp on the per-cell log-odds magnitude.
+        occupancy_logodds_decay: Per-frame multiplicative decay toward
+            UNKNOWN; 0 = never (default).
+        occupancy_floor_distance_threshold: Lab distance above which a pixel
+            counts as non-floor (obstacle).
+        occupancy_floor_light_weight: Weight of the lightness difference in
+            that distance; below 1 the map tolerates shadows.
+        occupancy_floor_model_ema: Per-frame EMA blend of the sampled
+            near-robot strip into the adaptive floor model.
         occupancy_valid_min_brightness: Minimum brightness for a floor pixel
             to count as seen.
-        occupancy_edge_margin_px: Suppress Canny edges within this many
-            pixels of the projection silhouette.
+        occupancy_silhouette_margin_px: Erode the seen mask by this many
+            pixels so the projection's interpolation ring cannot vote an
+            obstacle ring.
         floor_edge_margin_px: Cut this many pixels off camera edges before
             projecting.
     """
@@ -51,9 +65,15 @@ class FloorPipeline:
         occupancy_grid_size_mm: float = 2000.0,
         occupancy_cell_size_mm: float = 50.0,
         occupancy_inflation_radius: int = 2,
-        occupancy_vote_cap: int = 10,
+        occupancy_logodds_hit: float = 4.0,
+        occupancy_logodds_miss: float = 0.8,
+        occupancy_logodds_max: float = 5.0,
+        occupancy_logodds_decay: float = 0.0,
+        occupancy_floor_distance_threshold: float = 18.0,
+        occupancy_floor_light_weight: float = 0.25,
+        occupancy_floor_model_ema: float = 0.3,
         occupancy_valid_min_brightness: int = 8,
-        occupancy_edge_margin_px: int = 3,
+        occupancy_silhouette_margin_px: int = 3,
         floor_edge_margin_px: int = 4,
     ):
         # Floor projector
@@ -77,9 +97,15 @@ class FloorPipeline:
                 grid_size_mm=occupancy_grid_size_mm,
                 cell_size_mm=occupancy_cell_size_mm,
                 inflation_radius=occupancy_inflation_radius,
-                vote_cap=occupancy_vote_cap,
+                logodds_hit=occupancy_logodds_hit,
+                logodds_miss=occupancy_logodds_miss,
+                logodds_max=occupancy_logodds_max,
+                logodds_decay=occupancy_logodds_decay,
+                floor_distance_threshold=occupancy_floor_distance_threshold,
+                floor_light_weight=occupancy_floor_light_weight,
+                floor_model_ema=occupancy_floor_model_ema,
                 valid_min_brightness=occupancy_valid_min_brightness,
-                edge_margin_px=occupancy_edge_margin_px,
+                silhouette_margin_px=occupancy_silhouette_margin_px,
             )
 
     def process(

@@ -53,17 +53,39 @@ class VisionSetup:
     #: Millimetres per occupancy grid cell.
     occupancy_cell_size_mm: float = 50.0
 
-    #: Dilate the edge mask by this many iterations.
+    #: Dilate the obstacle contact line by this many 3x3 iterations.
     occupancy_inflation_radius: int = 2
 
-    #: Saturation cap on each cell's vote accumulator.
-    occupancy_vote_cap: int = 10
+    #: Occupied evidence added to each contact-line cell per frame (log-odds).
+    #: One frame establishes a cell; larger values make an established cell
+    #: survive more contradictory free frames before it clears.
+    occupancy_logodds_hit: float = 4.0
 
-    #: Minimum brightness for a floor pixel to count as free.
+    #: Free evidence subtracted from each free-floor cell per frame (log-odds).
+    occupancy_logodds_miss: float = 0.8
+
+    #: Clamp on the per-cell log-odds magnitude.
+    occupancy_logodds_max: float = 5.0
+
+    #: Per-frame multiplicative decay toward UNKNOWN; 0 = never (default).
+    occupancy_logodds_decay: float = 0.0
+
+    #: Lab distance above which a pixel counts as non-floor (obstacle).
+    occupancy_floor_distance_threshold: float = 18.0
+
+    #: Weight of the lightness difference in that distance; below 1 the map
+    #: tolerates shadows (they darken the floor without changing its hue).
+    occupancy_floor_light_weight: float = 0.25
+
+    #: Per-frame EMA blend of the sampled near-robot strip into the floor model.
+    occupancy_floor_model_ema: float = 0.3
+
+    #: Minimum brightness for a floor pixel to count as seen.
     occupancy_valid_min_brightness: int = 8
 
-    #: Suppress Canny edges within this many pixels of the image border.
-    occupancy_edge_margin_px: int = 3
+    #: Erode the seen mask by this many pixels so the dim interpolation ring
+    #: at the projection silhouette cannot vote an obstacle ring.
+    occupancy_silhouette_margin_px: int = 3
 
     #: Cut this many pixels off camera edges before floor projection.
     floor_edge_margin_px: int = 4

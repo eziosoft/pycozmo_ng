@@ -110,6 +110,27 @@ world-frame estimate using confidence-gated, confidence-weighted exponential
 smoothing (position) and SLERP (rotation).
 _Avoid_: averaging, filtering (when it erases world-frame stability)
 
+**Occupancy map** (`vision/occupancy_map/occupancy_map.py`, class `OccupancyMap`):
+The world-frame free/obstacle grid A* plans on. Classification is
+**geometry+appearance**, not brightness/edges: an **adaptive floor model**
+(the Lab median of the trusted near-robot strip, EMA-smoothed — any floor
+works, no fixed brightness threshold), **shadow tolerance** (distance
+down-weights lightness, leans on chroma), the **contact line** (only the near
+edge of a non-floor region — where it touches the floor — votes occupied, the
+one part of the z=0-flattened projection at the true ground position), and
+**log-odds** accumulation (`+logodds_hit` per contact cell, `-logodds_miss`
+per free cell, one step per cell per frame; sign classifies, 0 = unknown).
+`logodds_hit > logodds_miss` is the damped clearing: a new obstacle appears
+in one frame, an established one survives several contradictory frames, then
+clears. Decay is off by default (a decaying map fades to UNKNOWN outside the
+FOV — rejected live, COZMO-DOC-9). Grid contract for consumers: int8 with
+`FREE`/`OCCUPIED`/`UNKNOWN`; knobs are the `occupancy_*` fields of
+`VisionSetup`.
+_Avoid_: brightness thresholds / Canny edges for occupancy (deleted —
+misfired on shadows and texture in both directions); voting the whole
+projected silhouette (smears occupied cells past the obstacle base); decaying
+votes by default.
+
 **Coordinate transforms** (`pycozmo_ng/util/coords.py`):
 - `camera_to_body()` — applies head-tilt rotation + camera-to-body offset
 - `body_to_world()` — applies robot yaw + translation
