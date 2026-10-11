@@ -53,6 +53,7 @@ from pycozmo_ng.cubes.identity import to_cube_id
 from pycozmo_ng.logger import logger_mcp
 from pycozmo_ng.mcp.jobs import JobRegistry
 from pycozmo_ng.mcp.safety import SafetyLimits
+from pycozmo_ng.sound import TTSGenerationError
 from pycozmo_ng.util.robot import MAX_HEAD_ANGLE, MAX_LIFT_HEIGHT, MIN_HEAD_ANGLE, MIN_LIFT_HEIGHT
 from pycozmo_ng.vision.occupancy_map import FREE, OCCUPIED
 
@@ -811,7 +812,10 @@ class Toolset:
             return refusal
         if not text or not text.strip():
             return self._refusal("text must be non-empty")
-        self._cozmo.say(text.strip())
+        try:
+            self._cozmo.say(text.strip())
+        except TTSGenerationError as exc:
+            return self._refusal(str(exc))
         return {"ok": True}
 
     def set_head_angle(self, angle_deg: float, confirm: bool = False) -> dict[str, Any]:

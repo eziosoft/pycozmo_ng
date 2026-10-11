@@ -18,6 +18,7 @@ import pytest
 from pycozmo_ng import Cozmo
 from pycozmo_ng.mcp import JobRegistry, SafetyLimits, Toolset
 from pycozmo_ng.mcp.tools import jsonable
+from pycozmo_ng.sound import TTSGenerationError
 from pycozmo_ng.vision.cube_detector.detection_pipeline import CubeDetection
 from pycozmo_ng.vision.occupancy_map import FREE, OCCUPIED, OccupancyMap
 
@@ -264,6 +265,13 @@ class TestMotionRefusals:
         with _connected(cozmo):
             result = toolset.say("   ")
         assert result["ok"] is False
+
+    def test_say_refuses_when_synthesis_fails(self, cozmo, toolset):
+        """A TTS failure is a refusal with the reason, never a raised tool error."""
+        with _connected(cozmo), patch.object(Cozmo, "say", side_effect=TTSGenerationError("no audio")):
+            result = toolset.say("hello")
+        assert result["ok"] is False
+        assert "no audio" in result["reason"]
 
 
 class TestStop:
