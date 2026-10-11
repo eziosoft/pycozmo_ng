@@ -385,6 +385,96 @@ class TestSnapMarkerAfterReset:
 
 
 # -------------------------------------------------------------------
+# Charger events -- reset + marker 0 snap
+# -------------------------------------------------------------------
+
+
+class TestChargerEventAnchor:
+    """The charger events must anchor the map the same way an ArUco dock
+    does: reset the origin *and* snap marker 0 back to its dock pose (65 mm
+    behind the camera).  Before this, the events only reset the origin --
+    the origin-change map clear wiped marker 0 and nothing put it back."""
+
+    @staticmethod
+    def _snap_event(world_map) -> threading.Event:
+        done = threading.Event()
+        world_map.set_aruco_world_pose = MagicMock(side_effect=lambda **kw: done.set())
+        return done
+
+    def test_charging_event_resets_and_snaps_marker_0(self):
+        world_map = MagicMock(spec=WorldMap)
+        nav, _cli = _make_nav(yaw=0.0, origin_id=1, world_map=world_map)
+        nav.ds.origin_reset_origin_id = None
+        done = self._snap_event(world_map)
+
+        nav.on_charging_change(None, True)
+
+        assert done.wait(timeout=5.0), "charging event never snapped marker 0"
+        kw = world_map.set_aruco_world_pose.call_args.kwargs
+        assert kw["marker_id"] == 0
+        # Robot docked at origin, yaw 0 -> marker 65 mm behind on -x.
+        assert math.isclose(kw["position_world"][0], -65.0, abs_tol=0.01)
+        assert math.isclose(kw["position_world"][1], 0.0, abs_tol=0.01)
+
+    def test_on_charger_event_resets_and_snaps_marker_0(self):
+        """The on-charger event (contacts touched) anchors too — charging
+        may never start when the base is unpowered."""
+        world_map = MagicMock(spec=WorldMap)
+        nav, _cli = _make_nav(yaw=0.0, origin_id=1, world_map=world_map)
+        nav.ds.origin_reset_origin_id = None
+        done = self._snap_event(world_map)
+
+        nav.on_charger_change(None, True)
+
+        assert done.wait(timeout=5.0), "on-charger event never snapped marker 0"
+        kw = world_map.set_aruco_world_pose.call_args.kwargs
+        assert kw["marker_id"] == 0
+        assert math.isclose(kw["position_world"][0], -65.0, abs_tol=0.01)
+
+    def test_charging_event_snaps_after_map_clear(self):
+        """Like the ArUco path: the snap must land after the origin-change
+        telemetry cleared the map, or it is wiped again (COZMO-72)."""
+        events: list[str] = []
+
+        nav, cli = _make_nav(yaw=0.0, origin_id=5, delay_s=0.7)
+        nav.ds.origin_reset_origin_id = None
+
+        original_apply = cli._apply_telemetry
+
+        def tracked_telemetry():
+            original_apply()
+            events.append("telemetry")
+
+        cli._apply_telemetry = tracked_telemetry
+
+        world_map = MagicMock(spec=WorldMap)
+        world_map.set_aruco_world_pose = MagicMock(side_effect=lambda **kw: events.append("set_aruco"))
+        nav.world_map = world_map
+
+        nav.on_charging_change(None, True)
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and "set_aruco" not in events:
+            time.sleep(0.05)
+
+        assert "telemetry" in events, "telemetry echo never arrived"
+        assert "set_aruco" in events, "marker was never snapped"
+        assert events.index("telemetry") < events.index("set_aruco"), (
+            "marker set BEFORE the origin-change telemetry — wiped by the delayed map clear (COZMO-72)"
+        )
+
+    def test_snap_skipped_when_reset_not_confirmed(self):
+        """No telemetry confirmation -> no snap: the robot's world pose is
+        not (0, 0, 0), so marker 0 would land at a wrong spot."""
+        world_map = MagicMock(spec=WorldMap)
+        nav, _cli = _make_nav(world_map=world_map)
+        nav._reset_pose_origin = MagicMock(return_value=False)
+
+        nav._anchor_on_charger()
+
+        world_map.set_aruco_world_pose.assert_not_called()
+
+
+# -------------------------------------------------------------------
 # Concurrent reset + snap
 # -------------------------------------------------------------------
 

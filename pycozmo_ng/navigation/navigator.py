@@ -146,7 +146,7 @@ class Navigator:
             self.ds.on_charger = state
         if state:
             logger.info("On charger detected")
-            threading.Thread(target=self._reset_pose_origin, daemon=True).start()
+            threading.Thread(target=self._anchor_on_charger, daemon=True).start()
 
     def on_charging_change(self, cli, state: bool) -> None:
         """Record whether the robot is actively charging."""
@@ -155,7 +155,40 @@ class Navigator:
             self.ds.charging = state
         if state:
             logger.info("Charging detected")
-            threading.Thread(target=self._reset_pose_origin, daemon=True).start()
+            threading.Thread(target=self._anchor_on_charger, daemon=True).start()
+
+    def _anchor_on_charger(self) -> None:
+        """Origin reset + marker 0 snap — the charger-event dock anchor.
+
+        The robot sits on the charger, so after the origin reset its pose is
+        the world origin and marker 0's pose follows from geometry: 65 mm
+        behind the camera (:meth:`_snap_marker_dock_pose`). The origin change
+        clears the world map — marker 0 included — so the marker must be
+        hard-set back right after the reset confirms, exactly like
+        :meth:`_on_aruco_docked` does after an ArUco dock.
+
+        ``on_charger_change`` and ``on_charging_change`` both land here on a
+        successful dock; ``_origin_reset_lock`` serialises them with each
+        other and with the ArUco path (the loser hits the reset guard and
+        returns early — the snap is an idempotent overwrite of the same pose).
+        """
+        self._anchor_dock(self.CHARGER_MARKER_ID, "Charger event")
+
+    def _anchor_dock(self, marker_id: int, source: str) -> None:
+        """Reset the origin, then snap *marker_id* to its docked pose.
+
+        The snap is skipped when the reset was not telemetry-confirmed: the
+        robot's world pose would not be (0, 0, 0), so the marker would be
+        hard-set at a wrong spot (COZMO-72 follow-up).
+
+        Args:
+            marker_id: Marker to snap after the reset.
+            source: Calling path, for the not-confirmed warning.
+        """
+        if not self._reset_pose_origin():
+            logger.warning("%s: origin reset not confirmed — skipping marker %d snap", source, marker_id)
+            return
+        self._snap_marker_dock_pose(marker_id)
 
     def _reset_pose_origin(self) -> bool:
         """Re-anchor the localization origin at the current pose.
@@ -824,13 +857,7 @@ class Navigator:
         would place it at a wrong spot — so the snap is skipped and the
         marker stays at whatever the vision pipeline last fused.
         """
-        if not self._reset_pose_origin():
-            logger.warning(
-                "ArUco dock: origin reset not confirmed — skipping marker %d snap",
-                marker_id,
-            )
-            return
-        self._snap_marker_dock_pose(marker_id)
+        self._anchor_dock(marker_id, "ArUco dock")
 
     def _snap_marker_dock_pose(self, marker_id: int = 0) -> None:
         r"""Hard-set marker *marker\_id* to its exact docked position.
