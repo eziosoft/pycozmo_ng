@@ -109,7 +109,7 @@ class ArucoDocking:
     #: — far enough that the reverse covers the distance in a straight
     #: line, near enough that the marker is large and unambiguous in the
     #: frame (~20 px wide at QVGA).
-    APPROACH_DIST_MM: float = 250.0
+    APPROACH_DIST_MM: float = 150.0
     #: Dwell at the standoff until the fused marker pose converges.
     STANDOFF_DWELL_S: float = 3.0
     #: Convergence criterion: the fused position must move less than
