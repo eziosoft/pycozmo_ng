@@ -180,10 +180,16 @@ def main():
             if not args.no_cube_lights:
                 _step(
                     6,
-                    "Starting cube keepalive worker "
-                    "(persistent multi-connection + CubeLights refresh)...",
+                    "Cube keepalive worker (temporarily disabled — "
+                    "cube BLE connections are off pending re-evaluation)...",
                 )
-                cozmo.start_cube_lights()
+                logger.warning(
+                    "Cube connections temporarily disabled — keep the code in "
+                    "pycozmo_ng/cubes/manager.py; re-enable by calling "
+                    "cozmo.start_cube_lights() when ready."
+                )
+                # TODO: re-enable when cube connection strategy is finalized
+                # cozmo.start_cube_lights()
             else:
                 _step(6, "Skipping cube keepalive worker (--no-cube-lights)")
                 logger.warning(
