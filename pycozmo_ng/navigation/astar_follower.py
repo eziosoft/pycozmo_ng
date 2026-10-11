@@ -42,7 +42,7 @@ class AStarFollower:
     #: Considered arrived within this distance of the goal (mm).
     GOAL_TOL_MM: ClassVar[float] = 30.0
     #: Maximum consecutive replans before giving up on a goal.
-    MAX_REPLAN_ATTEMPTS: ClassVar[int] = 10
+    MAX_REPLAN_ATTEMPTS: ClassVar[int] = 100
     #: Waypoints closer to the robot than this are skipped by the occupancy
     #: monitor — localization noise near the body must not trigger replans.
     MONITOR_SKIP_MM: ClassVar[float] = 75.0
