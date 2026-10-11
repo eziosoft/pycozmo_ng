@@ -104,7 +104,7 @@ pycozmo_ng/             # Main library (import name: pycozmo_ng)
 │   │                        # Two-step standoff approach, stack the carried cube, one-cube visit lock
 │   ├── motion_controller.py, motion_token.py   # Running motion jobs + per-job cancellation handle
 │   └── remote_control.py   # RemoteControl — browser keyboard driving
-├── cubes/              # BLE: manager (mapping/connection), cycler, carry_state, identity (ID↔index ±1)
+├── cubes/              # BLE: manager (mapping/connection + keepalive), carry_state, identity (ID↔index ±1)
 ├── web/                # WebViewerServer — WS + HTTP, MJPEG streams, MsgRouter, state_builder
 │   └── static/          # Three.js viewer: index.html (JS is inline), style.css
 ├── animation/          # AnimController + cozmo_anim.fbs schema

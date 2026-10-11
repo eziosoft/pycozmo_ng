@@ -146,9 +146,11 @@ class VisionAPI:
 class CubesAPI:
     """High-level cube interface (cube IDs are 1-3).
 
-    Cube LED control (``set_lights``) is not implemented yet — there is
-    no cube object model; :meth:`start_lights` runs the BLE keepalive
-    cycler that holds the cubes' connections alive.
+    All cubes are connected simultaneously — the Cozmo protocol supports
+    multiple concurrent BLE connections (up to 5 per engine decompilation,
+    COZMO-23). :meth:`start_lights` opens all connections and runs a
+    background keepalive thread that reconnects dropped cubes and
+    refreshes LEDs; :meth:`set_lights` changes the LED color on demand.
     """
 
     def __init__(self, brain: Brain):
@@ -164,14 +166,40 @@ class CubesAPI:
         self._require_connection()
         self._brain.cubes.setup_cube_mapping(self._brain.cli)
 
-    def start_lights(self) -> None:
-        """Start the cube BLE keepalive cycler."""
+    def connect(self) -> None:
+        """Connect to all discovered cubes simultaneously (persistent)."""
         self._require_connection()
-        self._brain.cubes.start_cube_light_worker(self._brain.cli)
+        self._brain.cubes.connect_all_cubes(self._brain.cli)
+
+    def start_lights(self, light=None) -> None:
+        """Start the cube keepalive thread to connect and light all cubes.
+
+        Connects all discovered cubes simultaneously, sets their LEDs,
+        and runs a background thread that reconnects dropped cubes and
+        refreshes ``CubeId`` + ``CubeLights`` on every tick.
+
+        Args:
+            light: Default :class:`~pycozmo_ng.lights.LightState` for cube
+                LEDs. Defaults to green.
+        """
+        self._require_connection()
+        self._brain.cubes.start_keepalive(self._brain.cli, light)
 
     def stop_lights(self) -> None:
-        """Stop the cube BLE keepalive cycler."""
-        self._brain.cubes.stop_cube_light_worker()
+        """Stop the keepalive thread and disconnect all cubes."""
+        self._brain.cubes.stop_keepalive()
+        if self._brain.cli is not None:
+            self._brain.cubes.disconnect_all_cubes(self._brain.cli)
+
+    def set_lights(self, light) -> None:
+        """Set LED state on all connected cubes.
+
+        Args:
+            light: A :class:`~pycozmo_ng.lights.LightState` applied to
+                all four corners of every connected cube.
+        """
+        self._require_connection()
+        self._brain.cubes.set_cube_lights(self._brain.cli, light)
 
     def _require_connection(self) -> None:
         if self._brain.cli is None:
@@ -830,13 +858,22 @@ class Cozmo:
         """Discover available cubes and build factory_id mapping."""
         self.cubes.discover()
 
-    def start_cube_lights(self) -> None:
-        """Start the cube BLE keepalive cycler."""
-        self.cubes.start_lights()
+    def start_cube_lights(self, light=None) -> None:
+        """Start the cube BLE keepalive (persistent multi-connection).
+
+        Args:
+            light: Default :class:`~pycozmo_ng.lights.LightState` for cube
+                LEDs. Defaults to green.
+        """
+        self.cubes.start_lights(light)
 
     def stop_cube_lights(self) -> None:
-        """Stop the cube BLE keepalive cycler."""
+        """Stop the cube BLE keepalive and disconnect all cubes."""
         self.cubes.stop_lights()
+
+    def set_cube_lights(self, light) -> None:
+        """Set LED state on all connected cubes."""
+        self.cubes.set_lights(light)
 
     # ------------------------------------------------------------------
     # Localization
@@ -854,4 +891,6 @@ class Cozmo:
     def run(self) -> None:
         """Run the headless main loop. Blocks until disconnected or interrupted."""
         self._brain.run(self._cli)
-        self._brain.cubes.stop_cube_light_worker()
+        self._brain.cubes.stop_keepalive()
+        if self._cli is not None:
+            self._brain.cubes.disconnect_all_cubes(self._cli)

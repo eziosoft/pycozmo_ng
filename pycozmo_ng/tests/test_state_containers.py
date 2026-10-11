@@ -38,7 +38,6 @@ class TestCubeTrackingState:
         ct = CubeTrackingState()
         assert ct.cube_factory_id_map == {}
         assert ct.object_id_map == {}
-        assert ct.cycler is None
 
     def test_mutability(self):
         ct = CubeTrackingState()

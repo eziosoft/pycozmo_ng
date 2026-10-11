@@ -54,7 +54,6 @@ class TestConstruction:
         for name in (
             "CubeManagerInterface",
             "CubeInterface",
-            "CubeCyclerInterface",
         ):
             assert not hasattr(cubes, name)
 
@@ -165,6 +164,22 @@ class TestCubesFacade:
 
     def test_stop_lights_without_connection_is_safe(self, cozmo):
         cozmo.cubes.stop_lights()
+
+    def test_set_lights_requires_connection(self, cozmo):
+        from pycozmo_ng.lights import green_light
+
+        with pytest.raises(RuntimeError):
+            cozmo.cubes.set_lights(green_light)
+
+    def test_connect_requires_connection(self, cozmo):
+        with pytest.raises(RuntimeError):
+            cozmo.cubes.connect()
+
+    def test_start_lights_accepts_light_arg(self, cozmo):
+        from pycozmo_ng.lights import green_light
+
+        with pytest.raises(RuntimeError):
+            cozmo.cubes.start_lights(green_light)
 
     def test_flat_cozmo_methods_delegate(self, cozmo):
         # demo.py uses the flat Cozmo methods; they share the CubesAPI path.

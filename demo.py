@@ -181,7 +181,7 @@ def main():
                 _step(
                     6,
                     "Starting cube keepalive worker "
-                    "(BLE cycling + CubeLights refresh)...",
+                    "(persistent multi-connection + CubeLights refresh)...",
                 )
                 cozmo.start_cube_lights()
             else:

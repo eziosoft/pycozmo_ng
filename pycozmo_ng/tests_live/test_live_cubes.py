@@ -1,8 +1,8 @@
-"""Live cube tests — discovery, BLE keepalive cycler, connected property.
+"""Live cube tests — discovery, persistent BLE keepalive, connected property.
 
 Covers CubesAPI/CubeManager paths that need a real robot and real cubes:
-factory mapping from ObjectAvailable events and ``connected_cubes`` fed by
-ObjectConnectionState events while the cycler runs.
+factory mapping from ObjectAvailable events and ``connected`` fed by
+ObjectConnectionState events while the keepalive worker runs.
 """
 
 import pytest
