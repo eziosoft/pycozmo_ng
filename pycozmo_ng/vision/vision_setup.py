@@ -106,9 +106,9 @@ class VisionSetup:
     #: JSON config file (PYCOZMO_NG_ARUCO_CONFIG), not from here.
     enable_aruco_detection: bool = True
 
-    #: Draw translucent ground-distance zones (orange floor tint) on the
-    #: annotated frame — the cue for a human viewer and for an LLM reading
-    #: get_frame(annotated=True).
+    #: Draw translucent ground-distance zones (orange floor tint) plus a
+    #: white centre line to the far boundary on the annotated frame — the
+    #: cue for a human viewer and for an LLM reading get_frame(annotated=True).
     enable_distance_rings: bool = True
 
     #: Zone boundary radii in mm, centred on the body-frame ground origin.

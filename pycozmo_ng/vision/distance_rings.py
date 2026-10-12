@@ -10,8 +10,10 @@ the far end.
 
 Each pixel is classified by inverting the camera model (pixel → ray → ground
 plane hit → radial distance from the body origin), so the zones are exact in
-perspective and follow the head tilt.  Boundary distances are labelled down
-the left edge of the frame, inside their zone.
+perspective and follow the head tilt.  A thin white centre line marks
+straight ahead, from the bottom edge of the frame up to the farthest zone
+boundary.  Boundary distances are labelled down the left edge of the frame,
+inside their zone.
 
 Drawn *under* the detection overlays: ``FrameStage`` calls :meth:`draw` on
 the frame before ``AnnotationEngine.detect_and_annotate`` copies it.
@@ -49,6 +51,9 @@ DEFAULT_ZONE_ALPHAS: tuple[int, ...] = (120, 55)
 
 #: Horizontal inset of the zone labels from the left frame edge (px).
 _LABEL_INSET_PX = 4.0
+
+#: Pixel width of the centre line marking straight ahead.
+_CENTER_LINE_WIDTH_PX = 2
 
 
 class DistanceRings:
@@ -184,8 +189,31 @@ class DistanceRings:
             blended = np.concatenate([blended, arr[..., 3:4]], axis=-1)
         image.paste(Image.fromarray(blended))
 
-        # Boundary labels — after the tint so they stay fully legible.
+        # Centre line to the far boundary, then the boundary labels —
+        # both after the tint so they stay fully legible.
+        self._draw_center_line(image, head_angle_rad)
         self._draw_labels(ImageDraw.Draw(image), head_angle_rad, *image.size)
+
+    def _draw_center_line(self, image: Image.Image, head_angle_rad: float) -> None:
+        """White centre line marking straight ahead, ending at the far boundary.
+
+        The body Y = 0 ground line projects onto the principal column
+        (u = cx), so the line is vertical in the image: it starts at the
+        bottom edge (the robot is just off-frame below) and stops at the
+        farthest zone boundary — "ends on 500 mm" by default.
+        """
+        if not self.radii_mm:
+            return
+
+        uv, valid = self.project_ground_points(np.array([[self.radii_mm[-1], 0.0]]), head_angle_rad)
+        if not valid[0] or not np.isfinite(uv[0]).all():
+            return
+
+        height = image.height
+        u = float(np.clip(uv[0, 0], 0.0, image.width - 1))
+        v_end = float(np.clip(uv[0, 1], 0.0, height - 2))
+        draw = ImageDraw.Draw(image)
+        draw.line([(u, height - 1), (u, v_end)], fill=(255, 255, 255), width=_CENTER_LINE_WIDTH_PX)
 
     def _draw_labels(
         self,

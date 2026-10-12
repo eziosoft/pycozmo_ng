@@ -583,7 +583,8 @@ class Toolset:
             parts.append(
                 "Translucent orange ground zones for judging range — "
                 + ", ".join(zone_desc)
-                + " (nearer zone more saturated; tint never fully opaque)"
+                + " (nearer zone more saturated; tint never fully opaque); "
+                + f"white centre line = straight ahead, ending at the {dr.radii_mm[-1]:g} mm boundary"
             )
 
         return " | ".join(parts)

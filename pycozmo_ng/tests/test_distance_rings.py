@@ -137,9 +137,10 @@ class TestDrawing:
         image = solid_image(base)
         make_rings().draw(image, head_angle_rad=0.0)
         arr = np.asarray(image)
+        x = int(CX) + 60  # off the centre line
 
-        near = arr[HEIGHT - 5, int(CX)]  # ~130 mm — inside the near zone
-        mid = arr[155, int(CX)]  # between the 250 and 500 mm boundaries
+        near = arr[HEIGHT - 5, x]  # ~130 mm — inside the near zone
+        mid = arr[155, x]  # between the 250 and 500 mm boundaries
 
         for pixel in (near, mid):
             assert tuple(pixel) != base, "zone painted over the original colour"
@@ -152,9 +153,10 @@ class TestDrawing:
         image = solid_image(base)
         make_rings().draw(image, head_angle_rad=0.0)
         arr = np.asarray(image)
+        x = int(CX) + 60  # off the centre line
 
-        near_excess = int(arr[HEIGHT - 5, int(CX)][0]) - int(arr[HEIGHT - 5, int(CX)][2])
-        mid_excess = int(arr[155, int(CX)][0]) - int(arr[155, int(CX)][2])
+        near_excess = int(arr[HEIGHT - 5, x][0]) - int(arr[HEIGHT - 5, x][2])
+        mid_excess = int(arr[155, x][0]) - int(arr[155, x][2])
 
         assert near_excess > mid_excess > 0
 
@@ -201,3 +203,43 @@ class TestDrawing:
         rings = DistanceRings(K, alphas=(-10, 999))
 
         assert rings._alphas == (0, 255)
+
+
+def white_mask(image: Image.Image) -> np.ndarray:
+    """Boolean (H, W) mask of near-white pixels (the centre line)."""
+    return np.all(np.asarray(image) > 200, axis=-1)
+
+
+class TestCenterLine:
+    def test_line_runs_up_the_principal_column_to_the_far_boundary(self):
+        """Head level: the line spans the bottom edge up to the 500 mm row."""
+        image = solid_image()
+        make_rings().draw(image, head_angle_rad=0.0)
+        white = white_mask(image)
+
+        apex_v = round(CY + FY * 38.0 / (500.0 - 30.0))  # ≈ 144
+        assert white[HEIGHT - 1, int(CX)], "line does not start at the bottom edge"
+        assert white[apex_v, int(CX)], "line does not reach the 500 mm boundary"
+        assert not white[apex_v - 2, int(CX)], "line overshoots the 500 mm boundary"
+
+    def test_line_ends_higher_when_the_head_tilts_up(self):
+        """Head up 0.3 rad: the 500 mm boundary drops near the bottom edge."""
+        image = solid_image()
+        make_rings().draw(image, head_angle_rad=0.3)
+        white = white_mask(image)
+
+        assert white[HEIGHT - 1, int(CX)]
+        assert not white[225, int(CX)]  # boundary fell below this row
+
+    def test_no_line_without_boundaries(self):
+        image = solid_image()
+        make_rings(radii_mm=()).draw(image, head_angle_rad=0.0)
+
+        assert white_mask(image).sum() == 0
+
+    def test_no_line_when_the_boundary_is_behind_the_camera(self):
+        """A 1 mm boundary never projects — line and zones both skip."""
+        image = solid_image()
+        make_rings(radii_mm=(1,)).draw(image, head_angle_rad=0.0)
+
+        assert white_mask(image).sum() == 0
