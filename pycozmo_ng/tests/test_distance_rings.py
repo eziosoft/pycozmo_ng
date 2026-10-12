@@ -1,4 +1,4 @@
-"""Tests for DistanceRings — the ground range-band overlay.
+"""Tests for DistanceRings — the translucent ground-distance zones.
 
 The projection is asserted against the camera model worked by hand (K known,
 head level), and the drawing is asserted on pixels — no robot, no Brain.
@@ -9,10 +9,9 @@ import pytest
 from PIL import Image
 
 from pycozmo_ng.vision.distance_rings import (
-    DEFAULT_BAND_HALF_WIDTH_MM,
-    DEFAULT_OUTLINE_WIDTH_PX,
-    DEFAULT_RING_COLORS,
-    DEFAULT_RING_RADII_MM,
+    DEFAULT_ZONE_ALPHAS,
+    DEFAULT_ZONE_COLORS,
+    DEFAULT_ZONE_RADII_MM,
     DistanceRings,
 )
 
@@ -21,18 +20,22 @@ FX = FY = 300.0
 CX, CY = 160.0, 120.0
 K = np.array([[FX, 0.0, CX], [0.0, FY, CY], [0.0, 0.0, 1.0]])
 
+# Tint rendered over black: base * (1 - a) + color * a.
+NEON_TINT = (255, 130, 0)
+
 
 def make_rings(**kwargs) -> DistanceRings:
     return DistanceRings(K, **kwargs)
 
 
-def black_image() -> Image.Image:
-    return Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
+def solid_image(color=(0, 0, 0)) -> Image.Image:
+    return Image.new("RGB", (WIDTH, HEIGHT), color)
 
 
-def white_pixels(image: Image.Image) -> int:
-    """Count of non-black pixels."""
-    return int(np.any(np.asarray(image), axis=-1).sum())
+def tinted_pixels(image: Image.Image, base) -> np.ndarray:
+    """Boolean (H, W) mask of pixels that differ from the *base* colour."""
+    arr = np.asarray(image)
+    return np.any(arr != np.array(base, dtype=np.uint8), axis=-1)
 
 
 class TestProjection:
@@ -53,11 +56,11 @@ class TestProjection:
         assert uv[0, 1] == pytest.approx(CY + FY * 38.0 / 220.0)
         assert uv[0, 1] > CY  # ground is always below the optical axis
 
-    def test_farther_ring_climbs_toward_the_horizon(self):
+    def test_farther_boundary_climbs_toward_the_horizon(self):
         """v shrinks with radius and approaches cy — never crosses it."""
         rings = make_rings()
         vs = []
-        for r in DEFAULT_RING_RADII_MM:
+        for r in DEFAULT_ZONE_RADII_MM:
             pt_uv, pt_valid = rings.project_ground_points(np.array([[float(r), 0.0]]), 0.0)
             assert pt_valid[0]
             vs.append(pt_uv[0, 1])
@@ -82,132 +85,119 @@ class TestProjection:
         assert uv_up[0, 1] > uv_level[0, 1]  # tilted-up camera drops the floor lower
 
 
+class TestGroundDistanceMap:
+    def test_bottom_of_frame_is_close_ground(self):
+        """The bottom-centre pixel looks at floor ~130 mm from the robot."""
+        rings = make_rings()
+        dist = rings._ground_distance_map((WIDTH, HEIGHT), head_angle_rad=0.0)
+
+        assert dist[HEIGHT - 1, int(CX)] < 250.0
+
+    def test_distance_grows_up_the_frame(self):
+        rings = make_rings()
+        dist = rings._ground_distance_map((WIDTH, HEIGHT), head_angle_rad=0.0)
+
+        column = dist[130:HEIGHT, int(CX)]
+        assert np.all(np.diff(column) < 0)  # closer to horizon = farther
+        assert column[-1] < column[0]
+
+    def test_above_the_horizon_is_nan(self):
+        """Rays at or above the horizon never hit the ground."""
+        rings = make_rings()
+        dist = rings._ground_distance_map((WIDTH, HEIGHT), head_angle_rad=0.0)
+
+        assert np.isnan(dist[100, int(CX)])
+        assert np.isnan(dist[: int(CY) - 10, :]).all()
+
+    def test_head_tilt_moves_the_distances(self):
+        rings = make_rings()
+        level = rings._ground_distance_map((WIDTH, HEIGHT), head_angle_rad=0.0)
+        tilted = rings._ground_distance_map((WIDTH, HEIGHT), head_angle_rad=0.3)
+
+        assert tilted[HEIGHT - 1, int(CX)] != level[HEIGHT - 1, int(CX)]
+
+
 class TestDrawing:
-    def test_draw_marks_pixels(self):
-        image = black_image()
+    def test_default_configuration_is_two_orange_zones(self):
+        assert DEFAULT_ZONE_RADII_MM == (250, 500)
+        assert DEFAULT_ZONE_COLORS == ((255, 130, 0), (255, 130, 0))
+        assert DEFAULT_ZONE_ALPHAS == (120, 55)
+        rings = make_rings()
+        assert rings.radii_mm == (250.0, 500.0)
+
+    def test_draw_tints_the_floor(self):
+        image = solid_image()
         make_rings().draw(image, head_angle_rad=0.0)
 
-        assert white_pixels(image) > 100
+        assert tinted_pixels(image, (0, 0, 0)).sum() > 1000
 
-    def test_ring_apex_label_sits_below_the_apex(self):
-        """The '250 mm' label is drawn under the ring's forward point."""
-        rings = make_rings(radii_mm=(250,))
-        image = black_image()
-        rings.draw(image, head_angle_rad=0.0)
+    def test_tint_is_translucent_not_opaque(self):
+        """Both zones mix with the original pixels — never replace them."""
+        base = (200, 200, 200)
+        image = solid_image(base)
+        make_rings().draw(image, head_angle_rad=0.0)
+        arr = np.asarray(image)
 
-        apex_v = CY + FY * 38.0 / 220.0  # ≈ 172
-        band = image.crop((CX - 40, int(apex_v) + 6, CX + 40, int(apex_v) + 24))
-        assert white_pixels(band) > 10, "no label glyphs below the apex"
+        near = arr[HEIGHT - 5, int(CX)]  # ~130 mm — inside the near zone
+        mid = arr[155, int(CX)]  # between the 250 and 500 mm boundaries
+
+        for pixel in (near, mid):
+            assert tuple(pixel) != base, "zone painted over the original colour"
+            assert tuple(pixel) != NEON_TINT, "zone is fully opaque"
+            # Orange direction: red lifted most, blue lifted least.
+            assert pixel[0] > pixel[1] > pixel[2]
+
+    def test_near_zone_is_more_saturated_than_the_far_zone(self):
+        base = (200, 200, 200)
+        image = solid_image(base)
+        make_rings().draw(image, head_angle_rad=0.0)
+        arr = np.asarray(image)
+
+        near_excess = int(arr[HEIGHT - 5, int(CX)][0]) - int(arr[HEIGHT - 5, int(CX)][2])
+        mid_excess = int(arr[155, int(CX)][0]) - int(arr[155, int(CX)][2])
+
+        assert near_excess > mid_excess > 0
+
+    def test_above_the_horizon_stays_untinted(self):
+        base = (200, 200, 200)
+        image = solid_image(base)
+        make_rings().draw(image, head_angle_rad=0.0)
+
+        assert tuple(np.asarray(image)[100, int(CX)]) == base
+
+    def test_labels_sit_on_the_left_edge(self):
+        """Zone labels carry a black backing box — all of them hug the left edge."""
+        image = solid_image((200, 200, 200))
+        make_rings().draw(image, head_angle_rad=0.0)
+        arr = np.asarray(image)
+
+        backing = np.all(arr < 40, axis=-1)  # black boxes on the light floor
+        assert backing.sum() > 50, "no label backing boxes rendered"
+        assert backing[:, 80:].sum() == 0, "a label leaked right of the left column"
 
     def test_empty_radii_draw_nothing(self):
         rings = make_rings(radii_mm=())
-        image = black_image()
+        image = solid_image()
 
         rings.draw(image, head_angle_rad=0.0)
 
-        assert white_pixels(image) == 0
+        assert tinted_pixels(image, (0, 0, 0)).sum() == 0
 
-    def test_ring_behind_the_camera_draws_nothing(self):
-        """Every sample invalid (bands hug the camera's rear) — no stray pixels."""
-        rings = DistanceRings(K, radii_mm=(1,), samples=8)
-        image = black_image()
+    def test_boundary_beyond_the_visible_floor_draws_nothing(self):
+        """A 1 mm ring lies behind the camera — no tint, no label, no raise."""
+        rings = make_rings(radii_mm=(1,))
+        image = solid_image()
 
-        rings.draw(image, head_angle_rad=0.0)  # must not raise
+        rings.draw(image, head_angle_rad=0.0)
 
-        assert white_pixels(image) == 0
-
-    def test_default_radii_are_the_three_band_set(self):
-        assert DEFAULT_RING_RADII_MM == (250, 500, 1000)
-        assert make_rings().radii_mm == (250.0, 500.0, 1000.0)
-
-    def test_default_colors_are_distinct(self):
-        assert DEFAULT_RING_COLORS == ((0, 220, 0), (255, 220, 0), (255, 80, 0))
-
-    def test_band_width_and_outline_defaults(self):
-        assert DEFAULT_BAND_HALF_WIDTH_MM == 20.0
-        assert DEFAULT_OUTLINE_WIDTH_PX == 2
+        assert tinted_pixels(image, (0, 0, 0)).sum() == 0
 
     def test_non_positive_radii_are_dropped(self):
         rings = DistanceRings(K, radii_mm=(0, -5, 250))
 
         assert rings.radii_mm == (250.0,)
 
-    def test_colored_bands_produce_distinct_colors(self):
-        """Green, yellow, and red pixels all appear in the rendered frame."""
-        rings = make_rings()
-        image = black_image()
-        rings.draw(image, head_angle_rad=0.0)
+    def test_alpha_out_of_range_is_clamped(self):
+        rings = DistanceRings(K, alphas=(-10, 999))
 
-        arr = np.asarray(image)
-        green = (arr[..., 0] < 60) & (arr[..., 1] > 180) & (arr[..., 2] < 60)
-        yellow = (arr[..., 0] > 200) & (arr[..., 1] > 150) & (arr[..., 2] < 60)
-        red = (arr[..., 0] > 200) & (arr[..., 1] < 120) & (arr[..., 2] < 60)
-
-        assert green.any(), "no green band (250 mm) pixels"
-        assert yellow.any(), "no yellow band (500 mm) pixels"
-        assert red.any(), "no red band (1000 mm) pixels"
-
-    def test_filled_bands_are_thicker_than_outline_only(self):
-        """With bands filled, the pixel count is far higher than a 1-px outline."""
-        img = black_image()
-        make_rings().draw(img, head_angle_rad=0.0)
-        band_count = white_pixels(img)
-
-        # A pure 1-px outline of 3 rings would be a few hundred pixels at most;
-        # filled bands cover many more.
-        assert band_count > 500, f"bands too sparse ({band_count} px) — not filled?"
-
-
-class TestContiguousRuns:
-    def test_no_valid_points_returns_empty(self):
-        from pycozmo_ng.vision.distance_rings import _contiguous_runs
-
-        assert _contiguous_runs(np.array([False, False, False])) == []
-
-    def test_full_run_returns_single_list(self):
-        from pycozmo_ng.vision.distance_rings import _contiguous_runs
-
-        runs = _contiguous_runs(np.array([True, True, True]))
-        assert runs == [[0, 1, 2]]
-
-    def test_wraparound_run_is_merged(self):
-        from pycozmo_ng.vision.distance_rings import _contiguous_runs
-
-        mask = np.array([True, True, False, False, True, True, True])
-        runs = _contiguous_runs(mask)
-        # First and last True edges merge into one wraparound run.
-        assert len(runs) == 1
-        assert runs[0] == [4, 5, 6, 0, 1]
-
-    def test_multiple_runs_split(self):
-        from pycozmo_ng.vision.distance_rings import _contiguous_runs
-
-        mask = np.array([False, True, True, False, True, True, False])
-        runs = _contiguous_runs(mask)
-        assert runs == [[1, 2], [4, 5]]
-
-
-class TestSegmentClip:
-    def test_segment_inside_frame_passes_through(self):
-        from pycozmo_ng.vision.distance_rings import _clip_segment
-
-        clipped = _clip_segment((10.0, 10.0), (100.0, 100.0), WIDTH, HEIGHT)
-
-        assert clipped == ((10.0, 10.0), (100.0, 100.0))
-
-    def test_crossing_segment_is_cut_at_the_edge(self):
-        from pycozmo_ng.vision.distance_rings import _clip_segment
-
-        clipped = _clip_segment((-500.0, 50.0), (500.0, 50.0), WIDTH, HEIGHT)
-
-        assert clipped is not None
-        (x0, y0), (x1, y1) = clipped
-        assert 0 <= x0 <= WIDTH - 1
-        assert 0 <= x1 <= WIDTH - 1
-        assert y0 == y1 == pytest.approx(50.0)
-
-    def test_miss_returns_none(self):
-        from pycozmo_ng.vision.distance_rings import _clip_segment
-
-        assert _clip_segment((-500.0, -50.0), (-10.0, -10.0), WIDTH, HEIGHT) is None
-        assert _clip_segment((100.0, -50.0), (100.0, -10.0), WIDTH, HEIGHT) is None
+        assert rings._alphas == (0, 255)

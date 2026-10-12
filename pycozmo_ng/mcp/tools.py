@@ -478,9 +478,10 @@ class Toolset:
 
         Args:
             annotated: When true, return the annotated frame (detection boxes,
-                labels, confidence, distance drawn on the image, plus coloured
-                ground distance bands — green at 250 mm, yellow at 500 mm, red
-                at 1000 mm — for judging range by eye)
+                labels, confidence, distance drawn on the image, plus a
+                translucent orange ground-distance tint — strongest from the
+                image bottom to 250 mm, lighter from 250 to 500 mm — for
+                judging range by eye)
                 instead of the raw camera frame.
             max_width: Downscale the image so its width is at most this many
                 pixels (aspect ratio preserved). 0 = original resolution. Use
@@ -571,13 +572,18 @@ class Toolset:
             aruco_desc = ", ".join(f"ArUco #{mid}" for mid in sorted(arucos.keys()))
             parts.append(f"ArUco marker(s): {aruco_desc}.")
 
-        # Ground distance bands (if enabled)
+        # Translucent ground-distance zones (if enabled)
         dr = self._cozmo.vision.distance_rings
         if dr is not None and dr.radii_mm:
+            inner = 0.0
+            zone_desc: list[str] = []
+            for radius in dr.radii_mm:
+                zone_desc.append(f"{inner:g}-{radius:g} mm")
+                inner = radius
             parts.append(
-                "Ground range bands visible — "
-                + ", ".join(f"{r:g} mm" for r in dr.radii_mm)
-                + " (coloured floor markers for judging distance by eye)"
+                "Translucent orange ground zones for judging range — "
+                + ", ".join(zone_desc)
+                + " (nearer zone more saturated; tint never fully opaque)"
             )
 
         return " | ".join(parts)

@@ -1,22 +1,23 @@
-"""Distance bands — coloured ground-range bands drawn in perspective on the camera frame.
+"""Distance zones — translucent ground-distance zones drawn on the camera frame.
 
-Draws concentric coloured bands on the floor plane (body Z = 0), centred on
-the body-frame origin, and projects them through the camera model the same way
-``FloorProjector`` builds its bird's-eye lookup table: body ground point →
-camera frame (head-tilt rotation about the camera-to-body offset) → pixels.
+Zones are concentric regions on the floor plane (body Z = 0), centred on the
+body-frame ground origin.  By default there are two: the image bottom up to
+the 250 mm boundary is tinted a strong orange, and the 250 → 500 mm zone a
+lighter orange of the same hue.  The tint is alpha-blended with the original
+frame — never opaque — so the floor stays visible underneath.  Zones read far
+better on a 320×240 frame than thin lines, which collapse to a few pixels at
+the far end.
 
-Each band marks a ground distance from the robot — green at 250 mm (near),
-yellow at 500 mm (mid), red at 1 000 mm (far) — a colour cue that is far
-easier for a vision model to read on a 320×240 frame than thin lines. A thin
-outline at the band centreline carries the exact distance label.
+Each pixel is classified by inverting the camera model (pixel → ray → ground
+plane hit → radial distance from the body origin), so the zones are exact in
+perspective and follow the head tilt.  Boundary distances are labelled down
+the left edge of the frame, inside their zone.
 
 Drawn *under* the detection overlays: ``FrameStage`` calls :meth:`draw` on
 the frame before ``AnnotationEngine.detect_and_annotate`` copies it.
 """
 
 from __future__ import annotations
-
-from itertools import pairwise
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -25,68 +26,59 @@ from pycozmo_ng.util.coords import CAMERA_TO_BODY_OFFSET, _head_tilt_matrix
 from pycozmo_ng.vision.annotation import load_font
 
 __all__ = [
-    "DEFAULT_BAND_HALF_WIDTH_MM",
-    "DEFAULT_OUTLINE_WIDTH_PX",
-    "DEFAULT_RING_COLORS",
-    "DEFAULT_RING_RADII_MM",
+    "DEFAULT_ZONE_ALPHAS",
+    "DEFAULT_ZONE_COLORS",
+    "DEFAULT_ZONE_RADII_MM",
     "DistanceRings",
 ]
 
-#: Default band radii in mm — three geometric steps (250 / 500 / 1000)
-#: spanning the robot's useful workspace without crowding a 320×240 frame.
-DEFAULT_RING_RADII_MM: tuple[int, ...] = (250, 500, 1000)
+#: Default zone boundary radii in mm, measured from the body-frame ground
+#: origin.  Two zones: bottom of image → 250 mm (near), 250 → 500 mm (mid).
+DEFAULT_ZONE_RADII_MM: tuple[int, ...] = (250, 500)
 
-#: Distinct, high-contrast colours per band — green (near), yellow (mid),
-#: red (far).  Extra bands cycle back through the list.
-DEFAULT_RING_COLORS: tuple[tuple[int, int, int], ...] = (
-    (0, 220, 0),  # green — 250 mm (near, step-back zone)
-    (255, 220, 0),  # yellow — 500 mm (mid-range)
-    (255, 80, 0),  # red — 1000 mm (far)
+#: Orange tint shared by both zones — the hue carries the "distance cue"
+#: role, the strength varies with alpha.  Extra zones cycle through.
+DEFAULT_ZONE_COLORS: tuple[tuple[int, int, int], ...] = (
+    (255, 130, 0),  # near zone — bottom of image → 250 mm
+    (255, 130, 0),  # mid zone — 250 → 500 mm (lighter, same hue)
 )
 
-#: Half-width of each coloured filled band (mm).  Total ≈ 40 mm.
-DEFAULT_BAND_HALF_WIDTH_MM: float = 20.0
+#: Per-zone alpha (0–255) over the original frame.  The near zone is the
+#: stronger tint; extras cycle through the list.
+DEFAULT_ZONE_ALPHAS: tuple[int, ...] = (120, 55)
 
-#: Outline width at the band centreline (px).
-DEFAULT_OUTLINE_WIDTH_PX: int = 2
-
-#: Horizontal label offsets (px) from the principal column, cycled per band.
-#: The 250 mm and 1 000 mm bands land at very different image rows so they
-#: share the centred slot without overlap; the 500 mm band shifts left to
-#: avoid crowding the others.
-_LABEL_COLUMN_OFFSETS: tuple[float, ...] = (0.0, -100.0)
+#: Horizontal inset of the zone labels from the left frame edge (px).
+_LABEL_INSET_PX = 4.0
 
 
 class DistanceRings:
-    """Draws perspective-correct coloured ground distance bands on a camera frame.
+    """Draws translucent ground-distance zones on a camera frame.
 
-    Stateless per draw: intrinsics, radii, colours, and band geometry are
+    Stateless per draw: intrinsics, boundaries, colours, and alphas are
     fixed at construction; the head angle arrives per call because it moves.
 
     Args:
         camera_matrix: 3×3 intrinsic matrix K from CameraCalibration.
-        radii_mm: Band centres in mm, measured from the body-frame ground origin.
-        colors: One RGB colour per radius; extra radii cycle through the list.
-        band_half_width_mm: Half-width of each filled band in mm.
-        outline_width: Pixel width of the centreline outline drawn on top.
-        samples: Points sampled per band (one full turn).  Sized for smooth
-            arcs; only the visible slice lands inside the frame.
+        radii_mm: Zone boundary radii in mm from the body-frame ground
+            origin.  Zone *i* spans ``radii[i-1] → radii[i]``; zone 0
+            starts at 0 (the bottom of the image).
+        colors: One RGB tint per zone; extra boundaries cycle through.
+        alphas: One alpha (0–255) per zone, blended over the original frame.
+        samples: Points sampled per boundary ring for label placement.
     """
 
     def __init__(
         self,
         camera_matrix: np.ndarray,
-        radii_mm: tuple[int, ...] = DEFAULT_RING_RADII_MM,
-        colors: tuple[tuple[int, int, int], ...] = DEFAULT_RING_COLORS,
-        band_half_width_mm: float = DEFAULT_BAND_HALF_WIDTH_MM,
-        outline_width: int = DEFAULT_OUTLINE_WIDTH_PX,
+        radii_mm: tuple[int, ...] = DEFAULT_ZONE_RADII_MM,
+        colors: tuple[tuple[int, int, int], ...] = DEFAULT_ZONE_COLORS,
+        alphas: tuple[int, ...] = DEFAULT_ZONE_ALPHAS,
         samples: int = 240,
     ):
         self._K = np.asarray(camera_matrix, dtype=np.float64)
         self.radii_mm = tuple(float(r) for r in radii_mm if r > 0)
         self._colors = colors
-        self._band_half_width_mm = float(band_half_width_mm)
-        self._outline_width = max(1, int(outline_width))
+        self._alphas = tuple(min(255, max(0, int(a))) for a in alphas)
         self.samples = max(8, int(samples))
 
         # Cached intrinsics
@@ -102,8 +94,7 @@ class DistanceRings:
 
         Returns ``(uv, valid)``: ``uv`` is an (N, 2) array of ``(u, v)``
         pixels (NaN where invalid) and ``valid`` marks the points in front
-        of the camera (``cam_z > 1`` mm) — the same rule the floor
-        projector's LUT uses.
+        of the camera (``cam_z > 1`` mm).
         """
         pts = np.empty((len(xy_mm), 3), dtype=np.float64)
         pts[:, :2] = np.asarray(xy_mm, dtype=np.float64)
@@ -125,16 +116,45 @@ class DistanceRings:
         return uv, valid
 
     def _ring_points(self, radius_mm: float) -> np.ndarray:
-        """``(N, 2)`` body-frame ground samples of one ring, first ≅ last."""
+        """``(N, 2)`` body-frame ground samples of one boundary ring."""
         theta = np.linspace(0.0, 2.0 * np.pi, self.samples)
         return radius_mm * np.stack([np.cos(theta), np.sin(theta)], axis=1)
+
+    def _ground_distance_map(self, size: tuple[int, int], head_angle_rad: float) -> np.ndarray:
+        """Per-pixel radial ground distance (mm); NaN where the ray misses the floor.
+
+        Inverts the camera model: pixel → camera-frame ray → body-frame ray
+        (head-tilt rotation) → ground-plane hit (body Z = 0) → distance from
+        the body-frame ground origin.  Rays at or above the horizon have no
+        ground hit and stay NaN, which keeps them outside every zone.
+        """
+        width, height = size
+        u = np.arange(width, dtype=np.float64)
+        v = np.arange(height, dtype=np.float64)
+        uu, vv = np.meshgrid(u, v)
+        x = (uu - self._cx) / self._K[0, 0]
+        y = (vv - self._cy) / self._K[1, 1]
+        rays = np.stack([x, y, np.ones_like(x)], axis=-1)
+
+        # Camera → body on direction vectors (translation does not apply;
+        # R is orthonormal, so its inverse is its transpose).
+        body = rays @ _head_tilt_matrix(head_angle_rad).T
+        dz = body[..., 2]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            t = np.where(dz < 0.0, CAMERA_TO_BODY_OFFSET[2] / -dz, np.nan)
+        gx = CAMERA_TO_BODY_OFFSET[0] + t * body[..., 0]
+        gy = CAMERA_TO_BODY_OFFSET[1] + t * body[..., 1]
+        return np.hypot(gx, gy)
 
     # ------------------------------------------------------------------
     # Drawing
     # ------------------------------------------------------------------
 
     def draw(self, image: Image.Image, head_angle_rad: float) -> None:
-        """Draw all coloured bands, outlines, and labels on ``image`` (in place).
+        """Tint the ground-distance zones onto ``image`` (in place), then label them.
+
+        Each zone is alpha-blended with the original pixels — the floor
+        stays visible underneath, and no pixel is ever fully replaced.
 
         Args:
             image: PIL Image to annotate (mutated in place).
@@ -143,149 +163,62 @@ class DistanceRings:
         if not self.radii_mm:
             return
 
-        width, height = image.size
-        draw = ImageDraw.Draw(image)
-
-        # 1. Filled coloured bands (underneath)
-        for index, radius in enumerate(self.radii_mm):
-            color = self._colors[index % len(self._colors)]
-            self._draw_band(draw, radius, color, head_angle_rad, width, height)
-
-        # 2. Thin outlines at each band's centreline (on top of the fill)
-        for radius in self.radii_mm:
-            self._draw_outline(draw, radius, head_angle_rad, width, height)
-
-        # 3. Distance labels
-        self._draw_labels(draw, head_angle_rad, width, height)
-
-    def _draw_band(
-        self,
-        draw: ImageDraw.ImageDraw,
-        radius_mm: float,
-        color: tuple[int, int, int],
-        head_angle_rad: float,
-        width: int,
-        height: int,
-    ) -> None:
-        """Fill a coloured annular band around *radius_mm* on the ground.
-
-        The band spans ``radius_mm ± band_half_width_mm``.  Points closer
-        to the robot project *larger* in the image, so the inner ground
-        radius becomes the outer image boundary and vice-versa.
-        """
-        hw = self._band_half_width_mm
-        near_r = max(0.01, radius_mm - hw)  # closer to robot → larger in image
-        far_r = radius_mm + hw  # farther → smaller in image
-
-        near_xy = self._ring_points(near_r)
-        far_xy = self._ring_points(far_r)
-
-        near_uv, near_valid = self.project_ground_points(near_xy, head_angle_rad)
-        far_uv, far_valid = self.project_ground_points(far_xy, head_angle_rad)
-
-        ok = (
-            near_valid
-            & far_valid
-            & np.isfinite(near_uv[:, 0])
-            & np.isfinite(near_uv[:, 1])
-            & np.isfinite(far_uv[:, 0])
-            & np.isfinite(far_uv[:, 1])
-        )
-
-        if not ok.any():
+        arr = np.asarray(image)
+        if arr.ndim != 3 or arr.shape[-1] < 3:
             return
 
-        for indices in _contiguous_runs(ok):
-            if len(indices) < 2:
-                continue
-            self._fill_band_arc(draw, near_uv, far_uv, indices, color)
+        distance = self._ground_distance_map(image.size, head_angle_rad)
+        rgb = arr[..., :3].astype(np.float32)
+        inner = 0.0
+        for index, outer in enumerate(self.radii_mm):
+            color = np.asarray(self._colors[index % len(self._colors)], dtype=np.float32)
+            alpha = self._alphas[index % len(self._alphas)] / 255.0
+            zone = np.isfinite(distance) & (distance > inner) & (distance <= outer)
+            if zone.any():
+                rgb[zone] = rgb[zone] * (1.0 - alpha) + color * alpha
+            inner = outer
 
-    def _fill_band_arc(
+        blended = np.clip(rgb, 0.0, 255.0).round().astype(np.uint8)
+        has_alpha = arr.shape[-1] == 4
+        if has_alpha:
+            blended = np.concatenate([blended, arr[..., 3:4]], axis=-1)
+        image.paste(Image.fromarray(blended))
+
+        # Boundary labels — after the tint so they stay fully legible.
+        self._draw_labels(ImageDraw.Draw(image), head_angle_rad, *image.size)
+
+    def _draw_labels(
         self,
         draw: ImageDraw.ImageDraw,
-        near_uv: np.ndarray,
-        far_uv: np.ndarray,
-        indices: list[int],
-        color: tuple[int, int, int],
-    ) -> None:
-        """Fill one contiguous visible arc of the band as a polygon.
-
-        The polygon traces the near (outer-in-image) edge forward, then the
-        far (inner-in-image) edge backward.  PIL's polygon fill handles
-        arbitrary winding and clips to the image bounds automatically.
-        """
-        poly: list[tuple[float, float]] = []
-        for i in indices:
-            poly.append((float(near_uv[i, 0]), float(near_uv[i, 1])))
-        for i in reversed(indices):
-            poly.append((float(far_uv[i, 0]), float(far_uv[i, 1])))
-        draw.polygon(poly, fill=color)
-
-    def _draw_outline(
-        self,
-        draw: ImageDraw.ImageDraw,
-        radius_mm: float,
         head_angle_rad: float,
         width: int,
         height: int,
     ) -> None:
-        """Draw a thin white centreline at *radius_mm* for precise distance reading."""
-        uv, valid = self.project_ground_points(self._ring_points(radius_mm), head_angle_rad)
+        """Label each zone boundary down the left edge of the frame.
 
-        run: list[tuple[float, float]] = []
-        for (u, v), ok in zip(uv, valid):
-            if not ok or not np.isfinite(u) or not np.isfinite(v):
-                self._flush_run(draw, run, width, height)
-                run = []
-                continue
-            run.append((float(u), float(v)))
-        self._flush_run(draw, run, width, height)
-
-    def _flush_run(
-        self,
-        draw: ImageDraw.ImageDraw,
-        run: list[tuple[float, float]],
-        width: int,
-        height: int,
-    ) -> None:
-        """Draw one unbroken stretch of ring as clipped line segments."""
-        for p0, p1 in pairwise(run):
-            clipped = _clip_segment(p0, p1, width, height)
-            if clipped is not None:
-                draw.line(
-                    [clipped[0], clipped[1]],
-                    fill=(255, 255, 255),
-                    width=self._outline_width,
-                )
-
-    def _draw_labels(self, draw: ImageDraw.ImageDraw, head_angle_rad: float, width: int, height: int) -> None:
-        """Label each band where it crosses one of the staggered columns.
-
-        Labels sit on the band's centreline arc near the target column.  A
-        label that would overlap one already placed is dropped — the band
-        colour and outline are the ground truth, a buried label is worse
-        than none.
+        A label sits at the row where its boundary ring crosses the left
+        column.  A label that would overlap one already placed is dropped —
+        a buried label is worse than none.
         """
         font = load_font(11)
         placed: list[tuple[float, float, float, float]] = []
 
         for index, radius in enumerate(self.radii_mm):
-            uv, valid = self.project_ground_points(self._ring_points(radius), head_angle_rad)
-            visible = valid & (uv[:, 0] >= 0) & (uv[:, 0] < width) & (uv[:, 1] >= 0) & (uv[:, 1] < height)
-            if not visible.any():
-                continue
-
-            target_u = self._cx + _LABEL_COLUMN_OFFSETS[index % len(_LABEL_COLUMN_OFFSETS)]
-            nearest = int(np.argmin(np.abs(np.where(visible, uv[:, 0], np.inf) - target_u)))
-            u, v = uv[nearest]
-
-            color = self._colors[index % len(self._colors)]
             label = f"{radius:g} mm"
             bbox = draw.textbbox((0, 0), label, font=font)
             text_w = bbox[2] - bbox[0]
             text_h = bbox[3] - bbox[1]
-            x = min(max(float(u) - text_w / 2.0, 2.0), max(2.0, width - text_w - 2.0))
-            y = min(max(float(v) + 4.0, 2.0), max(2.0, height - text_h - 4.0))
+            x = _LABEL_INSET_PX
+            target_u = x + text_w / 2.0
+
+            uv, valid = self.project_ground_points(self._ring_points(radius), head_angle_rad)
+            visible = valid & np.isfinite(uv[:, 0]) & np.isfinite(uv[:, 1]) & (uv[:, 1] >= 0) & (uv[:, 1] < height)
+            if not visible.any():
+                continue
+            nearest = int(np.argmin(np.abs(np.where(visible, uv[:, 0], np.inf) - target_u)))
+            v = float(uv[nearest, 1])
+
+            y = min(max(v - text_h / 2.0, 2.0), max(2.0, height - text_h - 4.0))
             rect = (x - 2, y - 2, x + text_w + 2, y + text_h + 2)
 
             if any(_rects_overlap(rect, other) for other in placed):
@@ -293,7 +226,7 @@ class DistanceRings:
             placed.append(rect)
 
             draw.rectangle([(rect[0], rect[1]), (rect[2], rect[3])], fill=(0, 0, 0))
-            draw.text((x, y), label, fill=color, font=font)
+            draw.text((x, y), label, fill=self._colors[index % len(self._colors)], font=font)
 
 
 # ------------------------------------------------------------------
@@ -307,74 +240,3 @@ def _rects_overlap(
 ) -> bool:
     """True when two ``(x0, y0, x1, y1)`` rectangles share any pixel."""
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
-
-
-def _clip_segment(
-    p0: tuple[float, float],
-    p1: tuple[float, float],
-    width: int,
-    height: int,
-) -> tuple[tuple[float, float], tuple[float, float]] | None:
-    """Liang-Barsky clip of a segment to ``[0, width) × [0, height)``.
-
-    Returns the clipped endpoints, or ``None`` when the segment misses the
-    frame entirely.
-    """
-    x0, y0 = p0
-    x1, y1 = p1
-    dx = x1 - x0
-    dy = y1 - y0
-
-    t0, t1 = 0.0, 1.0
-    for p, q in (
-        (-dx, x0),
-        (dx, (width - 1) - x0),
-        (-dy, y0),
-        (dy, (height - 1) - y0),
-    ):
-        if p == 0.0:
-            if q < 0.0:
-                return None
-            continue
-        r = q / p
-        if p < 0.0:
-            if r > t1:
-                return None
-            t0 = max(t0, r)
-        else:
-            if r < t0:
-                return None
-            t1 = min(t1, r)
-
-    return (
-        (x0 + t0 * dx, y0 + t0 * dy),
-        (x0 + t1 * dx, y0 + t1 * dy),
-    )
-
-
-def _contiguous_runs(mask: np.ndarray) -> list[list[int]]:
-    """Return lists of consecutive ``True`` indices in *mask*.
-
-    Handles the ring's closed-loop topology: a visible arc straddling the
-    0 / 2π boundary produces two linear runs that are joined into one.
-    Each returned run has at least 2 indices so the polygon has area.
-    """
-    mask = np.asarray(mask, dtype=bool)
-
-    if not mask.any():
-        return []
-
-    # Find linear runs via sentinel-padded transitions.
-    padded = np.concatenate([[False], mask, [False]])
-    transitions = np.diff(padded.astype(int))
-    starts = np.where(transitions == 1)[0]
-    ends = np.where(transitions == -1)[0]
-
-    runs: list[list[int]] = [list(range(s, e)) for s, e in zip(starts, ends)]
-
-    # Merge wraparound: if both edges are True, first and last runs are one arc.
-    if mask[0] and mask[-1] and len(runs) > 1:
-        merged = runs[-1] + runs[0]
-        runs = [merged] + runs[1:-1]
-
-    return [r for r in runs if len(r) >= 2]

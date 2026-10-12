@@ -106,12 +106,13 @@ class VisionSetup:
     #: JSON config file (PYCOZMO_NG_ARUCO_CONFIG), not from here.
     enable_aruco_detection: bool = True
 
-    #: Draw ground distance rings (range circles) in perspective on the
+    #: Draw translucent ground-distance zones (orange floor tint) on the
     #: annotated frame — the cue for a human viewer and for an LLM reading
     #: get_frame(annotated=True).
     enable_distance_rings: bool = True
 
-    #: Band radii in mm, centred on the body-frame ground origin.
-    #: Three geometric steps (250 / 500 / 1000) — enough range cues
-    #: without crowding a 320×240 frame.
-    distance_ring_radii_mm: tuple[int, ...] = (250, 500, 1000)
+    #: Zone boundary radii in mm, centred on the body-frame ground origin.
+    #: Two zones: bottom of image → 250 mm (stronger orange tint),
+    #: 250 → 500 mm (lighter tint of the same hue).  Alpha-blended with
+    #: the original frame — the floor stays visible underneath.
+    distance_ring_radii_mm: tuple[int, ...] = (250, 500)
