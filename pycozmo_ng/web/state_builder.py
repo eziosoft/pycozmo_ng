@@ -67,8 +67,8 @@ def build_state_json(
     Args:
         world_map: WorldMap instance to read state from.
         telemetry: Latest robot telemetry dict.
-        floor_size_mm: (width, height) of floor grid in mm.
-        floor_center_mm: (center_x, center_y) of floor grid in mm.
+        floor_size_mm: (forward_extent, left_extent) of floor grid in mm.
+        floor_center_mm: (forward, left) centre of floor grid in mm (body-frame).
         start_time: Server start time (for timestamp).
         occupancy: Payload from ``OccupancyDelivery.take()`` — ``(base64 PNG,
             [origin_x, origin_y])`` — or None when this message carries no

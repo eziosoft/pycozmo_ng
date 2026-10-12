@@ -26,8 +26,10 @@ class FloorProjector:
         camera_matrix: 3x3 intrinsic matrix K from CameraCalibration.
         image_width: Camera image width in pixels.
         image_height: Camera image height in pixels.
-        floor_center_mm: World-frame (x, y) centre of the output grid (mm).
-        floor_size_mm: (width, height) of the output grid in mm.
+        floor_center_mm: Body-frame (x, y) centre of the output grid (mm).
+            (forward, left) relative to the robot center — the floor camera is
+            on the robot, so this grid moves with the robot.
+        floor_size_mm: (forward_extent, left_extent) of the output grid in mm.
         mm_per_pixel: Millimetres per output pixel (lower = finer).
         edge_margin_px: Number of pixels to cut from the camera image edges.
             Edge pixels carry sensor/JPEG noise that gets magnified when
@@ -56,8 +58,10 @@ class FloorProjector:
         self._mm_per_pixel = float(mm_per_pixel)
         self._edge_margin_px = int(max(0, edge_margin_px))
 
-        self._out_w = int(np.ceil(self._floor_size[0] / self._mm_per_pixel))
-        self._out_h = int(np.ceil(self._floor_size[1] / self._mm_per_pixel))
+        # Image columns (width) map to body Y (left/right) → span left_extent.
+        # Image rows (height) map to body X (forward/backward) → span forward_extent.
+        self._out_w = int(np.ceil(self._floor_size[1] / self._mm_per_pixel))
+        self._out_h = int(np.ceil(self._floor_size[0] / self._mm_per_pixel))
 
         # Pre-compute floor-grid coordinates in body frame (Z = 0).
         # Columns = body Y (left/right), rows = body X (forward/backward).
@@ -67,7 +71,9 @@ class FloorProjector:
 
         col_vals = y_max - (np.arange(self._out_w) + 0.5) * self._mm_per_pixel
         row_vals = x_max - (np.arange(self._out_h) + 0.5) * self._mm_per_pixel
-        # meshgrid with 'ij' indexing: aa varies along rows, bb along columns
+        # meshgrid (default 'xy' indexing): col_vals (body Y) varies along
+        # columns (axis 1, width _out_w), row_vals (body X) along rows
+        # (axis 0, height _out_h).
         bb, aa = np.meshgrid(col_vals, row_vals)  # both shape (out_h, out_w)
 
         self._floor_x = aa.ravel()  # body X (forward) — rows
@@ -93,12 +99,12 @@ class FloorProjector:
 
     @property
     def floor_center(self) -> np.ndarray:
-        """World-frame (x, y) centre of the floor grid (mm)."""
+        """Body-frame (x, y) centre of the floor grid (mm): (forward, left)."""
         return self._floor_center
 
     @property
     def floor_size(self) -> np.ndarray:
-        """(width, height) of the floor grid in mm."""
+        """(forward_extent, left_extent) of the floor grid in mm."""
         return self._floor_size
 
     @property

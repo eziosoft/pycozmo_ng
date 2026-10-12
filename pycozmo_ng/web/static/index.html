@@ -551,7 +551,12 @@
     scene.add(robot);
 
     // -----------------------------------------------------------------------
-    // Floor camera overlay — canvas texture in world frame (stationary, like occupancy)
+    // Floor camera overlay — canvas texture parented to robot (body-frame)
+    //
+    // The floor camera is on the robot's bottom; the projected image shows the
+    // floor area around the robot in body frame. The overlay must follow the
+    // robot, so it is parented to the robot group. floor_w/height_mm and
+    // floor_center_mm are (forward, left) body-frame values from the server.
     // -----------------------------------------------------------------------
     let floorW = 600, floorH = 600;
     let floorCenterX = 200, floorCenterY = 0;
@@ -565,7 +570,7 @@
     floorTex.minFilter = THREE.NearestFilter;
     floorTex.magFilter = THREE.NearestFilter;
 
-    const floorOverlayGeo = new THREE.PlaneGeometry(floorH, floorW);  // swapped: see applyFloorSize
+    const floorOverlayGeo = new THREE.PlaneGeometry(floorH, floorW);  // left_extent, forward_extent
     const floorOverlayMat = new THREE.MeshBasicMaterial({
       map: floorTex,
       transparent: true,
@@ -577,26 +582,28 @@
     floorOverlay.rotation.x = -Math.PI / 2;
     floorOverlay.rotation.z = Math.PI;
     floorOverlay.renderOrder = 3;  // above occupancy, below path/nav
-    // Position: world (X forward, Y left) → scene (X left, Y up, Z forward)
+    // Position: body frame (X forward, Y left) → robot local (Z forward, X left, Y up)
     floorOverlay.position.set(floorCenterY, 2, floorCenterX);
-    scene.add(floorOverlay);  // world-frame — stationary, does not move with robot
+    robot.add(floorOverlay);  // body-frame — follows the robot
 
     function applyFloorSize(size) {
       if (!size || size.length < 2) return;
-      floorW = size[0];
-      floorH = size[1];
+      floorW = size[0];  // forward_extent (body X)
+      floorH = size[1];  // left_extent (body Y)
       floorOverlay.geometry.dispose();
-      // Swapped: PlaneGeometry(width, height) maps width→scene X (left/right)
-      // and height→scene Z (forward/backward) after the mesh rotation.
-      // floor_size_mm sends (forward_extent, left_extent) from the server.
+      // PlaneGeometry(width, height): after the mesh rotation (x=-PI/2, z=PI)
+      //   width  → robot-local X (left/right)  = left_extent  = floorH
+      //   height → robot-local Z (forward/back) = forward_extent = floorW
+      // The floor image's columns = body Y (left), rows = body X (forward),
+      // so width must carry left_extent and height forward_extent.
       floorOverlay.geometry = new THREE.PlaneGeometry(floorH, floorW);
     }
 
     function applyFloorCenter(center) {
       if (!center || center.length < 2) return;
-      floorCenterX = center[0];
-      floorCenterY = center[1];
-      // World (X forward, Y left) → scene (X left, Y up, Z forward)
+      floorCenterX = center[0];  // forward offset (body X)
+      floorCenterY = center[1];  // left offset (body Y)
+      // Body frame (X forward, Y left) → robot local (Z forward, X left, Y up)
       floorOverlay.position.set(floorCenterY, 2, floorCenterX);
     }
 

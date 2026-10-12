@@ -24,8 +24,10 @@ class FloorPipeline:
     Args:
         camera_calibration: Camera intrinsics for the projector.
         enable_floor_projection: Create the floor projector.
-        floor_center_mm: World-frame (x, y) centre of the floor grid (mm).
-        floor_size_mm: (width, height) of the floor grid in mm.
+        floor_center_mm: Body-frame (forward, left) centre of the floor grid
+            (mm). The floor camera is on the robot, so this grid moves with
+            the robot.
+        floor_size_mm: (forward_extent, left_extent) of the floor grid in mm.
         mm_per_pixel: Millimetres per output pixel.
         enable_occupancy_map: Enable world-frame occupancy accumulation.
         occupancy_grid_size_mm: Physical extent of the occupancy grid (mm).
