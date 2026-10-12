@@ -11,6 +11,7 @@ own UDP protocol and adds the whole off-board stack on top.
   avoidance, cube approach & stacking, docking by contact or by ArUco marker.
 - **3D web viewer** — live Three.js scene, camera streams, browser driving, click-to-navigate, telemetry HUD.
 - **Speech** — offline text-to-speech (pyttsx3 + espeak-ng), from code or from the browser.
+- **MCP endpoint** — optional streamable-HTTP server so LLM clients can read the robot's state and drive it.
 
 Current version **0.9.0** — pre-1.0, expect API changes.
 
@@ -128,6 +129,7 @@ with cozmo.connect():
 | `cozmo.world_map`  | Fused robot/cube poses and the path trail (world frame, mm)              |
 | `cozmo.sensors`    | Battery voltage, IMU, cliff sensor, wheel speeds, head/lift angles       |
 | `cozmo.web_viewer` | Start/stop the browser viewer                                            |
+| `cozmo.mcp`        | The optional MCP endpoint for LLM clients (streamable HTTP)              |
 | `cozmo.cli`        | The underlying low-level `Client`, for raw protocol access               |
 
 ## Running the demo
@@ -136,6 +138,7 @@ with cozmo.connect():
 ./start.sh              # bootstraps .env + venv, waits for the robot, runs demo.py
 # or, with the venv already active:
 python demo.py
+python demo.py --mcp 8767   # also serve the MCP endpoint for LLM clients
 ```
 
 Then open **http://\<machine-ip\>:8765** in a browser.
@@ -164,6 +167,47 @@ Controls in the browser:
 | Say box                      | Speak text through the robot (offline TTS)         |
 
 Endpoints: `/` (viewer), `/annotated-video`, `/floor-video` (MJPEG), `/aruco-texture?id=N` (marker textures).
+
+## The MCP endpoint for LLM clients
+
+Beyond the browser, the same robot can be driven by an LLM client over the [Model Context Protocol](https://modelcontextprotocol.io/)
+— a streamable-HTTP server (`pycozmo_ng/mcp/`, issue COZMO-68) that exposes the public API as MCP tools. Start it
+from the public API:
+
+```python
+from pycozmo_ng import Cozmo
+
+cozmo = Cozmo()
+with cozmo.connect():
+    cozmo.mcp.start()            # → http://<machine-ip>:8767/mcp
+    cozmo.run()
+```
+
+which requires the optional extra:
+
+```bash
+pip install 'pycozmo-ng[mcp]'
+```
+
+The endpoint binds all interfaces by default (port **8767**) so LLM hosts on the LAN can reach it; pass
+`cozmo.mcp.start(host="127.0.0.1")` to keep it on this machine. `demo.py` also serves it with `--mcp PORT`.
+
+**Tools** — reads return snapshots synchronously; motion returns a `job_id` immediately and runs in the background
+(poll `get_job` / `wait_for_job`):
+
+| Category       | Tools                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------ |
+| Reads          | `get_robot_state`, `get_world_map`, `get_occupancy_map` (ASCII grid + PNG), `get_sensors`, `get_detections`, `get_frame` (JPEG image content) |
+| Motion         | `navigate_to`, `move_by`, `turn_by`, `approach_cube`, `stack_cube`, `dock`, `dock_on_aruco`, `stop` |
+| Actuation      | `say`, `set_head_angle`, `set_lift_height`, `set_origin`                                          |
+| Configuration  | `camera_settings`, `camera_toggle`, `astar_toggle`                                                |
+| Jobs           | `get_job`, `wait_for_job`, `list_jobs`                                                            |
+| Utilities      | `wait`                                                                                            |
+
+**Safety** — `SafetyLimits` (`pycozmo_ng/mcp/safety.py`) caps every LLM-initiated motion before it reaches the
+robot: 2000 mm extent from the world origin, 150 mm/s speed cap, 60 s motion timeout, 120 s per approach/dock visit,
+and (optionally) a `confirm=true` requirement. The MCP server instructions passed during the `initialize` handshake
+tell clients the frames/units and conventions.
 
 ## Configuration
 
@@ -224,6 +268,7 @@ Off-board features implemented here:
 - [x] Floor projection
 - [x] Text-to-speech
 - [x] 3D web viewer with remote control
+- [x] MCP endpoint for LLM-driven robot control (tools, jobs, safety)
 - [ ] Personality engine
 - [ ] Behaviors and reactions
 - [ ] Face recognition and expression estimation
