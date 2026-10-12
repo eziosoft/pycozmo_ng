@@ -551,7 +551,7 @@
     scene.add(robot);
 
     // -----------------------------------------------------------------------
-    // Floor camera overlay — canvas texture parented to robot
+    // Floor camera overlay — canvas texture in world frame (stationary, like occupancy)
     // -----------------------------------------------------------------------
     let floorW = 600, floorH = 600;
     let floorCenterX = 200, floorCenterY = 0;
@@ -565,7 +565,7 @@
     floorTex.minFilter = THREE.NearestFilter;
     floorTex.magFilter = THREE.NearestFilter;
 
-    const floorOverlayGeo = new THREE.PlaneGeometry(floorW, floorH);
+    const floorOverlayGeo = new THREE.PlaneGeometry(floorH, floorW);  // swapped: see applyFloorSize
     const floorOverlayMat = new THREE.MeshBasicMaterial({
       map: floorTex,
       transparent: true,
@@ -577,24 +577,27 @@
     floorOverlay.rotation.x = -Math.PI / 2;
     floorOverlay.rotation.z = Math.PI;
     floorOverlay.renderOrder = 3;  // above occupancy, below path/nav
-    // Position: body (X forward, Y left) → robot local (Z forward, -X lateral)
-    floorOverlay.position.set(-floorCenterY, 2, floorCenterX);
-    robot.add(floorOverlay);
+    // Position: world (X forward, Y left) → scene (X left, Y up, Z forward)
+    floorOverlay.position.set(floorCenterY, 2, floorCenterX);
+    scene.add(floorOverlay);  // world-frame — stationary, does not move with robot
 
     function applyFloorSize(size) {
       if (!size || size.length < 2) return;
       floorW = size[0];
       floorH = size[1];
       floorOverlay.geometry.dispose();
-      floorOverlay.geometry = new THREE.PlaneGeometry(floorW, floorH);
+      // Swapped: PlaneGeometry(width, height) maps width→scene X (left/right)
+      // and height→scene Z (forward/backward) after the mesh rotation.
+      // floor_size_mm sends (forward_extent, left_extent) from the server.
+      floorOverlay.geometry = new THREE.PlaneGeometry(floorH, floorW);
     }
 
     function applyFloorCenter(center) {
       if (!center || center.length < 2) return;
       floorCenterX = center[0];
       floorCenterY = center[1];
-      // Body (X forward, Y left) → robot local (Z forward, -X lateral)
-    floorOverlay.position.set(-floorCenterY, 2, floorCenterX);
+      // World (X forward, Y left) → scene (X left, Y up, Z forward)
+      floorOverlay.position.set(floorCenterY, 2, floorCenterX);
     }
 
     // MJPEG stream — img auto-updates, we copy to canvas each frame
