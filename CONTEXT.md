@@ -134,6 +134,23 @@ misfired on shadows and texture in both directions); voting the whole
 projected silhouette (smears occupied cells past the obstacle base); decaying
 votes by default.
 
+**Distance rings** (`pycozmo_ng/vision/distance_rings.py`, class `DistanceRings`):
+Concentric range circles drawn in perspective on the ground of the annotated
+camera frame — radii from `VisionSetup.distance_ring_radii_mm` (default
+250/500/750/1000 mm), centred on the body-frame ground origin, projected
+through the same model the floor projector's LUT uses (body floor point →
+head-tilt rotation about `CAMERA_TO_BODY_OFFSET` → intrinsics), so a ring
+lands where that distance actually lies on the floor. `FrameStage` draws them
+on the frame *before* `AnnotationEngine.detect_and_annotate`, which is why
+they sit under the detection overlays and reach both consumers of that one
+frame — the `/annotated-video` MJPEG stream and MCP `get_frame(annotated=True)`.
+Labels cycle across staggered columns (far rings bunch within a few pixels of
+the horizon); a label that would overlap one already placed is dropped rather
+than buried.
+_Avoid_: drawing rings on the raw frame (it stays the untouched camera
+image); screen-space circles that ignore head tilt; ringing up the draw as an
+error path that can starve the rest of the frame sequence.
+
 **Coordinate transforms** (`pycozmo_ng/util/coords.py`):
 - `camera_to_body()` — applies head-tilt rotation + camera-to-body offset
 - `body_to_world()` — applies robot yaw + translation

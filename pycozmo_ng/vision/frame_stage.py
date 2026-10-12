@@ -26,6 +26,7 @@ from pycozmo_ng.logger import logger_cubes
 from pycozmo_ng.navigation.world_map import WorldMap
 from pycozmo_ng.vision.annotation import AnnotationEngine
 from pycozmo_ng.vision.cube_detector.detection_pipeline import DetectionPipeline
+from pycozmo_ng.vision.distance_rings import DistanceRings
 from pycozmo_ng.vision.events import DetectionEventDispatcher
 from pycozmo_ng.vision.face_identity import FaceFrame, FaceIdentity
 from pycozmo_ng.vision.frame_sink import FrameSink
@@ -57,6 +58,7 @@ class FrameStage:
         # Per-session vision components — None until configure()
         self.detection_pipeline: DetectionPipeline | None = None
         self.annotation_engine: AnnotationEngine | None = None
+        self.distance_rings: DistanceRings | None = None
         self.event_dispatcher: DetectionEventDispatcher | None = None
         self.floor_pipeline: FloorPipeline | None = None
         # Face presence identity; replaced by the composition root's
@@ -75,6 +77,7 @@ class FrameStage:
         *,
         detection_pipeline: DetectionPipeline,
         annotation_engine: AnnotationEngine,
+        distance_rings: DistanceRings | None = None,
         event_dispatcher: DetectionEventDispatcher,
         face_identity: FaceIdentity,
         floor_pipeline: FloorPipeline | None = None,
@@ -88,6 +91,7 @@ class FrameStage:
         """
         self.detection_pipeline = detection_pipeline
         self.annotation_engine = annotation_engine
+        self.distance_rings = distance_rings
         self.event_dispatcher = event_dispatcher
         self.face_identity = face_identity
         self.floor_pipeline = floor_pipeline
@@ -132,6 +136,10 @@ class FrameStage:
 
             # Convert to PIL for annotation (only one conversion needed)
             undistorted_image = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
+
+            # Ground distance rings first — detection overlays land on top
+            if self.distance_rings is not None:
+                self.distance_rings.draw(undistorted_image, head_angle_rad)
 
             # Detect cubes — pass BGR numpy directly (avoids re-conversion)
             cube_detections = self.detection_pipeline.detect_cubes(img_bgr, head_angle_rad)

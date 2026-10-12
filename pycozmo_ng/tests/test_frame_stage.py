@@ -345,6 +345,30 @@ def test_fps_updates_after_one_second():
     assert time.time() - h.fs.start_time < 1.0
 
 
+def test_distance_rings_drawn_on_the_frame_before_annotation():
+    """Rings land under the detection overlays — same image, earlier in the sequence."""
+    h = make_stage(distance_rings=Mock())
+    order = h.sink.order
+    h.stage.distance_rings.draw.side_effect = log_call(order, "rings")
+    h.annotation_engine.detect_and_annotate.side_effect = log_call(order, "annotate", make_image())
+
+    h.stage.on_camera_image(make_cli(), make_image())
+
+    assert order.index("rings") < order.index("annotate")
+    rings_image, head_angle = h.stage.distance_rings.draw.call_args.args
+    assert head_angle == 0.5  # the robot's head angle, same as detection
+    assert rings_image is h.annotation_engine.detect_and_annotate.call_args.args[0]
+
+
+def test_distance_rings_are_optional():
+    h = make_stage()
+    assert h.stage.distance_rings is None
+
+    h.stage.on_camera_image(make_cli(), make_image())  # no rings, no crash
+
+    assert len(h.sink.annotated) == 1
+
+
 def test_processing_error_is_logged_not_raised():
     h = make_stage()
     h.detection_pipeline.detect_cubes.side_effect = ValueError("boom")

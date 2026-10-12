@@ -14,6 +14,25 @@ from pycozmo_ng.vision.charger_detector.charger_detection import ChargerDetectio
 from pycozmo_ng.vision.cube_detector.detection_pipeline import CubeDetection
 from pycozmo_ng.vision.face_detector import FaceDetection
 
+#: Font cache shared by every drawing module (detections, distance rings),
+#: so font files are read once per size per process.
+_FONT_CACHE: dict[int, ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
+
+
+def load_font(size: int = 12) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Load a font with platform fallbacks (cached module-wide)."""
+    font = _FONT_CACHE.get(size)
+    if font is None:
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size)
+        except OSError:
+            try:
+                font = ImageFont.truetype("arial.ttf", size)
+            except OSError:
+                font = ImageFont.load_default()
+        _FONT_CACHE[size] = font
+    return font
+
 
 class AnnotationEngine:
     """Pure drawing functions for vision detections.
@@ -48,18 +67,9 @@ class AnnotationEngine:
 
     def _get_font(self, size: int = 12):
         """Load a font with fallbacks (cached)."""
-        if size in self._fonts:
-            return self._fonts[size]
-        font: ImageFont.FreeTypeFont | ImageFont.ImageFont
-        try:
-            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size)
-        except OSError:
-            try:
-                font = ImageFont.truetype("arial.ttf", size)
-            except OSError:
-                font = ImageFont.load_default()
-        self._fonts[size] = font
-        return font
+        if size not in self._fonts:
+            self._fonts[size] = load_font(size)
+        return self._fonts[size]
 
     def draw_detections(self, image: Image.Image, detections: list[CubeDetection]) -> None:
         """

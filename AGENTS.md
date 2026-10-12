@@ -82,6 +82,7 @@ pycozmo_ng/             # Main library (import name: pycozmo_ng)
 │   ├── frame_sink.py       # FrameSink — the display-side seam FrameStage publishes through
 │   ├── vision_setup.py     # VisionSetup — the one declaration of the vision options
 │   ├── annotation.py       # AnnotationEngine — drawing/detection overlays
+│   ├── distance_rings.py   # DistanceRings — ground range circles (250…1000 mm) in perspective
 │   ├── events.py           # DetectionEventDispatcher — cube/face events
 │   ├── camera.py           # Camera image decoding
 │   ├── image_encoder.py    # Image encoding utilities

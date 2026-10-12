@@ -27,6 +27,7 @@ from pycozmo_ng.vision.cube_detector.detection_pipeline import (
     DetectionPipeline,
     create_default_detection_pipeline,
 )
+from pycozmo_ng.vision.distance_rings import DistanceRings
 from pycozmo_ng.vision.events import DetectionEventDispatcher
 from pycozmo_ng.vision.face_identity import FaceIdentity
 from pycozmo_ng.vision.frame_stage import FrameStage
@@ -67,6 +68,7 @@ class Brain:
         # Vision components (composition root)
         self.detection_pipeline: DetectionPipeline | None = None
         self.annotation_engine: AnnotationEngine | None = None
+        self.distance_rings: DistanceRings | None = None
         self.event_dispatcher: DetectionEventDispatcher | None = None
         self.face_identity: FaceIdentity | None = None
         self.floor_pipeline: FloorPipeline | None = None
@@ -169,6 +171,15 @@ class Brain:
         # Annotation engine (pure drawing)
         self.annotation_engine = AnnotationEngine()
 
+        # Ground distance rings — assigned unconditionally so a re-setup
+        # with the option off cannot leave the previous session's rings.
+        self.distance_rings = None
+        if setup.enable_distance_rings and setup.distance_ring_radii_mm:
+            self.distance_rings = DistanceRings(
+                camera_calibration.camera_matrix,
+                radii_mm=setup.distance_ring_radii_mm,
+            )
+
         # Event dispatcher (cube/face events)
         self.event_dispatcher = DetectionEventDispatcher()
 
@@ -204,6 +215,7 @@ class Brain:
         self.frame_stage.configure(
             detection_pipeline=self.detection_pipeline,
             annotation_engine=self.annotation_engine,
+            distance_rings=self.distance_rings,
             event_dispatcher=self.event_dispatcher,
             face_identity=self.face_identity,
             floor_pipeline=self.floor_pipeline,

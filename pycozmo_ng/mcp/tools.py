@@ -478,8 +478,10 @@ class Toolset:
 
         Args:
             annotated: When true, return the annotated frame (detection boxes,
-                labels, confidence, distance drawn on the image) instead of the
-                raw camera frame.
+                labels, confidence, distance drawn on the image, plus ground
+                distance rings — concentric circles on the floor at 250/500/
+                750/1000 mm from the robot — for judging range by eye)
+                instead of the raw camera frame.
             max_width: Downscale the image so its width is at most this many
                 pixels (aspect ratio preserved). 0 = original resolution. Use
                 320 or 160 for smaller payloads.

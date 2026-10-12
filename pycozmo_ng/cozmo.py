@@ -35,6 +35,7 @@ from pycozmo_ng.logger import logger, setup_basic_logging
 from pycozmo_ng.navigation.world_map import CubeState, WorldMap
 from pycozmo_ng.protocol import protocol_encoder
 from pycozmo_ng.vision.cube_detector.detection_pipeline import DetectionPipeline
+from pycozmo_ng.vision.distance_rings import DistanceRings
 from pycozmo_ng.vision.vision_setup import VisionSetup
 from pycozmo_ng.web.viewer_server import WebViewerServer
 
@@ -76,6 +77,11 @@ class VisionAPI:
     def annotation(self):
         """Access the annotation engine for configuring display options."""
         return self._brain.annotation_engine
+
+    @property
+    def distance_rings(self) -> DistanceRings | None:
+        """The ground distance-ring overlay, or ``None`` when disabled."""
+        return self._brain.distance_rings
 
     @property
     def latest_frame(self):

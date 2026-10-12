@@ -18,7 +18,7 @@ __all__ = ["VisionSetup"]
 
 @dataclass
 class VisionSetup:
-    """Everything vision setup can configure (frame gating, floor, occupancy, faces)."""
+    """Everything vision setup can configure (frame gating, floor, occupancy, faces, overlays)."""
 
     #: CameraCalibration instance; None = retrieve it from the robot.
     camera_calibration: CameraCalibration | None = None
@@ -104,3 +104,11 @@ class VisionSetup:
     #: the identity — never a cube ID). Physical per-ID sizes come from the
     #: JSON config file (PYCOZMO_NG_ARUCO_CONFIG), not from here.
     enable_aruco_detection: bool = True
+
+    #: Draw ground distance rings (range circles) in perspective on the
+    #: annotated frame — the cue for a human viewer and for an LLM reading
+    #: get_frame(annotated=True).
+    enable_distance_rings: bool = True
+
+    #: Ring radii in mm, centred on the body-frame ground origin.
+    distance_ring_radii_mm: tuple[int, ...] = (250, 500, 750, 1000)
