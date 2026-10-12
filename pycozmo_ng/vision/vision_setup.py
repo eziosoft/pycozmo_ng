@@ -35,10 +35,11 @@ class VisionSetup:
     #: Build the bird's-eye floor projection.
     enable_floor_projection: bool = True
 
-    #: World-frame (x, y) centre of the floor grid in mm.
+    #: Body-frame (forward, left) centre of the floor grid in mm.
+    #: Moves with the robot — the floor camera is on the robot.
     floor_center_mm: tuple[float, float] = (200.0, 0.0)
 
-    #: (width, height) of the floor grid in mm.
+    #: (forward_extent, left_extent) of the floor grid in mm.
     floor_size_mm: tuple[float, float] = (600.0, 600.0)
 
     #: Millimetres per floor pixel.
@@ -110,5 +111,7 @@ class VisionSetup:
     #: get_frame(annotated=True).
     enable_distance_rings: bool = True
 
-    #: Ring radii in mm, centred on the body-frame ground origin.
-    distance_ring_radii_mm: tuple[int, ...] = (250, 500, 750, 1000)
+    #: Band radii in mm, centred on the body-frame ground origin.
+    #: Three geometric steps (250 / 500 / 1000) — enough range cues
+    #: without crowding a 320×240 frame.
+    distance_ring_radii_mm: tuple[int, ...] = (250, 500, 1000)

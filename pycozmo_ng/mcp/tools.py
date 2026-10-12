@@ -478,9 +478,9 @@ class Toolset:
 
         Args:
             annotated: When true, return the annotated frame (detection boxes,
-                labels, confidence, distance drawn on the image, plus ground
-                distance rings — concentric circles on the floor at 250/500/
-                750/1000 mm from the robot — for judging range by eye)
+                labels, confidence, distance drawn on the image, plus coloured
+                ground distance bands — green at 250 mm, yellow at 500 mm, red
+                at 1000 mm — for judging range by eye)
                 instead of the raw camera frame.
             max_width: Downscale the image so its width is at most this many
                 pixels (aspect ratio preserved). 0 = original resolution. Use
@@ -570,6 +570,15 @@ class Toolset:
         if arucos:
             aruco_desc = ", ".join(f"ArUco #{mid}" for mid in sorted(arucos.keys()))
             parts.append(f"ArUco marker(s): {aruco_desc}.")
+
+        # Ground distance bands (if enabled)
+        dr = self._cozmo.vision.distance_rings
+        if dr is not None and dr.radii_mm:
+            parts.append(
+                "Ground range bands visible — "
+                + ", ".join(f"{r:g} mm" for r in dr.radii_mm)
+                + " (coloured floor markers for judging distance by eye)"
+            )
 
         return " | ".join(parts)
 

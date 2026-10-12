@@ -1,4 +1,4 @@
-"""Tests for DistanceRings — the ground range-circle overlay.
+"""Tests for DistanceRings — the ground range-band overlay.
 
 The projection is asserted against the camera model worked by hand (K known,
 head level), and the drawing is asserted on pixels — no robot, no Brain.
@@ -8,7 +8,13 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from pycozmo_ng.vision.distance_rings import DEFAULT_RING_RADII_MM, DistanceRings
+from pycozmo_ng.vision.distance_rings import (
+    DEFAULT_BAND_HALF_WIDTH_MM,
+    DEFAULT_OUTLINE_WIDTH_PX,
+    DEFAULT_RING_COLORS,
+    DEFAULT_RING_RADII_MM,
+    DistanceRings,
+)
 
 WIDTH, HEIGHT = 320, 240
 FX = FY = 300.0
@@ -102,7 +108,7 @@ class TestDrawing:
         assert white_pixels(image) == 0
 
     def test_ring_behind_the_camera_draws_nothing(self):
-        """Every sample invalid (rings hug the camera's rear) — no stray chords."""
+        """Every sample invalid (bands hug the camera's rear) — no stray pixels."""
         rings = DistanceRings(K, radii_mm=(1,), samples=8)
         image = black_image()
 
@@ -110,14 +116,75 @@ class TestDrawing:
 
         assert white_pixels(image) == 0
 
-    def test_default_radii_are_the_250_mm_bands(self):
-        assert DEFAULT_RING_RADII_MM == (250, 500, 750, 1000)
-        assert make_rings().radii_mm == (250.0, 500.0, 750.0, 1000.0)
+    def test_default_radii_are_the_three_band_set(self):
+        assert DEFAULT_RING_RADII_MM == (250, 500, 1000)
+        assert make_rings().radii_mm == (250.0, 500.0, 1000.0)
+
+    def test_default_colors_are_distinct(self):
+        assert DEFAULT_RING_COLORS == ((0, 220, 0), (255, 220, 0), (255, 80, 0))
+
+    def test_band_width_and_outline_defaults(self):
+        assert DEFAULT_BAND_HALF_WIDTH_MM == 20.0
+        assert DEFAULT_OUTLINE_WIDTH_PX == 2
 
     def test_non_positive_radii_are_dropped(self):
         rings = DistanceRings(K, radii_mm=(0, -5, 250))
 
         assert rings.radii_mm == (250.0,)
+
+    def test_colored_bands_produce_distinct_colors(self):
+        """Green, yellow, and red pixels all appear in the rendered frame."""
+        rings = make_rings()
+        image = black_image()
+        rings.draw(image, head_angle_rad=0.0)
+
+        arr = np.asarray(image)
+        green = (arr[..., 0] < 60) & (arr[..., 1] > 180) & (arr[..., 2] < 60)
+        yellow = (arr[..., 0] > 200) & (arr[..., 1] > 150) & (arr[..., 2] < 60)
+        red = (arr[..., 0] > 200) & (arr[..., 1] < 120) & (arr[..., 2] < 60)
+
+        assert green.any(), "no green band (250 mm) pixels"
+        assert yellow.any(), "no yellow band (500 mm) pixels"
+        assert red.any(), "no red band (1000 mm) pixels"
+
+    def test_filled_bands_are_thicker_than_outline_only(self):
+        """With bands filled, the pixel count is far higher than a 1-px outline."""
+        img = black_image()
+        make_rings().draw(img, head_angle_rad=0.0)
+        band_count = white_pixels(img)
+
+        # A pure 1-px outline of 3 rings would be a few hundred pixels at most;
+        # filled bands cover many more.
+        assert band_count > 500, f"bands too sparse ({band_count} px) — not filled?"
+
+
+class TestContiguousRuns:
+    def test_no_valid_points_returns_empty(self):
+        from pycozmo_ng.vision.distance_rings import _contiguous_runs
+
+        assert _contiguous_runs(np.array([False, False, False])) == []
+
+    def test_full_run_returns_single_list(self):
+        from pycozmo_ng.vision.distance_rings import _contiguous_runs
+
+        runs = _contiguous_runs(np.array([True, True, True]))
+        assert runs == [[0, 1, 2]]
+
+    def test_wraparound_run_is_merged(self):
+        from pycozmo_ng.vision.distance_rings import _contiguous_runs
+
+        mask = np.array([True, True, False, False, True, True, True])
+        runs = _contiguous_runs(mask)
+        # First and last True edges merge into one wraparound run.
+        assert len(runs) == 1
+        assert runs[0] == [4, 5, 6, 0, 1]
+
+    def test_multiple_runs_split(self):
+        from pycozmo_ng.vision.distance_rings import _contiguous_runs
+
+        mask = np.array([False, True, True, False, True, True, False])
+        runs = _contiguous_runs(mask)
+        assert runs == [[1, 2], [4, 5]]
 
 
 class TestSegmentClip:
