@@ -32,7 +32,6 @@ from pycozmo_ng.vision.events import DetectionEventDispatcher
 from pycozmo_ng.vision.face_identity import FaceIdentity
 from pycozmo_ng.vision.frame_stage import FrameStage
 from pycozmo_ng.vision.frame_state import FrameState
-from pycozmo_ng.vision.motion_stereo import MotionStereo
 from pycozmo_ng.vision.occupancy_map.floor_pipeline import FloorPipeline
 from pycozmo_ng.vision.vision_setup import VisionSetup
 from pycozmo_ng.web.viewer_server import WebViewerServer
@@ -73,7 +72,6 @@ class Brain:
         self.event_dispatcher: DetectionEventDispatcher | None = None
         self.face_identity: FaceIdentity | None = None
         self.floor_pipeline: FloorPipeline | None = None
-        self.motion_stereo: MotionStereo | None = None
         self.camera_calibration = None  # Set by setup_vision()
 
         # Remote control (COZMO-25)
@@ -212,17 +210,6 @@ class Brain:
                 floor_edge_margin_px=setup.floor_edge_margin_px,
             )
 
-        # Motion stereo (optional) — 3-D point cloud from the robot's own
-        # motion, rendered in the browser.
-        self.motion_stereo = None
-        if setup.enable_motion_stereo:
-            self.motion_stereo = MotionStereo(
-                camera_calibration.camera_matrix,
-                min_baseline_mm=setup.motion_stereo_min_baseline_mm,
-                voxel_mm=setup.motion_stereo_voxel_mm,
-                max_points=setup.motion_stereo_max_points,
-            )
-
         # Hand every per-session vision component to the frame stage in
         # one call — it owns the whole camera-frame sequence from here.
         self.frame_stage.configure(
@@ -232,7 +219,6 @@ class Brain:
             event_dispatcher=self.event_dispatcher,
             face_identity=self.face_identity,
             floor_pipeline=self.floor_pipeline,
-            motion_stereo=self.motion_stereo,
             process_every_n_frames=setup.process_every_n_frames,
             undistort=setup.undistort,
             face_detect_every_n_frames=setup.face_detect_every_n_frames,
@@ -356,10 +342,6 @@ class Brain:
     def _on_picked_up(self, c, state):
         if state:
             self.world_map.reset_path()
-            # The world origin re-anchors on put-down — the point cloud's
-            # world-frame coordinates are invalid from here on.
-            if self.frame_stage.motion_stereo is not None:
-                self.frame_stage.motion_stereo.reset()
 
     # ------------------------------------------------------------------
     # Web streamer lifecycle

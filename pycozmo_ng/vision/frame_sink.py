@@ -47,10 +47,6 @@ class FrameSink(Protocol):
         """Set the floor grid dimensions and center (mm) for the browser overlay."""
         ...
 
-    def push_point_cloud(self, points) -> None:
-        """Publish a world-frame 3-D point cloud (mm) for the 3-D viewer."""
-        ...
-
     def broadcast(self) -> None:
         """Mark the world state changed so the next broadcast picks it up."""
         ...

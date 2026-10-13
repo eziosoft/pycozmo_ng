@@ -36,7 +36,6 @@ class RecordingFrameSink:
         self.faces: list = []
         self.occupancy: list = []
         self.grids: list = []
-        self.point_clouds: list = []
         self.broadcasts = 0
 
     def push_annotated_frame(self, image) -> None:
@@ -58,10 +57,6 @@ class RecordingFrameSink:
     def set_floor_grid(self, size_mm: tuple[float, float], center_mm: tuple[float, float]) -> None:
         self.order.append("grid")
         self.grids.append((size_mm, center_mm))
-
-    def push_point_cloud(self, points) -> None:
-        self.order.append("point_cloud")
-        self.point_clouds.append(points)
 
     def broadcast(self) -> None:
         self.order.append("broadcast")
@@ -426,57 +421,3 @@ def test_charger_detections_flow_to_events_and_world_map():
     args = h.world_map.update_charger_measurement.call_args.args
     assert np.allclose(args[1], np.eye(3))  # marker pose, not position-only (COZMO-67)
     assert args[3] == 0.5
-
-
-class TestMotionStereoWiring:
-    """The frame stage feeds each processed frame to MotionStereo."""
-
-    @staticmethod
-    def _make(motion_stereo):
-        h = make_stage(motion_stereo=motion_stereo)
-        h.world_map.get_robot_pose.return_value = (np.array([10.0, 20.0, 0.0]), 0.5)
-        return h
-
-    def test_update_called_with_frame_and_pose(self):
-        motion_stereo = Mock()
-        motion_stereo.update.return_value = False
-        h = self._make(motion_stereo)
-        h.world_map.get_robot_pose.return_value = (np.array([10.0, 20.0, 0.0]), 0.9)
-
-        h.stage.on_camera_image(make_cli(), make_image())
-
-        motion_stereo.update.assert_called_once()
-        args = motion_stereo.update.call_args[0]
-        # gray frame, head angle, world position, yaw
-        assert args[0].ndim == 2  # grayscale
-        assert args[1] == 0.5  # head angle from cli
-        np.testing.assert_array_equal(args[2], [10.0, 20.0, 0.0])
-        assert args[3] == 0.9  # yaw from world map
-
-    def test_cloud_pushed_only_when_changed(self):
-        motion_stereo = Mock()
-        motion_stereo.update.return_value = True
-        motion_stereo.get_points.return_value = np.array([[1.0, 2.0, 3.0]])
-        h = self._make(motion_stereo)
-
-        h.stage.on_camera_image(make_cli(), make_image())
-
-        assert len(h.sink.point_clouds) == 1
-        np.testing.assert_array_equal(h.sink.point_clouds[0], [[1.0, 2.0, 3.0]])
-
-    def test_no_push_when_unchanged(self):
-        motion_stereo = Mock()
-        motion_stereo.update.return_value = False
-        h = self._make(motion_stereo)
-
-        h.stage.on_camera_image(make_cli(), make_image())
-
-        assert h.sink.point_clouds == []
-        motion_stereo.get_points.assert_not_called()
-
-    def test_disabled_by_default(self):
-        h = make_stage()
-        h.world_map.get_robot_pose.return_value = (np.zeros(3), 0.0)
-        # No motion_stereo configured -> no crash, no push.
-        h.stage.on_camera_image(make_cli(), make_image())
-        assert h.sink.point_clouds == []

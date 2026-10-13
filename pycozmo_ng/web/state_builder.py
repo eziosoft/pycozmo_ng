@@ -26,12 +26,6 @@ PATH_SCENE_LIFT_MM: float = 3.0
 # browser can't visually tell the difference above this many points.
 MAX_PATH_POINTS_SENT: int = 800
 
-# Same reasoning for the motion-stereo point cloud: it is only serialized
-# when it changed (the server's decision), but a single cloud can still be
-# thousands of points, each a 3-number JSON entry. Stride-decimate above
-# this count before sending.
-MAX_POINT_CLOUD_SENT: int = 2000
-
 # Size of a cube in scene units (mm) — mirrors CUBE_SIZE in index.html.
 CUBE_SIZE_MM: float = 44.0
 
@@ -65,7 +59,6 @@ def build_state_json(
     occupancy: tuple[str, list[float]] | None = None,
     camera_settings: dict | None = None,
     face_png: str | None = None,
-    point_cloud: np.ndarray | None = None,
 ) -> str:
     """Serialize world-map state to JSON for the browser.
 
@@ -81,9 +74,6 @@ def build_state_json(
             [origin_x, origin_y])`` — or None when this message carries no
             grid. The change/send decision lives in that one call, not here.
         camera_settings: Current camera settings dict (or None).
-        point_cloud: Motion-stereo cloud as an (N, 3) world-frame array
-            (mm), or None when this message carries no cloud. World→scene
-            conversion and decimation happen here.
 
     Returns:
         JSON string for the browser.
@@ -221,17 +211,6 @@ def build_state_json(
         "floor_center": list(floor_center_mm),
         "timestamp": int((time.time() - start_time) * 1000),
     }
-
-    # Motion-stereo point cloud: world frame -> scene frame. Sent as a
-    # flat [x, y, z, ...] list of ints (mm) — round-tripping sub-mm
-    # precision would double the payload for no visible difference.
-    if point_cloud is not None and len(point_cloud) > 0:
-        cloud = np.asarray(point_cloud, dtype=np.float64)
-        if len(cloud) > MAX_POINT_CLOUD_SENT:
-            step = math.ceil(len(cloud) / MAX_POINT_CLOUD_SENT)
-            cloud = cloud[::step]
-        cloud_scene = [coords.world_to_scene_point(p) for p in cloud]
-        state["point_cloud"] = [round(v) for p in cloud_scene for v in p]
 
     if camera_settings is not None:
         state["camera_settings"] = dict(camera_settings)

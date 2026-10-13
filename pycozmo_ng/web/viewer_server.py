@@ -22,8 +22,6 @@ Usage:
 import asyncio
 import time
 
-import numpy as np
-
 from pycozmo_ng.camera.service import CameraService
 from pycozmo_ng.logger import logger
 from pycozmo_ng.navigation.world_map import WorldMap
@@ -91,13 +89,6 @@ class WebViewerServer:
 
         # Occupancy grid delivery (encode throttle + changed/send decision)
         self.occupancy = OccupancyDelivery()
-
-        # Motion-stereo point cloud (world frame, mm). Sent only when it
-        # changed since the last broadcast — triangulation is bursty and
-        # the payload is large relative to the rest of the state.
-        self._point_cloud: np.ndarray | None = None
-        self._point_cloud_version = 0
-        self._sent_cloud_version = -1
 
         # Procedural face (base64-encoded PNG for WebSocket)
         self._latest_face_png: str | None = None
@@ -169,16 +160,6 @@ class WebViewerServer:
         """Publish the occupancy grid image + world origin for the overlay."""
         self.occupancy.push(image, origin_x_mm, origin_y_mm)
 
-    def push_point_cloud(self, points) -> None:
-        """Publish the world-frame motion-stereo point cloud (mm).
-
-        Accepts an (N, 3) array-like; replaces any previous cloud. The
-        change rides the next broadcast (see ``_build_state_json``).
-        """
-        arr = np.asarray(points, dtype=np.float64)
-        self._point_cloud = arr.reshape(-1, 3) if arr.size else None
-        self._point_cloud_version += 1
-
     def set_floor_grid(self, size_mm: tuple[float, float], center_mm: tuple[float, float]) -> None:
         """Set the floor grid dimensions and center (mm) for the browser overlay."""
         self._floor_size_mm = size_mm
@@ -205,15 +186,7 @@ class WebViewerServer:
 
     # -- internal -----------------------------------------------------------
 
-    def _build_state_json(self, force_occupancy: bool = False, force_point_cloud: bool = False) -> str:
-        # The point cloud is only serialized when it changed (or a new
-        # client needs the full state) — it dwarfs the rest of the payload.
-        point_cloud = None
-        if self._point_cloud is not None and (
-            force_point_cloud or self._point_cloud_version != self._sent_cloud_version
-        ):
-            point_cloud = self._point_cloud
-            self._sent_cloud_version = self._point_cloud_version
+    def _build_state_json(self, force_occupancy: bool = False) -> str:
         return build_state_json(
             self.world_map,
             self._telemetry,
@@ -223,7 +196,6 @@ class WebViewerServer:
             self.occupancy.take(force=force_occupancy),
             camera_settings=self.camera.settings if self.camera is not None else None,
             face_png=self._latest_face_png,
-            point_cloud=point_cloud,
         )
 
     async def _broadcast_loop(self):
@@ -259,7 +231,7 @@ class WebViewerServer:
     async def _handler(self, websocket):
         self._clients.add(websocket)
         try:
-            await websocket.send(self._build_state_json(force_occupancy=True, force_point_cloud=True))
+            await websocket.send(self._build_state_json(force_occupancy=True))
             async for raw in websocket:
                 self.router.route(raw)
         finally:
