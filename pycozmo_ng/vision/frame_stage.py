@@ -31,6 +31,7 @@ from pycozmo_ng.vision.events import DetectionEventDispatcher
 from pycozmo_ng.vision.face_identity import FaceFrame, FaceIdentity
 from pycozmo_ng.vision.frame_sink import FrameSink
 from pycozmo_ng.vision.frame_state import FrameState
+from pycozmo_ng.vision.motion_stereo import MotionStereo
 from pycozmo_ng.vision.occupancy_map.floor_pipeline import FloorPipeline
 
 
@@ -61,6 +62,7 @@ class FrameStage:
         self.distance_rings: DistanceRings | None = None
         self.event_dispatcher: DetectionEventDispatcher | None = None
         self.floor_pipeline: FloorPipeline | None = None
+        self.motion_stereo: MotionStereo | None = None
         # Face presence identity; replaced by the composition root's
         # instance on configure() (fresh ID numbering per vision session).
         self.face_identity = FaceIdentity()
@@ -81,6 +83,7 @@ class FrameStage:
         event_dispatcher: DetectionEventDispatcher,
         face_identity: FaceIdentity,
         floor_pipeline: FloorPipeline | None = None,
+        motion_stereo: MotionStereo | None = None,
         process_every_n_frames: int = 1,
         undistort: bool = False,
         face_detect_every_n_frames: int = 1,
@@ -95,6 +98,7 @@ class FrameStage:
         self.event_dispatcher = event_dispatcher
         self.face_identity = face_identity
         self.floor_pipeline = floor_pipeline
+        self.motion_stereo = motion_stereo
         self.process_every_n_frames = process_every_n_frames
         self.undistort = undistort
         self.face_detect_every_n_frames = face_detect_every_n_frames
@@ -185,6 +189,11 @@ class FrameStage:
 
             # Set face expression based on detection
             self._update_face_expression(cli, face_detections, face_due)
+
+            # Motion stereo: track features across frames and triangulate
+            # into a world-frame point cloud (before the world-map feed so
+            # the fresh cloud rides the same broadcast).
+            self._update_motion_stereo(img_bgr, head_angle_rad)
 
             # Feed measurements into the world map, then wake the browser
             self._feed_world_map(cli, face_detections, face_frame, charger_detections, aruco_detections)
@@ -315,6 +324,17 @@ class FrameStage:
                 self.sink.push_face_image(face_im)
 
         self.sink.broadcast()
+
+    def _update_motion_stereo(self, img_bgr, head_angle_rad: float) -> None:
+        """Track features across frames and triangulate a world point cloud."""
+        if self.motion_stereo is None or self.world_map is None:
+            return
+
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        robot_position, robot_yaw = self.world_map.get_robot_pose()
+        changed = self.motion_stereo.update(gray, head_angle_rad, robot_position, robot_yaw)
+        if changed:
+            self.sink.push_point_cloud(self.motion_stereo.get_points())
 
     def _process_floor(self, cli, img_bgr, head_angle_rad: float) -> None:
         """Project the floor, dispatch the event, publish image + occupancy."""

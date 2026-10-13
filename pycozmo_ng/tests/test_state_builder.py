@@ -340,3 +340,44 @@ class TestCarriedCube:
     def test_no_telemetry_at_all(self):
         state = self._build({})
         assert all(c["carried"] is False for c in state["cubes"])
+
+
+class TestPointCloudInState:
+    """The motion-stereo cloud serializes to a flat int list in scene frame."""
+
+    @staticmethod
+    def _build(point_cloud=None) -> dict:
+        wm = _make_world_map()
+        result = build_state_json(
+            wm,
+            {},
+            (600.0, 600.0),
+            (200.0, 0.0),
+            time.time(),
+            point_cloud=point_cloud,
+        )
+        return json.loads(result)
+
+    def test_excluded_when_none(self):
+        assert "point_cloud" not in self._build()
+
+    def test_excluded_when_empty(self):
+        assert "point_cloud" not in self._build(np.zeros((0, 3)))
+
+    def test_world_to_scene_conversion(self):
+        # World (x, y, z) -> scene (y, z, x); sent as a flat int list.
+        state = self._build(np.array([[100.0, 200.0, 50.0]]))
+        assert state["point_cloud"] == [200, 50, 100]
+
+    def test_rounded_to_ints(self):
+        state = self._build(np.array([[100.4, 200.6, 49.5]]))
+        assert all(isinstance(v, int) for v in state["point_cloud"])
+
+    def test_multiple_points_flat(self):
+        state = self._build(np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]]))
+        assert state["point_cloud"] == [0, 0, 0, 2, 3, 1]
+
+    def test_decimation_caps_payload(self):
+        cloud = np.random.default_rng(0).uniform(-1000, 1000, (6000, 3))
+        state = self._build(cloud)
+        assert len(state["point_cloud"]) // 3 <= 2001  # MAX_POINT_CLOUD_SENT + 1

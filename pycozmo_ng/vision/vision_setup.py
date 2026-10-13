@@ -116,3 +116,17 @@ class VisionSetup:
     #: 250 → 500 mm (lighter tint of the same hue).  Alpha-blended with
     #: the original frame — the floor stays visible underneath.
     distance_ring_radii_mm: tuple[int, ...] = (250, 500)
+
+    #: Motion stereo: track image features across frames and triangulate
+    #: them with the robot's own motion as the baseline, accumulating a
+    #: world-frame point cloud rendered as THREE.Points in the 3-D viewer.
+    enable_motion_stereo: bool = True
+
+    #: Camera translation (mm) required before tracked features are
+    #: triangulated — smaller baselines give unusable depth noise.
+    motion_stereo_min_baseline_mm: float = 40.0
+
+    #: Voxel edge (mm) of the cloud dedup grid (one point per voxel) and
+    #: the cap on cloud size (oldest voxels evicted first).
+    motion_stereo_voxel_mm: float = 25.0
+    motion_stereo_max_points: int = 2500

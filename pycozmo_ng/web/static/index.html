@@ -136,6 +136,10 @@
           <span class="tel-label">Path</span>
           <span class="tel-value" id="tel-path">0 pts</span>
         </div>
+        <div class="tel-row">
+          <span class="tel-label">3D Cloud</span>
+          <span class="tel-value" id="tel-cloud">0 pts</span>
+        </div>
       </div>
 
       <div id="tts-panel">
@@ -773,6 +777,42 @@
       }
       astarGeometry.attributes.position.needsUpdate = true;
       astarGeometry.setDrawRange(0, astarPointCount);
+    }
+
+    // -----------------------------------------------------------------------
+    // Motion-stereo point cloud (world-frame points triangulated from the
+    // robot's own motion). Arrives as a flat [x, y, z, ...] int list in
+    // scene frame; only present on the messages where it changed.
+    // -----------------------------------------------------------------------
+    const CLOUD_MAX_POINTS = 4000;
+    const cloudPositions = new Float32Array(CLOUD_MAX_POINTS * 3);
+    const cloudGeometry = new THREE.BufferGeometry();
+    cloudGeometry.setAttribute('position', new THREE.BufferAttribute(cloudPositions, 3));
+    cloudGeometry.setDrawRange(0, 0);
+
+    const cloudMaterial = new THREE.PointsMaterial({
+      color: 0x22d3ee,
+      size: 4,
+      sizeAttenuation: false,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+    const pointCloud = new THREE.Points(cloudGeometry, cloudMaterial);
+    pointCloud.renderOrder = 6;  // above path/nav lines
+    scene.add(pointCloud);
+    let cloudPointCount = 0;
+
+    function applyPointCloud(flat) {
+      cloudPointCount = Math.min(Math.floor(flat.length / 3), CLOUD_MAX_POINTS);
+      for (let i = 0; i < cloudPointCount; i++) {
+        cloudPositions[i * 3]     = flat[i * 3];
+        cloudPositions[i * 3 + 1] = flat[i * 3 + 1];
+        cloudPositions[i * 3 + 2] = flat[i * 3 + 2];
+      }
+      cloudGeometry.attributes.position.needsUpdate = true;
+      cloudGeometry.setDrawRange(0, cloudPointCount);
+      document.getElementById('tel-cloud').textContent = `${cloudPointCount} pts`;
     }
 
     // -----------------------------------------------------------------------
@@ -1428,6 +1468,11 @@ function sendTestMode(enabled) {
       // A* planned path
       if (state.astar_path) {
         applyAstarPath(state.astar_path);
+      }
+
+      // Motion-stereo point cloud (only present when it changed)
+      if (state.point_cloud) {
+        applyPointCloud(state.point_cloud);
       }
 
       // Robot pose
