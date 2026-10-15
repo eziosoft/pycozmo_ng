@@ -131,6 +131,19 @@ class CubeManager:
                 pkt.object_id,
             )
 
+    @staticmethod
+    def _send(cli, packet) -> None:
+        """Send through a Client *or* a Connection — accept either.
+
+        Packet handlers are called with the **Connection** (the Client is a
+        child dispatcher of it, ``conn.add_child_dispatcher(client)``), while
+        the public API passes the **Client**. ``cli.conn`` exists only on the
+        Client, so preferring it when present keeps both working instead of
+        raising ``AttributeError`` on whichever one was not expected.
+        """
+        conn = getattr(cli, "conn", None)
+        (conn if conn is not None else cli).send(packet)
+
     def _stream_object_accel(self, cli, object_id: int, enable: bool) -> None:
         """Turn accelerometer streaming on/off for one connected cube.
 
@@ -139,9 +152,11 @@ class CubeManager:
         without this, "the cube was moved, forget its pose" never fires.
         """
         try:
-            cli.conn.send(pycozmo_ng.protocol_encoder.StreamObjectAccel(object_id=object_id, enable=enable))
+            self._send(cli, pycozmo_ng.protocol_encoder.StreamObjectAccel(object_id=object_id, enable=enable))
         except Exception:  # noqa: BLE001
-            logger_cubes.debug(
+            # A warning, not debug: without the stream the moved-cube reset
+            # silently never happens.
+            logger_cubes.warning(
                 "StreamObjectAccel(enable=%s) failed for object %s",
                 enable,
                 object_id,
@@ -156,7 +171,7 @@ class CubeManager:
         back to dim blue once the camera finds it in its new place. The
         forgetting itself is the registered ``set_moved_handler`` callback.
         """
-        cube_id = self._cube_id_for_object_id(cli, pkt.object_id)
+        cube_id = self._cube_id_for_object_id(pkt.object_id)
         if cube_id is None:
             logger_cubes.debug("ObjectMoved for unknown object_id=%s", pkt.object_id)
             return
@@ -187,12 +202,19 @@ class CubeManager:
         with self._lock:
             return dict(self.ct.object_id_map)
 
-    def _cube_id_for_object_id(self, cli, object_id: int) -> int | None:
-        """Reverse lookup: temporary object_id -> detected cube_id (1..3)."""
-        info = cli.connected_objects.get(object_id)
-        if info is None:
-            return None
-        return self._cube_id_for_factory(info.get("factory_id"))
+    def _cube_id_for_object_id(self, object_id: int) -> int | None:
+        """Reverse lookup: temporary object_id -> detected cube_id (1..3).
+
+        Uses this manager's own map, which is filled in from
+        ``ObjectConnectionState`` (and by the explicit connect paths) — not
+        ``Client.connected_objects``, because packet handlers are called with
+        the *Connection*, which has no such attribute.
+        """
+        with self._lock:
+            for cube_id, oid in self.ct.object_id_map.items():
+                if oid == object_id:
+                    return cube_id
+        return None
 
     # ------------------------------------------------------------------
     # Cube discovery
@@ -278,7 +300,7 @@ class CubeManager:
 
         for cube_id, factory_id in sorted(factory_map.items()):
             slot = self._slot_for_cube_id(cube_id)
-            cli.conn.send(pycozmo_ng.protocol_encoder.SetPropSlot(factory_id=factory_id, slot=slot))
+            self._send(cli, pycozmo_ng.protocol_encoder.SetPropSlot(factory_id=factory_id, slot=slot))
             logger_cubes.debug("SetPropSlot sent (factory_id=0x%08x, slot=%d)", factory_id, slot)
 
         all_factory_ids = list(factory_map.values())
@@ -298,7 +320,7 @@ class CubeManager:
             with self._lock:
                 self.ct.object_id_map[cube_id] = object_id
             # Select this cube so subsequent CubeLights apply to it.
-            cli.conn.send(pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
+            self._send(cli, pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
             logger_cubes.info(
                 "Cube %d connected: object_id=%d (factory_id=0x%08x)",
                 cube_id,
@@ -315,7 +337,7 @@ class CubeManager:
         """
         self.set_cube_lights(cli, off_light)
         for slot in range(self._SLOT_COUNT):
-            cli.conn.send(pycozmo_ng.protocol_encoder.SetPropSlot(factory_id=0, slot=slot))
+            self._send(cli, pycozmo_ng.protocol_encoder.SetPropSlot(factory_id=0, slot=slot))
         with self._lock:
             self.ct.object_id_map.clear()
         logger_cubes.info("All cubes disconnected")
@@ -348,8 +370,8 @@ class CubeManager:
             if object_id is None:
                 continue
             try:
-                cli.conn.send(pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
-                cli.conn.send(pycozmo_ng.protocol_encoder.CubeLights(states=tuple(states)))
+                self._send(cli, pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
+                self._send(cli, pycozmo_ng.protocol_encoder.CubeLights(states=tuple(states)))
             except Exception:  # noqa: BLE001
                 logger_cubes.debug("CubeLights failed for cube %s", cube_id, exc_info=True)
 
@@ -427,7 +449,7 @@ class CubeManager:
             return None
         slot = self._slot_for_cube_id(cube_id)
         try:
-            cli.conn.send(pycozmo_ng.protocol_encoder.SetPropSlot(factory_id=factory_id, slot=slot))
+            self._send(cli, pycozmo_ng.protocol_encoder.SetPropSlot(factory_id=factory_id, slot=slot))
             confirmations = cli.wait_for_factory_ids([factory_id], connect=True, timeout=3.0)
             if factory_id in confirmations:
                 return confirmations[factory_id]
@@ -445,7 +467,7 @@ class CubeManager:
         light = self._light
         for cube_id, object_id in cubes.items():
             try:
-                cli.conn.send(pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
-                cli.conn.send(pycozmo_ng.protocol_encoder.CubeLights(states=(light, light, light, light)))
+                self._send(cli, pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
+                self._send(cli, pycozmo_ng.protocol_encoder.CubeLights(states=(light, light, light, light)))
             except Exception:  # noqa: BLE001
                 logger_cubes.debug("CubeLights refresh failed for cube %s", cube_id, exc_info=True)

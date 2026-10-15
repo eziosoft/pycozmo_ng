@@ -33,7 +33,12 @@ FACTORY_ID = 0xB3660B44
 
 
 class FakeConn:
-    """Records what the manager sends; stands in for the transport connection."""
+    """Records what the manager sends; stands in for the transport connection.
+
+    Note the shape: the real ``Connection`` is what packet handlers receive as
+    ``cli``, and it has ``send`` but no ``conn`` — the Client is the other way
+    round. Both are exercised below.
+    """
 
     def __init__(self) -> None:
         self.sent: list = []
@@ -42,20 +47,19 @@ class FakeConn:
         self.sent.append(packet)
 
 
-class FakeCli:
-    """Just enough Client: the connection state the manager reads, and a conn."""
+class FakeClient:
+    """Just enough Client: a connection to send through."""
 
-    def __init__(self, connected=None) -> None:
-        self.connected_objects = dict(connected or {})
+    def __init__(self) -> None:
         self.conn = FakeConn()
 
 
 def _manager(factory_map=None, connected=None):
-    """A CubeManager with the given factory map and robot-reported objects."""
+    """A CubeManager with the given factory map and connected object ids."""
     tracking = CubeTrackingState()
     tracking.cube_factory_id_map.update(factory_map or {2: FACTORY_ID})
-    manager = CubeManager(tracking)
-    return manager, FakeCli(connected or {7: {"factory_id": FACTORY_ID, "object_type": 1}})
+    tracking.object_id_map.update(connected if connected is not None else {2: 7})
+    return CubeManager(tracking), FakeClient()
 
 
 def _moved(object_id: int) -> ObjectMoved:
@@ -134,13 +138,7 @@ class TestOnObjectMoved:
         assert moved == [2]
 
     def test_only_the_moved_cube_is_reported(self) -> None:
-        manager, cli = _manager(
-            factory_map={1: 0x3B3958B8, 2: FACTORY_ID},
-            connected={
-                5: {"factory_id": 0x3B3958B8, "object_type": 1},
-                6: {"factory_id": FACTORY_ID, "object_type": 2},
-            },
-        )
+        manager, cli = _manager(connected={1: 5, 2: 6})
         moved: list[int] = []
         manager.set_moved_handler(moved.append)
 
@@ -149,7 +147,7 @@ class TestOnObjectMoved:
         assert moved == [2]
 
     def test_unknown_object_is_ignored(self) -> None:
-        manager, cli = _manager()
+        manager, cli = _manager(connected={})
         moved: list[int] = []
         manager.set_moved_handler(moved.append)
 
@@ -171,6 +169,21 @@ class TestOnObjectMoved:
         manager.on_object_moved(cli, _moved(7))
 
         assert moved == []
+
+    def test_works_when_called_with_a_bare_connection(self) -> None:
+        """Packet handlers get the Connection, not the Client (a live bug).
+
+        The handler must not read ``cli``'s attributes: it resolves the cube
+        from the manager's own map, so being handed the transport object
+        instead of the Client changes nothing.
+        """
+        manager, _ = _manager()
+        moved: list[int] = []
+        manager.set_moved_handler(moved.append)
+
+        manager.on_object_moved(FakeConn(), _moved(7))
+
+        assert moved == [2]
 
 
 class TestAccelStreaming:
@@ -198,6 +211,15 @@ class TestAccelStreaming:
 
         assert manager.connected_cubes == {2: 7}
 
+    def test_accel_stream_also_sends_through_a_bare_connection(self) -> None:
+        """Packet handlers get the Connection; it must send just as well."""
+        manager, _ = _manager(connected={})
+        conn = FakeConn()
+
+        self._connect(manager, conn)
+
+        assert [p for p in conn.sent if isinstance(p, StreamObjectAccel)]
+
     def test_disconnect_all_cubes_darkens_before_releasing_slots(self) -> None:
         """A cube put away must not be left glowing — it keeps its last state."""
         manager, cli = _manager()
@@ -224,13 +246,13 @@ class TestBrainWiring:
     def test_moved_cube_loses_its_pose_end_to_end(self) -> None:
         cozmo = Cozmo()
         brain = cozmo._brain
-        tracking = brain.cube_tracking
-        tracking.cube_factory_id_map[2] = FACTORY_ID
+        brain.cube_tracking.cube_factory_id_map[2] = FACTORY_ID
+        brain.cube_tracking.object_id_map[2] = 7
         brain.world_map.update_cube_measurement(to_world_index(2), np.array([0.0, 0.0, 200.0]), np.eye(3), 0.9, 0.0)
         assert cozmo.world_map.get_cube(2) is not None
 
-        cli = FakeCli({7: {"factory_id": FACTORY_ID, "object_type": 1}})
-        brain.cubes.on_object_moved(cli, _moved(7))
+        # Handed the transport connection, exactly as the dispatcher does.
+        brain.cubes.on_object_moved(FakeConn(), _moved(7))
 
         assert cozmo.world_map.get_cube(2) is None
 
@@ -239,8 +261,8 @@ class TestBrainWiring:
         cozmo = Cozmo()
         brain = cozmo._brain
         brain.cube_tracking.cube_factory_id_map[2] = FACTORY_ID
+        brain.cube_tracking.object_id_map[2] = 7
 
-        cli = FakeCli({7: {"factory_id": FACTORY_ID, "object_type": 1}})
-        brain.cubes.on_object_moved(cli, _moved(7))
+        brain.cubes.on_object_moved(FakeConn(), _moved(7))
 
         assert cozmo.world_map.get_cube(2) is None
