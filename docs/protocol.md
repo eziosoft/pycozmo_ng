@@ -27,7 +27,8 @@ The Cozmo protocol is a UDP-based variant of the
 The engine acts as a client and the robot acts as a server. The two exchange **frames**,
 encapsulated in UDP packets. Each frame can contain 0, 1, or more **packets**.
 
-See `protocol_declaration.py` for per-packet field declarations.
+Every message and its payload fields are listed in the two message tables below: one for
+each direction, with the fields in order.
 
 
 Network setup
