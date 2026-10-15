@@ -107,8 +107,9 @@ cozmo = Cozmo()
 with cozmo.connect():
     cozmo.web_viewer.start()                   # → http://<machine-ip>:8765
     cozmo.vision.start(floor_size_mm=(600.0, 600.0))
-    cozmo.start_cube_lights()                  # BLE keepalive for the light cubes
-    cozmo.discover_cubes()
+    cozmo.discover_cubes()                     # find the light cubes
+    cozmo.start_cube_lights()                  # BLE keepalive: connect and keep connected
+    cozmo.start_cube_indicator()                # cube LEDs show what the robot is doing
     cozmo.enable_remote_control()              # keyboard/click control from the browser
     cozmo.set_origin()                         # world origin = current pose
     cozmo.say("Hello, I am Cozmo")
@@ -124,7 +125,7 @@ with cozmo.connect():
 | ------------------ | ------------------------------------------------------------------------ |
 | `cozmo.vision`     | Start/stop the pipeline, latest frame and detections                     |
 | `cozmo.navigator`  | `drive_to`, `approach_cube`, `stack_cube`, `dock`, `dock_on_aruco`, `stop` |
-| `cozmo.cubes`      | Cube discovery and BLE keepalive lights                                  |
+| `cozmo.cubes`      | Cube discovery, BLE keepalive lights, `start_cube_indicator`             |
 | `cozmo.carry`      | `is_carrying`, `cube_id` — is a cube riding the forks?                   |
 | `cozmo.world_map`  | Fused robot/cube poses and the path trail (world frame, mm)              |
 | `cozmo.sensors`    | Battery voltage, IMU, cliff sensor, wheel speeds, head/lift angles       |

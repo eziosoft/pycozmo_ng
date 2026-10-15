@@ -35,14 +35,32 @@ class CubeVisit:
     def __init__(self, spawn: Spawn):
         self._spawn = spawn
         self._lock = threading.Lock()
+        self._active_cube_id: int | None = None
 
     @property
     def busy(self) -> bool:
         """True while a cube visit is in flight."""
         return self._lock.locked()
 
-    def begin(self, job_name: str, run: Callable[[MotionToken], None]) -> bool:
+    @property
+    def active_cube_id(self) -> int | None:
+        """The cube ID (1-3) the in-flight visit works on, or ``None``.
+
+        Set by :meth:`begin` for as long as the visit runs. This is how an
+        observer tells *which* cube is being grabbed or stacked — the cube
+        indicator turns it red.
+        """
+        return self._active_cube_id
+
+    def begin(self, job_name: str, run: Callable[[MotionToken], None], cube_id: int | None = None) -> bool:
         """Start ``run`` as motion job ``job_name`` for one cube visit.
+
+        Args:
+            job_name: Motion job name (``approach`` / ``stack``).
+            run: The visit body.
+            cube_id: Public cube ID (1-3) this visit works on, so observers
+                can tell which cube is being approached. Optional — a visit
+                that names no cube is simply not announced.
 
         Returns True when the visit started. Returns False when another
         cube visit is in flight — the request is ignored, never queued
@@ -60,11 +78,14 @@ class CubeVisit:
             try:
                 run(job)
             finally:
+                self._active_cube_id = None
                 self._lock.release()
 
         try:
+            self._active_cube_id = cube_id
             self._spawn(job_name, _guarded)
         except Exception:
+            self._active_cube_id = None
             self._lock.release()
             raise
         return True

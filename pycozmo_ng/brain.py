@@ -13,7 +13,8 @@ from pycozmo_ng import event
 from pycozmo_ng.camera.service import CameraService
 from pycozmo_ng.cubes.carry_state import CarryDetector
 from pycozmo_ng.cubes.cube_tracking_state import CubeTrackingState
-from pycozmo_ng.cubes.light_show import CubeLightShow
+from pycozmo_ng.cubes.identity import to_world_index
+from pycozmo_ng.cubes.indicator import CubeIndicator
 from pycozmo_ng.cubes.manager import CubeManager
 from pycozmo_ng.logger import logger, logger_cubes
 from pycozmo_ng.navigation.astar import AStarPlanner
@@ -102,7 +103,17 @@ class Brain:
             carry=self.carry,
         )
         self.cubes = CubeManager(self.cube_tracking)
-        self.cube_light_show = CubeLightShow(self.cubes)
+        # Steady-state cube LEDs: dark while idle (battery), two blinks on
+        # connect, dim blue when the camera sees a cube, red while a grab or
+        # stack is working on one. Reads state the collaborators already hold.
+        self.cube_indicator = CubeIndicator(
+            self.cubes,
+            world_map=self.world_map,
+            visit=self.navigator.cube_visit,
+        )
+        # A cube whose accelerometer reports motion is no longer where the
+        # world map last saw it — drop the stale pose.
+        self.cubes.set_moved_handler(self._on_cube_moved)
 
         # Wire cross-domain references
         self.navigator.cli = self.cli
@@ -242,6 +253,10 @@ class Brain:
             protocol_encoder.ObjectConnectionState,
             self.cubes.on_object_connection_state,
         )
+        self.cli.add_handler(
+            protocol_encoder.ObjectMoved,
+            self.cubes.on_object_moved,
+        )
         self.cli.add_handler(event.EvtRobotStateUpdated, self._on_robot_state)
         self.cli.add_handler(event.EvtRobotPickedUpChange, self._on_picked_up)
 
@@ -298,6 +313,23 @@ class Brain:
         if self._remote_control is not None:
             self._remote_control.stop()
             self._remote_control = None
+
+    # ------------------------------------------------------------------
+    # Cube motion handler (moved cube -> position unknown)
+    # ------------------------------------------------------------------
+
+    def _on_cube_moved(self, cube_id: int) -> None:
+        """A cube's accelerometer saw motion: its world pose is now unknown.
+
+        Registered on ``CubeManager.set_moved_handler``. The cube keeps its
+        identity and its connection — only the fused position is dropped, and
+        the next camera measurement starts a fresh pose from where the cube
+        actually is now.
+        """
+        if self.world_map.forget_cube(to_world_index(cube_id)):
+            logger_cubes.info("Cube %d moved - position reset to unknown", cube_id)
+        else:
+            logger_cubes.debug("Cube %d moved - no stored position to reset", cube_id)
 
     # ------------------------------------------------------------------
     # Robot state handler (trail + telemetry)

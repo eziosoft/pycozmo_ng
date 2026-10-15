@@ -19,7 +19,6 @@ from dotenv import load_dotenv
 
 import pycozmo_ng
 from pycozmo_ng import Cozmo
-from pycozmo_ng.cubes import PATTERN_NAMES
 from pycozmo_ng.logger import logger_cubes, setup_basic_logging
 from pycozmo_ng.transport.conn import ROBOT_ADDR
 from pycozmo_ng.wifi import connect_to_cozmo_wifi, get_local_ip
@@ -27,7 +26,7 @@ from pycozmo_ng.wifi import connect_to_cozmo_wifi, get_local_ip
 logger = logging.getLogger("pycozmo_ng.demo")
 
 # Number of startup phases reported by _step().
-TOTAL_STEPS = 13
+TOTAL_STEPS = 12
 
 VIEWER_PORT = 8765
 
@@ -73,23 +72,10 @@ def main():
         "--no-cube-lights",
         action="store_true",
         help=(
-            "Disable the cube keepalive worker (no reconnection / "
-            "CubeLights refresh). Cubes will disconnect after the robot's "
-            "idle timeout and not be reconnected."
+            "Disable the cube worker (no discovery, connection, or "
+            "indicator). Cubes will disconnect after the robot's idle "
+            "timeout and not be reconnected."
         ),
-    )
-    parser.add_argument(
-        "--cube-show",
-        choices=PATTERN_NAMES,
-        default="rainbow",
-        help="Cube light show pattern (default: rainbow).",
-    )
-    parser.add_argument(
-        "--cube-show-interval",
-        type=float,
-        default=0.25,
-        metavar="S",
-        help="Seconds between cube light show frames (default: 0.25).",
     )
     parser.add_argument(
         "--floor-size",
@@ -189,11 +175,14 @@ def main():
             if not args.no_cube_lights:
                 _step(
                     6,
-                    "Cube keepalive worker: connecting every cube (one prop slot each) and keeping them connected...",
+                    "Discovering cubes, starting the keepalive worker (one prop slot each) "
+                    "and the cube indicator (blink on connect, dim blue when seen, red when going for one)...",
                 )
+                cozmo.discover_cubes()
                 cozmo.start_cube_lights()
+                cozmo.start_cube_indicator()
             else:
-                _step(6, "Skipping cube connection and light show (--no-cube-lights)")
+                _step(6, "Skipping cube discovery, connection and indicator (--no-cube-lights)")
                 logger.warning("Cubes will disconnect after the robot's idle timeout and will not be reconnected.")
 
             _step(7, "Enabling camera (grayscale, 30 ms exposure)...")
@@ -203,31 +192,21 @@ def main():
             cozmo.calibrate_robot_center(timeout_s=30.0)
             time.sleep(1.0)
 
-            _step(
-                9,
-                "Discovering cubes, building cube-ID mapping, and starting the %s light show (%.2f s/frame)...",
-                args.cube_show,
-                args.cube_show_interval,
-            )
-            cozmo.discover_cubes()
-            if not args.no_cube_lights:
-                cozmo.start_cube_show(args.cube_show, args.cube_show_interval)
-
-            _step(10, "Enabling browser keyboard remote control...")
+            _step(9, "Enabling browser keyboard remote control...")
             cozmo.enable_remote_control()
 
-            _step(11, 'Cozmo greets: "Hello, I am Cozmo"')
+            _step(10, 'Cozmo greets: "Hello, I am Cozmo"')
             cozmo.say("Hello, I am Cozmo")
 
-            _step(12, "Setting localization origin at the current robot pose...")
+            _step(11, "Setting localization origin at the current robot pose...")
             cozmo.set_origin()
 
             if args.mcp is not None:
-                _step(13, "Starting MCP endpoint (streamable HTTP, port %d)...", args.mcp)
+                _step(12, "Starting MCP endpoint (streamable HTTP, port %d)...", args.mcp)
                 cozmo.mcp.start(port=args.mcp)
                 logger.info("MCP endpoint for LLM clients: http://%s:%d/mcp", get_local_ip(), args.mcp)
             else:
-                _step(13, "Skipping MCP endpoint (--mcp not given)")
+                _step(12, "Skipping MCP endpoint (--mcp not given)")
 
             logger.info("READY - startup took %.1f s", time.monotonic() - t_start)
             logger.info(

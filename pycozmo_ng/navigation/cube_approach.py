@@ -293,6 +293,7 @@ class CubeApproach:
         started = self.visit.begin(
             self.JOB_APPROACH,
             lambda job: self._run(job, cube_idx, cube_x, cube_y),
+            cube_id=to_cube_id(cube_idx),
         )
         if not started:
             logger.warning("Approach busy - ignoring request for cube %d", to_cube_id(cube_idx))

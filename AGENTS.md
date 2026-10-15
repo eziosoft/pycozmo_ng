@@ -107,7 +107,7 @@ pycozmo_ng/             # Main library (import name: pycozmo_ng)
 │   │                        # Two-step standoff approach, stack the carried cube, one-cube visit lock
 │   ├── motion_controller.py, motion_token.py   # Running motion jobs + per-job cancellation handle
 │   └── remote_control.py   # RemoteControl — browser keyboard driving
-├── cubes/              # BLE: manager (mapping/connection + keepalive), carry_state, identity (ID↔index ±1)
+├── cubes/              # BLE: manager (mapping/connection + keepalive), indicator (LED state), carry_state, identity (ID↔index ±1)
 ├── web/                # WebViewerServer — WS + HTTP, MJPEG streams, MsgRouter, state_builder
 │   └── static/          # Three.js viewer: index.html (JS is inline), style.css
 ├── animation/          # AnimController + cozmo_anim.fbs schema
@@ -130,6 +130,8 @@ pycozmo_ng/             # Main library (import name: pycozmo_ng)
 **Camera calibration.** Cozmo's stored distortion coefficients are unreliable → zero distortion by default; undistortion is off by default (it can warp). Calibration is retrieved from robot NVRAM (`vision/calibration/camera_calibration.py`).
 
 **Cubes.** Three light cubes, IDs 1–3 (`cubes/identity.py` owns the only ID↔index ±1). Marker templates: `vision/cube_detector/cube_faces/` (6 faces × 3 cubes). `CubeFusionTracker` fuses per-frame face detections into coherent 3D poses; head-tilt compensation is required for accuracy. `DetectionPipeline` returns camera-frame measurements — `WorldMap` does the world-frame fusion.
+
+**Cube LEDs.** `cubes/indicator.py` owns them while it runs: two blinks on connect, dim blue while the camera sees the cube, red while a cube visit (`CubeVisit.active_cube_id`) is working on it, dark otherwise — a cube that is merely connected costs no battery, and only changes are sent. The keepalive's own repaint is paused for the duration. Cubes report accelerometer motion (`ObjectMoved`, 0xB4 — the manager enables `StreamObjectAccel` on connect); Brain wires that to `WorldMap.forget_cube`, so a moved cube reads as position-unknown until it is seen again.
 
 **Faces.** Haar cascade (`FaceDetector`); on detection the procedural face switches to `Happiness`. `face_detect_every_n_frames` (in `VisionSetup`, default 1 = every frame) trades CPU for latency.
 

@@ -10,6 +10,8 @@ __all__ = [
     "Color",
     "blue",
     "blue_light",
+    "dim_blue",
+    "dim_blue_light",
     "green",
     "green_light",
     "off",
@@ -89,6 +91,8 @@ green = Color(name="green", int_color=0x00FF00FF)
 red = Color(name="red", int_color=0xFF0000FF)
 #: BLue color.
 blue = Color(name="blue", int_color=0x0000FFFF)
+#: Dim blue — the same hue at roughly a third of the brightness.
+dim_blue = Color(name="dim_blue", rgb=(0, 0, 80))
 #: White color.
 white = Color(name="white", int_color=0xFFFFFFFF)  # Does not work well with cubes?
 #: Off/no color.
@@ -100,6 +104,8 @@ green_light = protocol_encoder.LightState(on_color=green.to_int16(), off_color=g
 red_light = protocol_encoder.LightState(on_color=red.to_int16(), off_color=red.to_int16())
 #: Blue light.
 blue_light = protocol_encoder.LightState(on_color=blue.to_int16(), off_color=blue.to_int16())
+#: Dim blue light — blue at a third of the brightness (long-lived indicator state).
+dim_blue_light = protocol_encoder.LightState(on_color=dim_blue.to_int16(), off_color=dim_blue.to_int16())
 #: White light.
 white_light = protocol_encoder.LightState(on_color=white.to_int16(), off_color=white.to_int16())
 #: Off/no light.

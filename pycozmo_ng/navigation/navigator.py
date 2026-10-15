@@ -135,6 +135,15 @@ class Navigator:
         if self._cube_stack is not None:
             self._cube_stack.cli = value
 
+    @property
+    def cube_visit(self) -> CubeVisit:
+        """The one cube-visit authority (see :class:`CubeVisit`).
+
+        Exposed so an observer can see which cube is being grabbed or
+        stacked right now — the cube indicator reads ``active_cube_id``.
+        """
+        return self._cube_visit
+
     # ------------------------------------------------------------------
     # Charger / origin handlers (COZMO-28)
     # ------------------------------------------------------------------

@@ -565,6 +565,24 @@ class WorldMap:
                 for face_id, fs in self._faces.items()
             }
 
+    def forget_cube(self, cube_index: int) -> bool:
+        """Drop a cube's fused pose — it is no longer where we last saw it.
+
+        A cube the robot moved (its accelerometer reported motion) or picked up
+        may sit anywhere, so its pose is discarded: a forgotten cube reads as
+        unknown and is rendered nowhere, while the next camera measurement
+        starts a fresh pose with no stale history to blend against — unlike
+        faces, cubes are never forgotten on mere loss of visibility.
+
+        Args:
+            cube_index: World-map index (0-2; public cube ID = index + 1).
+
+        Returns:
+            True if a pose was there to drop.
+        """
+        with self._lock:
+            return self._cubes.pop(cube_index, None) is not None
+
     # -- charger ------------------------------------------------------------
 
     def update_charger_measurement(

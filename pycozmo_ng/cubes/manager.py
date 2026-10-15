@@ -28,10 +28,11 @@ Connection model:
 """
 
 import threading
+from collections.abc import Callable
 
 import pycozmo_ng
 from pycozmo_ng.cubes.cube_tracking_state import CubeTrackingState
-from pycozmo_ng.lights import green_light
+from pycozmo_ng.lights import green_light, off_light
 from pycozmo_ng.logger import logger_cubes
 
 
@@ -63,15 +64,30 @@ class CubeManager:
         self._cli = None
         self._light = green_light
         self._light_refresh = True
+        self._on_moved: Callable[[int], None] | None = None
 
     def set_light_refresh(self, enabled: bool) -> None:
         """Enable or disable the keepalive's periodic LED refresh.
 
-        Disable while something else owns the LEDs (e.g. a light show), or the
-        keepalive's green refresh will overwrite every frame.
+        Disable while something else owns the LEDs (e.g. the cube indicator),
+        or the keepalive's green refresh will overwrite every frame.
         """
         self._light_refresh = bool(enabled)
         logger_cubes.debug("Keepalive light refresh %s", "enabled" if enabled else "disabled")
+
+    @property
+    def light_refresh(self) -> bool:
+        """Whether the keepalive currently repaints the LEDs on every tick."""
+        return self._light_refresh
+
+    def set_moved_handler(self, handler: Callable[[int], None] | None) -> None:
+        """Register the callback for "this cube's position is now unknown".
+
+        Called with the public cube ID (1-3) whenever the robot reports that a
+        connected cube moved. Brain wires it to ``WorldMap.forget_cube``: after
+        a move, a forgotten pose beats a wrong one.
+        """
+        self._on_moved = handler
 
     # ------------------------------------------------------------------
     # Cube connection state (COZMO-20, COZMO-23)
@@ -96,18 +112,63 @@ class CubeManager:
         with self._lock:
             if pkt.connected:
                 self.ct.object_id_map[cube_id] = pkt.object_id
-                logger_cubes.debug(
-                    "Cube %d connected: object_id=%s",
-                    cube_id,
-                    pkt.object_id,
-                )
             else:
                 self.ct.object_id_map.pop(cube_id, None)
-                logger_cubes.debug(
-                    "Cube %d disconnected (object_id=%s)",
-                    cube_id,
-                    pkt.object_id,
-                )
+
+        # Sent outside the lock: the tracking map and the socket are
+        # independent, and a send must never block a state read.
+        if pkt.connected:
+            logger_cubes.debug(
+                "Cube %d connected: object_id=%s",
+                cube_id,
+                pkt.object_id,
+            )
+            self._stream_object_accel(cli, pkt.object_id, enable=True)
+        else:
+            logger_cubes.debug(
+                "Cube %d disconnected (object_id=%s)",
+                cube_id,
+                pkt.object_id,
+            )
+
+    def _stream_object_accel(self, cli, object_id: int, enable: bool) -> None:
+        """Turn accelerometer streaming on/off for one connected cube.
+
+        The ``ObjectMoved`` event carries accelerometer samples, and the robot
+        only reports them for objects whose accelerometer stream is enabled —
+        without this, "the cube was moved, forget its pose" never fires.
+        """
+        try:
+            cli.conn.send(pycozmo_ng.protocol_encoder.StreamObjectAccel(object_id=object_id, enable=enable))
+        except Exception:  # noqa: BLE001
+            logger_cubes.debug(
+                "StreamObjectAccel(enable=%s) failed for object %s",
+                enable,
+                object_id,
+                exc_info=True,
+            )
+
+    def on_object_moved(self, cli, pkt) -> None:
+        """Handle ``ObjectMoved`` (0xB4): the cube's accelerometer saw motion.
+
+        A moved cube is no longer where the world map last saw it, so the fused
+        pose is dropped — an unknown position beats a wrong one. The cube goes
+        back to dim blue once the camera finds it in its new place. The
+        forgetting itself is the registered ``set_moved_handler`` callback.
+        """
+        cube_id = self._cube_id_for_object_id(cli, pkt.object_id)
+        if cube_id is None:
+            logger_cubes.debug("ObjectMoved for unknown object_id=%s", pkt.object_id)
+            return
+        logger_cubes.debug(
+            "Cube %d moved (accel %.0f, %.0f, %.0f mm/s2)",
+            cube_id,
+            pkt.active_accel_x,
+            pkt.active_accel_y,
+            pkt.active_accel_z,
+        )
+        if self._on_moved is not None:
+            self._on_moved(cube_id)
 
     def _cube_id_for_factory(self, factory_id: int) -> int | None:
         """Reverse lookup: factory_id -> detected cube_id (1..3)."""
@@ -249,7 +310,10 @@ class CubeManager:
         """Disconnect all cubes by releasing every prop slot.
 
         The 2458 grammar releases a slot with ``SetPropSlot(factory_id=0, slot)``.
+        LEDs are turned off first: a released cube keeps whatever it was
+        showing, and a cube on a shelf should not stay lit forever.
         """
+        self.set_cube_lights(cli, off_light)
         for slot in range(self._SLOT_COUNT):
             cli.conn.send(pycozmo_ng.protocol_encoder.SetPropSlot(factory_id=0, slot=slot))
         with self._lock:

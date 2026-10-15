@@ -181,6 +181,13 @@ class TestCubesFacade:
         with pytest.raises(RuntimeError):
             cozmo.cubes.start_lights(green_light)
 
+    def test_start_indicator_requires_connection(self, cozmo):
+        with pytest.raises(RuntimeError):
+            cozmo.cubes.start_indicator()
+
+    def test_stop_indicator_without_connection_is_safe(self, cozmo):
+        cozmo.cubes.stop_indicator()
+
     def test_flat_cozmo_methods_delegate(self, cozmo):
         # demo.py uses the flat Cozmo methods; they share the CubesAPI path.
         with pytest.raises(RuntimeError):
@@ -188,6 +195,11 @@ class TestCubesFacade:
         with pytest.raises(RuntimeError):
             cozmo.start_cube_lights()
         cozmo.stop_cube_lights()
+
+    def test_flat_cozmo_indicator_methods_delegate(self, cozmo):
+        with pytest.raises(RuntimeError):
+            cozmo.start_cube_indicator()
+        cozmo.stop_cube_indicator()
 
 
 class TestSensorsFacade:
