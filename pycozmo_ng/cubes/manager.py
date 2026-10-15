@@ -14,7 +14,7 @@ Command 0x05 changed meaning between firmware 2381 and 2458: the old
 ``connect=True`` is therefore read as *"slot 1"*, so every cube lands in the
 same slot and each connect evicts the previous one. Verified on hardware
 (2026-10-15): slots 0/1/2 hold three cubes at once, the boolean form holds one.
-See ``not_used/docs/protocol.md``.
+See ``docs/protocol.md``.
 
 Connection model:
   - ``setup_cube_mapping`` discovers cubes and builds the factory_id map.

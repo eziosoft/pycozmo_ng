@@ -244,8 +244,10 @@ PYCOZMO_NG_LIVE_MOTION=1 pytest pycozmo_ng/tests_live/ -v   # also allows motion
 
 - `CONTEXT.md` — the canonical coordinate frames and transforms used by the vision/navigation stack; read it before
   changing that code.
-- [pycozmo.readthedocs.io](https://pycozmo.readthedocs.io/) — wire protocol, hardware, and reverse-engineering
-  documentation inherited from the origin project.
+- `docs/protocol.md` — the wire protocol: frames, packets, every message with its payload, and the cube/object
+  subsystem.
+- [pycozmo.readthedocs.io](https://pycozmo.readthedocs.io/) — upstream's documentation, inherited from the origin
+  project.
 
 ## Robot support
 

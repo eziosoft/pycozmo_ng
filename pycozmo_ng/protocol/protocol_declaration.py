@@ -315,7 +315,7 @@ PROTOCOL = Protocol(
             # connect=True therefore means "slot 1", so every cube lands in the
             # same slot and each connect evicts the previous one.  Verified on
             # hardware: slots 0/1/2 connect three cubes simultaneously, while
-            # connect=True connects only one.  See not_used/docs/protocol.md.
+            # connect=True connects only one.  See docs/protocol.md.
             "SetPropSlot",
             group="objects",
             arguments=[
@@ -613,13 +613,11 @@ PROTOCOL = Protocol(
             "TurnToRecordedHeading",
             group="anim",
             arguments=[
-                # Firmware 2458 carries 13 bytes here: six int16 values at
-                # offsets 0..10 plus one uint8 at offset 12 — from
-                # AnimKeyFrame::TurnToRecordedHeading::Size() == 13 and the
-                # ldrh/ldrb sequence in its Pack().  2381 declared the packet
-                # with no fields at all, so every send was 13 bytes short and
-                # the robot dropped it.  Field *semantics* are not recovered;
-                # only the wire shape is pinned.  See not_used/docs/protocol.md.
+                # Firmware 2458 carries 13 bytes here: six int16 values
+                # followed by one uint8.  The original 2381 declaration gave
+                # the packet no fields at all, so every send was 13 bytes short
+                # and the robot ignored it.  The field *semantics* are not
+                # pinned down; only the wire shape is.  See docs/protocol.md.
                 FArrayArgument("unknown", data_type=Int16Argument(), length=6),
                 UInt8Argument("unknown2"),
             ],
@@ -682,12 +680,11 @@ PROTOCOL = Protocol(
             "ShutdownRobot",
             group="system",
             arguments=[
-                # Firmware 2458 sends a fixed 32-byte payload here
-                # (RobotInterface::ShutdownRobot::Size() == 0x20); 2381
-                # declared no fields at all, so the packet was short and the
-                # robot dropped it.  Recovered as opaque bytes — the 32-byte
-                # blob's internal structure is not recovered.  See
-                # not_used/docs/protocol.md.
+                # Firmware 2458 sends a fixed 32-byte payload here; the
+                # original 2381 declaration gave the packet no fields, so it
+                # was short and the robot ignored it.  Kept as opaque bytes —
+                # the blob's internal structure is not pinned down.  See
+                # docs/protocol.md.
                 FArrayArgument("unknown", data_type=UInt8Argument(), length=32),
             ],
         ),

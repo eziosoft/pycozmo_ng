@@ -1,13 +1,13 @@
-"""Payloads whose 2458 wire shape was recovered from the engine binary.
+"""Payloads whose 2458 wire shape differs from the original 2381 declaration.
 
 Two packets are declared with no fields in 2381, so every send was shorter than
-the robot expects and the message was dropped.  Firmware 2458 declares 13 bytes
+the robot expects and the message was dropped.  Firmware 2458 carries 13 bytes
 for ``animTurnToRecordedHeading`` (six int16 + one uint8) and 32 bytes for
-``shutdownRobot``.  These tests pin the recovered shape so a regeneration of
+``shutdownRobot``.  These tests pin that shape so a regeneration of
 ``protocol_encoder.py`` cannot silently reset them to zero length again.
 
 Neither packet is used by the library; this is spec correctness only.  See
-``not_used/docs/protocol.md`` for how the shape was recovered.
+``docs/protocol.md``.
 """
 
 import pytest

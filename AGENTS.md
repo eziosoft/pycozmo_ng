@@ -63,6 +63,8 @@ mypy.ini                # mypy per-module config
 aruco_markers.json      # Committed ArUco marker sizes — data, not code (see Domain notes)
 .env.example            # Template for the robot's Wi-Fi credentials → copy to .env
 README.md               # User-facing overview; its install section still names upstream `pycozmo`
+docs/                   # Reference documentation (tracked)
+└── protocol.md         # Full wire-protocol reference + the 2458 map (read before any protocol work)
 not_used/               # Deprecated code kept locally for reference — gitignored, not installed
 pycozmo_ng/             # Main library (import name: pycozmo_ng)
 ├── cozmo.py            # Cozmo — the public API (from pycozmo_ng import Cozmo)
