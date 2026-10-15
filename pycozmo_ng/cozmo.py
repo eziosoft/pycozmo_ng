@@ -31,6 +31,7 @@ import pycozmo_ng
 from pycozmo_ng.brain import Brain
 from pycozmo_ng.cubes.carry_state import CarryState
 from pycozmo_ng.cubes.identity import to_cube_id, to_world_index
+from pycozmo_ng.cubes.light_pattern import LightPattern
 from pycozmo_ng.logger import logger, setup_basic_logging
 from pycozmo_ng.navigation.world_map import CubeState, WorldMap
 from pycozmo_ng.protocol import protocol_encoder
@@ -166,9 +167,9 @@ class VisionAPI:
 class CubesAPI:
     """High-level cube interface (cube IDs are 1-3).
 
-    All cubes are connected simultaneously — the Cozmo protocol supports
-    multiple concurrent BLE connections (up to 5 per engine decompilation,
-    COZMO-23). :meth:`start_lights` opens all connections and runs a
+    All cubes are connected simultaneously, one prop slot each
+    (``SetPropSlot``, command 0x05; slots 0-4, cubes take ``cube_id - 1``).
+    :meth:`start_lights` opens all connections and runs a
     background keepalive thread that reconnects dropped cubes and
     refreshes LEDs; :meth:`set_lights` changes the LED color on demand.
     """
@@ -220,6 +221,25 @@ class CubesAPI:
         """
         self._require_connection()
         self._brain.cubes.set_cube_lights(self._brain.cli, light)
+
+    def start_show(self, pattern: str = "rainbow", interval_s: float = 0.25) -> None:
+        """Play a light pattern across every connected cube.
+
+        The show owns the LEDs, so the keepalive's LED refresh is paused while
+        it runs. Connections are untouched — cubes stay connected.
+
+        Args:
+            pattern: One of :data:`pycozmo_ng.cubes.PATTERN_NAMES`
+                (``rainbow``, ``chase``, ``pulse``, ``solid``).
+            interval_s: Seconds between frames.
+        """
+        self._require_connection()
+        self._brain.cube_light_show.set_pattern(LightPattern(pattern))
+        self._brain.cube_light_show.start(self._brain.cli)
+
+    def stop_show(self) -> None:
+        """Stop the light show, leaving the cubes connected."""
+        self._brain.cube_light_show.stop()
 
     def _require_connection(self) -> None:
         if self._brain.cli is None:
@@ -894,6 +914,19 @@ class Cozmo:
     def set_cube_lights(self, light) -> None:
         """Set LED state on all connected cubes."""
         self.cubes.set_lights(light)
+
+    def start_cube_show(self, pattern: str = "rainbow", interval_s: float = 0.25) -> None:
+        """Start a light show across all connected cubes.
+
+        Args:
+            pattern: ``rainbow``, ``chase``, ``pulse`` or ``solid``.
+            interval_s: Seconds between frames.
+        """
+        self.cubes.start_show(pattern, interval_s)
+
+    def stop_cube_show(self) -> None:
+        """Stop the cube light show (cubes stay connected)."""
+        self.cubes.stop_show()
 
     # ------------------------------------------------------------------
     # Localization

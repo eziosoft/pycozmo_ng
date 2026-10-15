@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 
 import pycozmo_ng
 from pycozmo_ng import Cozmo
+from pycozmo_ng.cubes import PATTERN_NAMES
 from pycozmo_ng.logger import logger_cubes, setup_basic_logging
 from pycozmo_ng.transport.conn import ROBOT_ADDR
 from pycozmo_ng.wifi import connect_to_cozmo_wifi, get_local_ip
@@ -76,6 +77,19 @@ def main():
             "CubeLights refresh). Cubes will disconnect after the robot's "
             "idle timeout and not be reconnected."
         ),
+    )
+    parser.add_argument(
+        "--cube-show",
+        choices=PATTERN_NAMES,
+        default="rainbow",
+        help="Cube light show pattern (default: rainbow).",
+    )
+    parser.add_argument(
+        "--cube-show-interval",
+        type=float,
+        default=0.25,
+        metavar="S",
+        help="Seconds between cube light show frames (default: 0.25).",
     )
     parser.add_argument(
         "--floor-size",
@@ -150,10 +164,7 @@ def main():
             time.sleep(1.0)
 
             _step(4, "Positioning head camera to startup tilt...")
-            angle = (
-                pycozmo_ng.robot.MAX_HEAD_ANGLE.radians
-                - pycozmo_ng.robot.MIN_HEAD_ANGLE.radians
-            ) / 80.0
+            angle = (pycozmo_ng.robot.MAX_HEAD_ANGLE.radians - pycozmo_ng.robot.MIN_HEAD_ANGLE.radians) / 80.0
             cozmo.cli.set_head_angle(angle)
             time.sleep(1.0)
 
@@ -173,29 +184,17 @@ def main():
                 mm_per_pixel=args.floor_resolution,
                 face_detect_every_n_frames=args.face_detect_every,
             )
-            cozmo.set_vision_annotation_options(
-                show_confidence=True, show_cube_id=True, box_thickness=2
-            )
+            cozmo.set_vision_annotation_options(show_confidence=True, show_cube_id=True, box_thickness=2)
 
             if not args.no_cube_lights:
                 _step(
                     6,
-                    "Cube keepalive worker (temporarily disabled — "
-                    "cube BLE connections are off pending re-evaluation)...",
+                    "Cube keepalive worker: connecting every cube (one prop slot each) and keeping them connected...",
                 )
-                logger.warning(
-                    "Cube connections temporarily disabled — keep the code in "
-                    "pycozmo_ng/cubes/manager.py; re-enable by calling "
-                    "cozmo.start_cube_lights() when ready."
-                )
-                # TODO: re-enable when cube connection strategy is finalized
-                # cozmo.start_cube_lights()
+                cozmo.start_cube_lights()
             else:
-                _step(6, "Skipping cube keepalive worker (--no-cube-lights)")
-                logger.warning(
-                    "Cubes will disconnect after the robot's idle timeout "
-                    "and will not be reconnected."
-                )
+                _step(6, "Skipping cube connection and light show (--no-cube-lights)")
+                logger.warning("Cubes will disconnect after the robot's idle timeout and will not be reconnected.")
 
             _step(7, "Enabling camera (grayscale, 30 ms exposure)...")
             cozmo.enable_camera(exposure_ms=30)
@@ -204,8 +203,15 @@ def main():
             cozmo.calibrate_robot_center(timeout_s=30.0)
             time.sleep(1.0)
 
-            _step(9, "Discovering cubes and building cube-ID mapping...")
+            _step(
+                9,
+                "Discovering cubes, building cube-ID mapping, and starting the %s light show (%.2f s/frame)...",
+                args.cube_show,
+                args.cube_show_interval,
+            )
             cozmo.discover_cubes()
+            if not args.no_cube_lights:
+                cozmo.start_cube_show(args.cube_show, args.cube_show_interval)
 
             _step(10, "Enabling browser keyboard remote control...")
             cozmo.enable_remote_control()

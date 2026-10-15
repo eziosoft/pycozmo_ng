@@ -13,6 +13,7 @@ from pycozmo_ng import event
 from pycozmo_ng.camera.service import CameraService
 from pycozmo_ng.cubes.carry_state import CarryDetector
 from pycozmo_ng.cubes.cube_tracking_state import CubeTrackingState
+from pycozmo_ng.cubes.light_show import CubeLightShow
 from pycozmo_ng.cubes.manager import CubeManager
 from pycozmo_ng.logger import logger, logger_cubes
 from pycozmo_ng.navigation.astar import AStarPlanner
@@ -101,6 +102,7 @@ class Brain:
             carry=self.carry,
         )
         self.cubes = CubeManager(self.cube_tracking)
+        self.cube_light_show = CubeLightShow(self.cubes)
 
         # Wire cross-domain references
         self.navigator.cli = self.cli
