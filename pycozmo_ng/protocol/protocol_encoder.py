@@ -4,13 +4,11 @@ Cozmo protocol packet encoder classes, based on protocol version 2381.
 
 Generated from protocol_declaration.py by protocol_generator.py .
 
-Do not modify.
+Regenerate by running the generator, then `ruff check --fix` and `ruff format`
+over the output — the committed file is the *formatted* result, so a bare
+regeneration differs by formatting alone.
 
-Exception: the classes for packets whose 2458 wire shape was recovered from the
-engine binary (`SetPropSlot`, `TurnToRecordedHeading`, `ShutdownRobot`) were
-edited by hand, because regenerating this file produces a large spurious diff —
-it is not byte-reproducible from the generator.  Those classes carry a comment
-pointing at not_used/docs/protocol.md.
+Do not modify.
 
 """
 
@@ -636,10 +634,7 @@ class LightStateCenter(Packet):
     @states.setter
     def states(self, value):
         self._states = validate_farray(
-            "states",
-            value,
-            3,
-            lambda name, value_inner: validate_object(name, value_inner, LightState),
+            "states", value, 3, lambda name, value_inner: validate_object(name, value_inner, LightState)
         )
 
     @property
@@ -694,10 +689,7 @@ class CubeLights(Packet):
     @states.setter
     def states(self, value):
         self._states = validate_farray(
-            "states",
-            value,
-            4,
-            lambda name, value_inner: validate_object(name, value_inner, LightState),
+            "states", value, 4, lambda name, value_inner: validate_object(name, value_inner, LightState)
         )
 
     def __len__(self):
@@ -998,10 +990,7 @@ class LightStateSide(Packet):
     @states.setter
     def states(self, value):
         self._states = validate_farray(
-            "states",
-            value,
-            2,
-            lambda name, value_inner: validate_object(name, value_inner, LightState),
+            "states", value, 2, lambda name, value_inner: validate_object(name, value_inner, LightState)
         )
 
     @property
@@ -1080,13 +1069,7 @@ class DriveWheels(Packet):
         "_rwheel_speed_mmps",  # float
     )
 
-    def __init__(
-        self,
-        lwheel_speed_mmps=0.0,
-        rwheel_speed_mmps=0.0,
-        lwheel_accel_mmps2=0.0,
-        rwheel_accel_mmps2=0.0,
-    ):
+    def __init__(self, lwheel_speed_mmps=0.0, rwheel_speed_mmps=0.0, lwheel_accel_mmps2=0.0, rwheel_accel_mmps2=0.0):
         super().__init__(PacketType.COMMAND, packet_id=0x32)
         self.lwheel_speed_mmps = lwheel_speed_mmps
         self.rwheel_speed_mmps = rwheel_speed_mmps
@@ -1237,11 +1220,7 @@ class TurnInPlaceAtSpeed(Packet):
         wheel_speed_mmps = reader.read("f")
         wheel_accel_mmps2 = reader.read("f")
         direction = reader.read("h")
-        return cls(
-            wheel_speed_mmps=wheel_speed_mmps,
-            wheel_accel_mmps2=wheel_accel_mmps2,
-            direction=direction,
-        )
+        return cls(wheel_speed_mmps=wheel_speed_mmps, wheel_accel_mmps2=wheel_accel_mmps2, direction=direction)
 
 
 class MoveLift(Packet):
@@ -1340,12 +1319,7 @@ class SetLiftHeight(Packet):
     )
 
     def __init__(
-        self,
-        height_mm=0.0,
-        max_speed_rad_per_sec=3.0,
-        accel_rad_per_sec2=20.0,
-        duration_sec=0.0,
-        action_id=0,
+        self, height_mm=0.0, max_speed_rad_per_sec=3.0, accel_rad_per_sec2=20.0, duration_sec=0.0, action_id=0
     ):
         super().__init__(PacketType.COMMAND, packet_id=0x36)
         self.height_mm = height_mm
@@ -1452,12 +1426,7 @@ class SetHeadAngle(Packet):
     )
 
     def __init__(
-        self,
-        angle_rad=0.0,
-        max_speed_rad_per_sec=15.0,
-        accel_rad_per_sec2=20.0,
-        duration_sec=0.0,
-        action_id=0,
+        self, angle_rad=0.0, max_speed_rad_per_sec=15.0, accel_rad_per_sec2=20.0, duration_sec=0.0, action_id=0
     ):
         super().__init__(PacketType.COMMAND, packet_id=0x37)
         self.angle_rad = angle_rad
@@ -1796,16 +1765,7 @@ class AppendPathSegLine(Packet):
         "_to_y",  # float
     )
 
-    def __init__(
-        self,
-        from_x=0.0,
-        from_y=0.0,
-        to_x=0.0,
-        to_y=0.0,
-        speed_mmps=0.0,
-        accel_mmps2=0.0,
-        decel_mmps2=0.0,
-    ):
+    def __init__(self, from_x=0.0, from_y=0.0, to_x=0.0, to_y=0.0, speed_mmps=0.0, accel_mmps2=0.0, decel_mmps2=0.0):
         super().__init__(PacketType.COMMAND, packet_id=0x3D)
         self.from_x = from_x
         self.from_y = from_y
@@ -2358,15 +2318,7 @@ class SetOrigin(Packet):
         "_unknown5",  # uint32
     )
 
-    def __init__(
-        self,
-        unknown0=0,
-        pose_frame_id=0,
-        pose_origin_id=1,
-        pose_x=0.0,
-        pose_y=0.0,
-        unknown5=2147483648,
-    ):
+    def __init__(self, unknown0=0, pose_frame_id=0, pose_origin_id=1, pose_x=0.0, pose_y=0.0, unknown5=2147483648):
         super().__init__(PacketType.COMMAND, packet_id=0x45)
         self.unknown0 = unknown0
         self.pose_frame_id = pose_frame_id
@@ -2657,11 +2609,7 @@ class SetCameraParams(Packet):
         gain = reader.read("f")
         exposure_ms = reader.read("H")
         auto_exposure_enabled = bool(reader.read("b"))
-        return cls(
-            gain=gain,
-            exposure_ms=exposure_ms,
-            auto_exposure_enabled=auto_exposure_enabled,
-        )
+        return cls(gain=gain, exposure_ms=exposure_ms, auto_exposure_enabled=auto_exposure_enabled)
 
 
 class StartMotorCalibration(Packet):
@@ -2906,10 +2854,7 @@ class NvStorageOp(Packet):
     @data.setter
     def data(self, value):
         self._data = validate_varray(
-            "data",
-            value,
-            65535,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 255),
+            "data", value, 65535, lambda name, value_inner: validate_integer(name, value_inner, 0, 255)
         )
 
     def __len__(self):
@@ -3001,10 +2946,7 @@ class OutputAudio(Packet):
     @samples.setter
     def samples(self, value):
         self._samples = validate_farray(
-            "samples",
-            value,
-            744,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 255),
+            "samples", value, 744, lambda name, value_inner: validate_integer(name, value_inner, 0, 255)
         )
 
     def __len__(self):
@@ -3098,9 +3040,6 @@ class RecordHeading(Packet):
 
 
 class TurnToRecordedHeading(Packet):
-    # Hand-edited for the 2458 wire shape: six int16 values followed by one
-    # uint8 (13 bytes).  2381 declared no fields, so every send was short.
-    # See not_used/docs/protocol.md.
     __slots__ = (
         "_unknown",  # int16[6]
         "_unknown2",  # uint8
@@ -3118,10 +3057,7 @@ class TurnToRecordedHeading(Packet):
     @unknown.setter
     def unknown(self, value):
         self._unknown = validate_farray(
-            "unknown",
-            value,
-            6,
-            lambda name, value_inner: validate_integer(name, value_inner, -32768, 32767),
+            "unknown", value, 6, lambda name, value_inner: validate_integer(name, value_inner, -32768, 32767)
         )
 
     @property
@@ -3133,7 +3069,7 @@ class TurnToRecordedHeading(Packet):
         self._unknown2 = validate_integer("unknown2", value, 0, 255)
 
     def __len__(self):
-        return 6 * 2 + 1
+        return 12 + 1
 
     def __repr__(self):
         return f"{type(self).__name__}(unknown={self._unknown}, unknown2={self._unknown2})"
@@ -3229,11 +3165,7 @@ class AnimHead(Packet):
         duration_ms = reader.read("B")
         variability_deg = reader.read("b")
         angle_deg = reader.read("b")
-        return cls(
-            duration_ms=duration_ms,
-            variability_deg=variability_deg,
-            angle_deg=angle_deg,
-        )
+        return cls(duration_ms=duration_ms, variability_deg=variability_deg, angle_deg=angle_deg)
 
 
 class AnimLift(Packet):
@@ -3324,10 +3256,7 @@ class DisplayImage(Packet):
     @image.setter
     def image(self, value):
         self._image = validate_varray(
-            "image",
-            value,
-            65535,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 255),
+            "image", value, 65535, lambda name, value_inner: validate_integer(name, value_inner, 0, 255)
         )
 
     def __len__(self):
@@ -3373,10 +3302,7 @@ class AnimBackpackLights(Packet):
     @colors.setter
     def colors(self, value):
         self._colors = validate_farray(
-            "colors",
-            value,
-            5,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 65535),
+            "colors", value, 5, lambda name, value_inner: validate_integer(name, value_inner, 0, 65535)
         )
 
     def __len__(self):
@@ -3568,10 +3494,6 @@ class EnableAnimationState(Packet):
 
 
 class ShutdownRobot(Packet):
-    # Hand-edited for the 2458 wire shape: a fixed 32-byte payload.  2381
-    # declared no fields, so the packet was short and the robot dropped it.
-    # The blob's internal structure is not recovered.  See
-    # not_used/docs/protocol.md.
     __slots__ = (
         "_unknown",  # uint8[32]
     )
@@ -3587,10 +3509,7 @@ class ShutdownRobot(Packet):
     @unknown.setter
     def unknown(self, value):
         self._unknown = validate_farray(
-            "unknown",
-            value,
-            32,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 255),
+            "unknown", value, 32, lambda name, value_inner: validate_integer(name, value_inner, 0, 255)
         )
 
     def __len__(self):
@@ -3688,10 +3607,7 @@ class FirmwareUpdate(Packet):
     @data.setter
     def data(self, value):
         self._data = validate_farray(
-            "data",
-            value,
-            1024,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 255),
+            "data", value, 1024, lambda name, value_inner: validate_integer(name, value_inner, 0, 255)
         )
 
     def __len__(self):
@@ -3782,10 +3698,7 @@ class DebugData(Packet):
     @args.setter
     def args(self, value):
         self._args = validate_varray(
-            "args",
-            value,
-            255,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 4294967295),
+            "args", value, 255, lambda name, value_inner: validate_integer(name, value_inner, 0, 4294967295)
         )
 
     def __len__(self):
@@ -3840,13 +3753,7 @@ class ObjectMoved(Packet):
     )
 
     def __init__(
-        self,
-        timestamp=0,
-        object_id=0,
-        active_accel_x=0.0,
-        active_accel_y=0.0,
-        active_accel_z=0.0,
-        axis_of_accel=7,
+        self, timestamp=0, object_id=0, active_accel_x=0.0, active_accel_y=0.0, active_accel_z=0.0, axis_of_accel=7
     ):
         super().__init__(PacketType.COMMAND, packet_id=0xB4)
         self.timestamp = timestamp
@@ -4594,10 +4501,7 @@ class NvStorageOpResult(Packet):
     @data.setter
     def data(self, value):
         self._data = validate_varray(
-            "data",
-            value,
-            65535,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 255),
+            "data", value, 65535, lambda name, value_inner: validate_integer(name, value_inner, 0, 255)
         )
 
     def __len__(self):
@@ -4710,11 +4614,7 @@ class ObjectPowerLevel(Packet):
         object_id = reader.read("L")
         missed_packets = reader.read("L")
         battery_level = reader.read("B")
-        return cls(
-            object_id=object_id,
-            missed_packets=missed_packets,
-            battery_level=battery_level,
-        )
+        return cls(object_id=object_id, missed_packets=missed_packets, battery_level=battery_level)
 
 
 class ObjectConnectionState(Packet):
@@ -4800,12 +4700,7 @@ class ObjectConnectionState(Packet):
         factory_id = reader.read("L")
         object_type = reader.read("l")
         connected = bool(reader.read("b"))
-        return cls(
-            object_id=object_id,
-            factory_id=factory_id,
-            object_type=object_type,
-            connected=connected,
-        )
+        return cls(object_id=object_id, factory_id=factory_id, object_type=object_type, connected=connected)
 
 
 class MotorCalibration(Packet):
@@ -5178,11 +5073,7 @@ class BodyInfo(Packet):
         serial_number = reader.read("L")
         body_hw_version = reader.read("L")
         body_color = reader.read("l")
-        return cls(
-            serial_number=serial_number,
-            body_hw_version=body_hw_version,
-            body_color=body_color,
-        )
+        return cls(serial_number=serial_number, body_hw_version=body_hw_version, body_color=body_color)
 
 
 class FirmwareSignature(Packet):
@@ -5554,10 +5445,7 @@ class RobotState(Packet):
     @cliff_data_raw.setter
     def cliff_data_raw(self, value):
         self._cliff_data_raw = validate_farray(
-            "cliff_data_raw",
-            value,
-            4,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 65535),
+            "cliff_data_raw", value, 4, lambda name, value_inner: validate_integer(name, value_inner, 0, 65535)
         )
 
     @property
@@ -5931,10 +5819,7 @@ class ImageChunk(Packet):
     @data.setter
     def data(self, value):
         self._data = validate_varray(
-            "data",
-            value,
-            65535,
-            lambda name, value_inner: validate_integer(name, value_inner, 0, 255),
+            "data", value, 65535, lambda name, value_inner: validate_integer(name, value_inner, 0, 255)
         )
 
     def __len__(self):
@@ -6165,13 +6050,7 @@ class ImageImuData(Packet):
         rate_y = reader.read("f")
         rate_z = reader.read("f")
         line_2_number = reader.read("B")
-        return cls(
-            image_id=image_id,
-            rate_x=rate_x,
-            rate_y=rate_y,
-            rate_z=rate_z,
-            line_2_number=line_2_number,
-        )
+        return cls(image_id=image_id, rate_x=rate_x, rate_y=rate_y, rate_z=rate_z, line_2_number=line_2_number)
 
 
 class ObjectAccel(Packet):
@@ -6269,13 +6148,7 @@ class ObjectAccel(Packet):
         accel_x = reader.read("f")
         accel_y = reader.read("f")
         accel_z = reader.read("f")
-        return cls(
-            timestamp=timestamp,
-            object_id=object_id,
-            accel_x=accel_x,
-            accel_y=accel_y,
-            accel_z=accel_z,
-        )
+        return cls(timestamp=timestamp, object_id=object_id, accel_x=accel_x, accel_y=accel_y, accel_z=accel_z)
 
 
 PACKETS_BY_ID = {

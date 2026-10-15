@@ -552,6 +552,10 @@ Cozmo protocol packet encoder classes, based on protocol version {protocol_decla
 
 Generated from {os.path.basename(protocol_declaration.__file__)} by {os.path.basename(__file__)} .
 
+Regenerate by running the generator, then `ruff check --fix` and `ruff format`
+over the output — the committed file is the *formatted* result, so a bare
+regeneration differs by formatting alone.
+
 Do not modify.
 
 """
