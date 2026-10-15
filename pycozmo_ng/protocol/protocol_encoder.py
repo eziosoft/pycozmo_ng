@@ -6,6 +6,12 @@ Generated from protocol_declaration.py by protocol_generator.py .
 
 Do not modify.
 
+Exception: the classes for packets whose 2458 wire shape was recovered from the
+engine binary (`SetPropSlot`, `TurnToRecordedHeading`, `ShutdownRobot`) were
+edited by hand, because regenerating this file produces a large spurious diff —
+it is not byte-reproducible from the generator.  Those classes carry a comment
+pointing at not_used/docs/protocol.md.
+
 """
 
 import enum
@@ -720,16 +726,16 @@ class CubeLights(Packet):
         return cls(states=states)
 
 
-class ObjectConnect(Packet):
+class SetPropSlot(Packet):
     __slots__ = (
-        "_connect",  # bool
         "_factory_id",  # uint32
+        "_slot",  # uint8
     )
 
-    def __init__(self, factory_id=0, connect=False):
+    def __init__(self, factory_id=0, slot=0):
         super().__init__(PacketType.COMMAND, packet_id=0x05)
         self.factory_id = factory_id
-        self.connect = connect
+        self.slot = slot
 
     @property
     def factory_id(self):
@@ -740,18 +746,18 @@ class ObjectConnect(Packet):
         self._factory_id = validate_integer("factory_id", value, 0, 4294967295)
 
     @property
-    def connect(self):
-        return self._connect
+    def slot(self):
+        return self._slot
 
-    @connect.setter
-    def connect(self, value):
-        self._connect = validate_bool("connect", value)
+    @slot.setter
+    def slot(self, value):
+        self._slot = validate_integer("slot", value, 0, 255)
 
     def __len__(self):
         return 4 + 1
 
     def __repr__(self):
-        return f"{type(self).__name__}(factory_id={self._factory_id}, connect={self._connect})"
+        return f"{type(self).__name__}(factory_id={self._factory_id}, slot={self._slot})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -760,7 +766,7 @@ class ObjectConnect(Packet):
 
     def to_writer(self, writer):
         writer.write(self._factory_id, "L")
-        writer.write(int(self._connect), "b")
+        writer.write(self._slot, "B")
 
     @classmethod
     def from_bytes(cls, buffer):
@@ -771,8 +777,8 @@ class ObjectConnect(Packet):
     @classmethod
     def from_reader(cls, reader):
         factory_id = reader.read("L")
-        connect = bool(reader.read("b"))
-        return cls(factory_id=factory_id, connect=connect)
+        slot = reader.read("B")
+        return cls(factory_id=factory_id, slot=slot)
 
 
 class StreamObjectAccel(Packet):
@@ -3092,16 +3098,45 @@ class RecordHeading(Packet):
 
 
 class TurnToRecordedHeading(Packet):
-    __slots__ = ()
+    # Hand-edited for the 2458 wire shape: six int16 values followed by one
+    # uint8 (13 bytes).  2381 declared no fields, so every send was short.
+    # See not_used/docs/protocol.md.
+    __slots__ = (
+        "_unknown",  # int16[6]
+        "_unknown2",  # uint8
+    )
 
-    def __init__(self):
+    def __init__(self, unknown=(), unknown2=0):
         super().__init__(PacketType.COMMAND, packet_id=0x92)
+        self.unknown = unknown
+        self.unknown2 = unknown2
+
+    @property
+    def unknown(self):
+        return self._unknown
+
+    @unknown.setter
+    def unknown(self, value):
+        self._unknown = validate_farray(
+            "unknown",
+            value,
+            6,
+            lambda name, value_inner: validate_integer(name, value_inner, -32768, 32767),
+        )
+
+    @property
+    def unknown2(self):
+        return self._unknown2
+
+    @unknown2.setter
+    def unknown2(self, value):
+        self._unknown2 = validate_integer("unknown2", value, 0, 255)
 
     def __len__(self):
-        return 0
+        return 6 * 2 + 1
 
     def __repr__(self):
-        return f"{type(self).__name__}()"
+        return f"{type(self).__name__}(unknown={self._unknown}, unknown2={self._unknown2})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3109,7 +3144,8 @@ class TurnToRecordedHeading(Packet):
         return writer.dumps()
 
     def to_writer(self, writer):
-        pass
+        writer.write_farray(self._unknown, "h", 6)
+        writer.write(self._unknown2, "B")
 
     @classmethod
     def from_bytes(cls, buffer):
@@ -3119,8 +3155,9 @@ class TurnToRecordedHeading(Packet):
 
     @classmethod
     def from_reader(cls, reader):
-        del reader
-        return cls()
+        unknown = reader.read_farray("h", 6)
+        unknown2 = reader.read("B")
+        return cls(unknown=unknown, unknown2=unknown2)
 
 
 class AnimHead(Packet):
@@ -3531,16 +3568,36 @@ class EnableAnimationState(Packet):
 
 
 class ShutdownRobot(Packet):
-    __slots__ = ()
+    # Hand-edited for the 2458 wire shape: a fixed 32-byte payload.  2381
+    # declared no fields, so the packet was short and the robot dropped it.
+    # The blob's internal structure is not recovered.  See
+    # not_used/docs/protocol.md.
+    __slots__ = (
+        "_unknown",  # uint8[32]
+    )
 
-    def __init__(self):
+    def __init__(self, unknown=()):
         super().__init__(PacketType.COMMAND, packet_id=0xA9)
+        self.unknown = unknown
+
+    @property
+    def unknown(self):
+        return self._unknown
+
+    @unknown.setter
+    def unknown(self, value):
+        self._unknown = validate_farray(
+            "unknown",
+            value,
+            32,
+            lambda name, value_inner: validate_integer(name, value_inner, 0, 255),
+        )
 
     def __len__(self):
-        return 0
+        return 32
 
     def __repr__(self):
-        return f"{type(self).__name__}()"
+        return f"{type(self).__name__}(unknown={self._unknown})"
 
     def to_bytes(self):
         writer = BinaryWriter()
@@ -3548,7 +3605,7 @@ class ShutdownRobot(Packet):
         return writer.dumps()
 
     def to_writer(self, writer):
-        pass
+        writer.write_farray(self._unknown, "B", 32)
 
     @classmethod
     def from_bytes(cls, buffer):
@@ -3558,8 +3615,8 @@ class ShutdownRobot(Packet):
 
     @classmethod
     def from_reader(cls, reader):
-        del reader
-        return cls()
+        unknown = reader.read_farray("B", 32)
+        return cls(unknown=unknown)
 
 
 class WifiOff(Packet):
@@ -6224,7 +6281,7 @@ class ObjectAccel(Packet):
 PACKETS_BY_ID = {
     0x03: LightStateCenter,  # 3
     0x04: CubeLights,  # 4
-    0x05: ObjectConnect,  # 5
+    0x05: SetPropSlot,  # 5
     0x08: StreamObjectAccel,  # 8
     0x0A: SetAccessoryDiscovery,  # 10
     0x0B: SetHeadLight,  # 11
@@ -6375,7 +6432,7 @@ PACKETS_BY_GROUP = {
     },
     "objects": {
         0x04,  # CubeLights
-        0x05,  # ObjectConnect
+        0x05,  # SetPropSlot
         0x08,  # StreamObjectAccel
         0x0A,  # SetAccessoryDiscovery
         0x10,  # CubeId
