@@ -1,19 +1,23 @@
-"""Tests for ArucoDocking — standoff on the marker's normal, centring, reverse into the charger.
+"""Tests for ArucoDocking — the point in front of the charger, centring, reverse into the charger.
 
 ``ArucoDocking`` is constructible from plain dependencies (mock client,
 marker feed, dock state, motion controller) so the whole sequence runs
-without a robot: the guard when the marker is unknown, the standoff ->
-settle -> centre -> reverse flow, the refusal to start a dock from a
-pose too far off the marker's axis, the ``on_docked`` callback that
-anchors the world origin, the refusal to anchor after a failed dock, the
-timeout that gives up without docking, and cancellation.
+without a robot: the guard when the marker is unknown, the head level,
+the drive to the point in front of the charger -> settle -> replan ->
+centre -> reverse flow, the refusal to dock when the charger's facing axis
+is unresolved, the ``on_docked`` callback that anchors the world origin,
+the refusal to anchor after a failed dock, the timeout that gives up
+without docking, and cancellation.
 
-The sequence approaches on the marker's outward normal and never estimates
-the marker's bearing from its rotation — the standoff heading comes from
-positions (the bearing back to the marker), so facing the marker from the
-standoff is exact by construction. The marker sits at the back end of the
-dock, on its centreline, so a normal standoff lands the robot on the
-charger's centreline and the open-loop reverse runs straight in.
+The sequence drives to the point in front of the charger — the charger's
+own pose plus ``APPROACH_DIST_MM`` along its facing axis — and never
+estimates the marker's bearing from its rotation: the standoff heading
+comes from positions (the bearing back to the marker), so facing the
+marker from the standoff is exact by construction. The marker sits at the
+back end of the dock, on its centreline, so that point is on the charger's
+centreline and the open-loop reverse runs straight in. When the first
+close look at the marker improves its pose, the point moves with it and
+the approach runs again (once).
 
 The last class covers the browser wiring: the Z key must reach
 ``Navigator.dock_on_aruco`` — not the legacy pose-based dock.
@@ -52,13 +56,19 @@ def _wait_until(predicate, timeout: float = 5.0) -> bool:
 class _FakeCli:
     """Minimal client: ``pose`` follows ``go_to_pose``; ``drive_wheels``
     applies crude differential-drive kinematics so closed-loop turns
-    converge."""
+    converge; ``set_head_angle`` moves ``head_angle`` immediately."""
 
     def __init__(self, x: float = 500.0, y: float = 0.0, yaw: float = 0.0):
         self.pose = _pose(x, y, yaw)
+        self.head_angle = SimpleNamespace(radians=math.radians(-25.0))
         self.go_to_pose = MagicMock(side_effect=self._go_to_pose)
         self.drive_wheels = MagicMock(side_effect=self._drive_wheels)
         self.stop_all_motors = MagicMock()
+        self.set_head_angle = MagicMock(side_effect=self._set_head_angle)
+
+    def _set_head_angle(self, radians: float, **kwargs):
+        del kwargs
+        self.head_angle = SimpleNamespace(radians=radians)
 
     def _go_to_pose(self, pose, **kwargs):
         del kwargs
@@ -173,6 +183,85 @@ class _GatedMarkerFeed:
         )
 
 
+class _ImprovingMarkerFeed:
+    """Charger pose that improves only up close — and can keep improving.
+
+    The live pattern: the pose that plans the point in front of the charger
+    is measured from a distance, off axis, and only the first close,
+    head-on look at the marker corrects it. Until the robot is within
+    ``near_mm`` of ``far_xy`` this feed serves ``far_xy``; after that it
+    serves ``near_xy`` plus ``step_mm`` per ``step_every`` reads since
+    (capped at ``max_mm``). ``step_mm=0`` is a single improvement; a
+    positive step is a pose that never settles.
+
+    Reads stand in for elapsed time: every log line, settle poll and
+    alignment check fetches the state, so a fast test still accumulates
+    plenty of them.
+    """
+
+    def __init__(
+        self,
+        cli,
+        far_xy: tuple[float, float] = (0.0, 0.0),
+        near_xy: tuple[float, float] = (40.0, 0.0),
+        near_mm: float = 300.0,
+        step_mm: float = 0.0,
+        step_every: int = 4,
+        max_mm: float = 120.0,
+    ):
+        self._cli = cli
+        self._far = far_xy
+        self._near = near_xy
+        self._near_mm = near_mm
+        self._step = step_mm
+        self._every = step_every
+        self._max = max_mm
+        self._reads_close = 0
+        #: Where the feed currently says the charger is (mm, world x).
+        self.x = far_xy[0]
+
+    def get(self, marker_id: int):
+        if marker_id != 0:
+            return None
+        rp = self._cli.pose
+        close = math.hypot(rp.position.x - self._far[0], rp.position.y - self._far[1]) <= self._near_mm
+        if close:
+            self._reads_close += 1
+            drift = self._step * float(self._reads_close // self._every)
+            self.x = self._near[0] + min(drift, self._max)
+        else:
+            self.x = self._far[0]
+        y = self._near[1] if close else self._far[1]
+        z = np.array([1.0, 0.0, 0.0])
+        y_up = np.array([0.0, 0.0, 1.0])
+        return ArucoState(
+            marker_id=0,
+            position=np.array([self.x, y, 0.0]),
+            rotation_matrix=np.column_stack([np.cross(y_up, z), y_up, z]),
+            confidence=1.0,
+            size_mm=22.5,
+            age=10,
+            updated_at=time.monotonic(),
+        )
+
+
+class _NoAxisMarkerFeed:
+    """Charger marker whose facing axis was never resolved (zero normal)."""
+
+    def get(self, marker_id: int):
+        if marker_id != 0:
+            return None
+        return ArucoState(
+            marker_id=0,
+            position=np.array([0.0, 0.0, 0.0]),
+            rotation_matrix=np.zeros((3, 3)),
+            confidence=1.0,
+            size_mm=22.5,
+            age=10,
+            updated_at=time.monotonic(),
+        )
+
+
 def _make(
     marker_known: bool = True,
     x: float = 500.0,
@@ -206,16 +295,73 @@ class TestDockGuards:
         cli.go_to_pose.assert_not_called()
         on_docked.assert_not_called()
 
+    def test_unresolved_charger_axis_refuses_the_dock(self):
+        """No facing axis means no point in front of the charger — refuse.
+
+        The sequence drives to that point or nowhere. A standoff picked any
+        other way (the line of sight, say) is off the charger's centreline,
+        and the open-loop reverse would miss the dock's back posts.
+        """
+        ds = DockState()
+        motion = MotionController()
+        cli = _FakeCli(x=500.0)
+        on_docked = MagicMock()
+        docking = ArucoDocking(
+            cli=cli,
+            get_marker_state=_NoAxisMarkerFeed().get,
+            dock_state=ds,
+            motion=motion,
+            on_docked=on_docked,
+        )
+
+        assert docking.dock(0) is True  # the marker exists, so the job starts
+        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names)
+
+        cli.go_to_pose.assert_not_called()
+        cli.drive_wheels.assert_not_called()
+        on_docked.assert_not_called()
+
 
 class TestDockSequence:
-    def test_standoff_is_on_the_marker_normal(self):
-        """One drive: straight ahead along the marker's normal, then reverse.
+    def test_head_is_leveled_before_the_approach(self):
+        """The head goes level before anything is planned or driven.
 
-        The standoff sits on the marker's outward normal, so the robot
-        arrives on the charger's centreline. The robot starts on the
-        normal axis (at (500, 0) with the marker's normal along +x), so
-        the standoff is dead ahead at 250 mm — on the normal, with no
-        lateral step.
+        The standoff is planned from the charger's fused pose, and a head
+        left tilted by whatever ran before (the demo looks down, a cube
+        approach tilts down) leaves the marker at the frame's edge, where
+        that pose is poor. Pin the order: head first, then the drive.
+        """
+        docking, cli, ds, motion, _on_docked = _make()
+        ds.charging = True
+        events: list[str] = []
+        real_set_head = cli.set_head_angle.side_effect
+        real_go = cli.go_to_pose.side_effect
+
+        def set_head(*args, **kwargs):
+            events.append("head")
+            return real_set_head(*args, **kwargs)
+
+        def go(*args, **kwargs):
+            events.append("go")
+            return real_go(*args, **kwargs)
+
+        cli.set_head_angle.side_effect = set_head
+        cli.go_to_pose.side_effect = go
+
+        assert docking.dock(0) is True
+        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names)
+
+        assert events[0] == "head", "the head must be leveled before the approach"
+        assert "go" in events
+        assert cli.set_head_angle.call_args.args[0] == docking.LEVEL_HEAD_ANGLE_RAD
+
+    def test_standoff_is_the_point_in_front_of_the_charger(self):
+        """One drive: straight ahead to the point in front of the charger, then reverse.
+
+        That point sits on the charger's facing axis, so the robot arrives
+        on the charger's centreline. The robot starts on the axis (at
+        (500, 0) with the marker's facing axis along +x), so the point is
+        dead ahead at ``APPROACH_DIST_MM`` — on the axis, no lateral step.
         """
         docking, cli, ds, motion, on_docked = _make()
         ds.charging = True  # contacts detect immediately on reverse
@@ -225,44 +371,110 @@ class TestDockSequence:
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names)
 
         # The whole approach is one path segment: the robot starts at
-        # (500, 0) with the marker at the origin (normal along +x), so the
-        # standoff is dead ahead at 250 mm — on the marker's normal.
+        # (500, 0) with the marker at the origin (facing axis along +x), so
+        # the point in front of the charger is dead ahead at 200 mm.
         assert cli.go_to_pose.call_count >= 1
         standoff = cli.go_to_pose.call_args_list[0].args[0]
         assert math.isclose(standoff.position.x, docking.APPROACH_DIST_MM, rel_tol=0.05)
-        assert abs(standoff.position.y) < 1e-6, "the standoff must sit on the marker's normal, not off to the side"
+        assert abs(standoff.position.y) < 1e-6, "the standoff must sit on the charger's axis, not off to the side"
         assert abs(wrap_pi(standoff.rotation.angle_z.radians - math.pi)) < 1e-9
 
         turn = [c for c in cli.drive_wheels.call_args_list if c.kwargs["lwheel_speed"] == -c.kwargs["rwheel_speed"]]
         assert turn
         assert on_docked.call_count == 1
 
-    def test_off_axis_start_standoff_is_on_the_normal_not_the_line_of_sight(self):
-        """An off-axis start lands on the marker's normal, not the line of sight.
+    def test_the_improved_pose_replans_and_redrives_the_point_in_front(self):
+        """The first standoff is the first good look: drive it again from the better pose.
 
-        The standoff is on the marker's outward normal, so regardless of
-        where the robot starts it arrives on the charger's centreline —
-        the reverse then runs straight back into the dock's back posts.
-        Gating on the marker's normal-derived obliquity would take the
-        marker's fused rotation, which is ill-conditioned (off by tens of
-        degrees at a head-on start), so a guard would refuse the poses
-        that dock best. The dock proceeds and the centring step does what
-        it can.
+        The feed serves the distant (0, 0) until the robot stands at the
+        200 mm standoff, then corrects the charger to 40 mm — the live
+        pattern. That moves the point in front of the charger 40 mm, past
+        ``REPLAN_TOL_MM``, so the robot must drive to the *new* point
+        rather than absorb the difference with a turn: it ends up on the
+        point, not near it.
+        """
+        ds = DockState()
+        motion = MotionController()
+        cli = _FakeCli(x=500.0)
+        feed = _ImprovingMarkerFeed(cli)
+        on_docked = MagicMock()
+        docking = ArucoDocking(
+            cli=cli,
+            get_marker_state=feed.get,
+            dock_state=ds,
+            motion=motion,
+            on_docked=on_docked,
+        )
+        docking.STANDOFF_DWELL_S = 0.1
+        ds.charging = True
+
+        assert docking.dock(0) is True
+        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
+
+        standoffs = [call.args[0] for call in cli.go_to_pose.call_args_list]
+        assert len(standoffs) >= 2, "an improved pose must replan and re-drive"
+        assert math.isclose(standoffs[0].position.x, docking.APPROACH_DIST_MM, rel_tol=0.05)
+        assert math.isclose(standoffs[1].position.x, 40.0 + docking.APPROACH_DIST_MM, rel_tol=0.05)
+        assert on_docked.call_count == 1
+
+    def test_the_approach_replans_at_most_once(self):
+        """A pose that keeps improving does not loop the approach forever.
+
+        One replan is the fix (the first close look); a second pass would
+        be chasing the fusion filter's own noise. The feed here improves
+        again on every few reads once the robot is close, so an uncapped
+        loop would drive to 280, 320, 360 … — exactly two drives means the
+        cap held.
+        """
+        ds = DockState()
+        motion = MotionController()
+        cli = _FakeCli(x=500.0)
+        feed = _ImprovingMarkerFeed(cli, step_mm=40.0)
+        on_docked = MagicMock()
+        docking = ArucoDocking(
+            cli=cli,
+            get_marker_state=feed.get,
+            dock_state=ds,
+            motion=motion,
+            on_docked=on_docked,
+        )
+        docking.STANDOFF_DWELL_S = 0.1
+        ds.charging = True
+
+        assert docking.dock(0) is True
+        assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
+
+        standoffs = [call.args[0] for call in cli.go_to_pose.call_args_list]
+        assert len(standoffs) == 2, "one replan, not a loop"
+        assert feed.x >= 40.0, "the pose must actually have kept moving"
+        assert on_docked.call_count == 1
+
+    def test_off_axis_start_still_lands_on_the_charger_axis(self):
+        """An off-axis start still lands on the charger's axis, not the line of sight.
+
+        The point in front of the charger is the charger's own geometry, so
+        regardless of where the robot starts it arrives on the charger's
+        centreline — the reverse then runs straight back into the dock's
+        back posts. Gating on the marker's normal-derived obliquity would
+        take the marker's fused rotation, which is ill-conditioned (off by
+        tens of degrees at a head-on start), so a guard would refuse the
+        poses that dock best. The dock proceeds and the centring step does
+        what it can.
         """
         docking, cli, ds, motion, on_docked = _make()
         ds.charging = True
-        # Robot 45 deg off the marker's axis (marker normal along +x).
+        # Robot 45 deg off the marker's axis (marker facing axis along +x).
         cli.pose = _pose(350.0, 350.0, 0.0)
 
         assert docking.dock(0) is True
         assert _wait_until(lambda: ArucoDocking.JOB_ARUCO_DOCK not in motion.active_names, timeout=10.0)
 
-        # The standoff is on the marker's normal: at 250 mm along +x from
-        # the origin — NOT on the line of sight from (350, 350) which would
-        # land at ~(177, 177).
+        # The point in front of the charger is on its axis: 200 mm along
+        # +x from the origin — NOT on the line of sight from (350, 350),
+        # which would land at ~(177, 177).
         standoff = cli.go_to_pose.call_args_list[0].args[0]
         assert math.isclose(standoff.position.x, docking.APPROACH_DIST_MM, rel_tol=0.05)
-        assert abs(standoff.position.y) < 1e-6, "standoff must be on the marker's normal (+x), not on the line of sight"
+        assert abs(standoff.position.y) < 1e-6, "the standoff must be on the charger's axis (+x), not the line of sight"
         # Heading is the bearing from the standoff back to the marker: pi.
         assert abs(wrap_pi(standoff.rotation.angle_z.radians - math.pi)) < 1e-9
         assert on_docked.call_count == 1

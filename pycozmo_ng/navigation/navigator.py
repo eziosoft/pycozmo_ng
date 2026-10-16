@@ -805,19 +805,23 @@ class Navigator:
     CHARGER_MARKER_ID: ClassVar[int] = 0
 
     def dock_on_aruco(self, marker_id: int = 0) -> bool:
-        """Dock on an ArUco marker: approach, refresh pose, reverse in.
+        """Dock on an ArUco marker: level the head, approach, reverse in.
 
-        Drives to a standoff on the marker's normal (25 cm out, facing
-        it) so the robot arrives on the charger's centreline, dwells
-        until that pose converges, verifies the robot is centred on the
-        marker (the reverse is open loop), then turns 180° and reverses
-        into the charger until charging is detected (the real stop) or
-        the robot has deliberately overshot the docked distance to bump
-        the back of the charger (15 s timeout).
+        Levels the head (0 deg) and waits for it to get there, then drives
+        to the point in front of the charger — the charger's own pose plus
+        ``APPROACH_DIST_MM`` (200 mm) along its facing axis, heading back
+        at the marker — so the robot arrives on the charger's centreline.
+        It dwells until the fused pose converges, and drives the whole
+        approach again when that first close look moves the point by more
+        than ``REPLAN_TOL_MM``; then it verifies the robot is centred on
+        the marker (the reverse is open loop), turns 180° and reverses
+        into the charger until charging is detected (the real stop) or the
+        robot has deliberately overshot the docked distance to bump the
+        back of the charger (15 s timeout).
 
         The marker sits at the *end* of the docking station, on its
-        centreline — the standoff uses the marker's outward normal to
-        land on that centreline (see
+        centreline, so that point is on the centreline too — the
+        open-loop reverse runs straight into the dock's back posts (see
         :mod:`pycozmo_ng.navigation.aruco_docking`).
 
         After a successful dock the pose origin is reset — the robot's

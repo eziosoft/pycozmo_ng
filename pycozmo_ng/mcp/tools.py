@@ -778,10 +778,11 @@ class Toolset:
         )
 
     def dock(self, confirm: bool = False) -> dict[str, Any]:
-        """Dock on the charger AruCo marker 0: drive to it, refresh pose, reverse into it until charging.
+        """Dock on the charger AruCo marker 0.
 
-        Returns a job_id when the attempt starts; ok=false when the
-        marker is not in the world map.
+        Levels the head, drives to the point in front of the charger and
+        reverses in until charging. Returns a job_id when the attempt
+        starts; ok=false when the marker is not in the world map.
         """
         return self.dock_on_aruco(marker_id=0, confirm=confirm)
 

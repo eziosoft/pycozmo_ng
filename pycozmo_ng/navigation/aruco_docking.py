@@ -2,34 +2,62 @@
 
 The sequence:
 
-1. Drive to a **standoff** on the marker's outward normal — the ray from
-   the marker centre along its Z axis — held at ``APPROACH_DIST_MM``
-   (250 mm). The standoff sits on the charger's centreline, so the
-   open-loop reverse (step 3) drives straight back into the dock's back
-   posts. The heading at the standoff is the bearing back to the marker,
-   so the camera faces it the whole way in.
+0. **Level the head** (0 deg) and wait for it to get there. Everything
+   downstream is planned from the charger's fused pose, and a head left
+   tilted from whatever ran before (the demo looks down; a cube approach
+   tilts down) leaves the marker at the edge of the frame, where that
+   pose is poor.
+1. Drive to the **point in front of the charger** — the charger's own
+   pose (its position and facing axis in the world map) plus
+   ``APPROACH_DIST_MM`` along that axis. It sits on the charger's
+   centreline, so the open-loop reverse (step 4) drives straight back
+   into the dock's back posts. The heading is the bearing back to the
+   marker, so the camera faces it the whole way in.
 2. Re-aim onto the marker and settle until the fused pose converges. A
    short dwell lets the world-map EMA absorb the approach drive before
    anything measures off it. If the marker is out of view at the
    standoff (the approach pointed the camera away), a heading sweep
    finds it.
-3. Verify the robot is centred on the marker, then turn 180° and reverse
+3. If that first close look improved the charger's position, the point in
+   front of the charger moved with it — so the approach runs again from
+   the improved pose (see "Replanning" below).
+4. Verify the robot is centred on the marker, then turn 180° and reverse
    in until the charging contacts detect — the real stop.
 
-Why the normal is used for the standoff
-----------------------------------------
+The point in front of the charger
+---------------------------------
 The marker sits on a post at the back end of the charging station, on
-its centreline. A standoff on the marker's normal lands the robot on
-that same centreline, so the reverse runs straight toward the dock's
-back posts. A line-of-sight standoff (ray from marker through the
+its centreline, and the dock is entered along that centreline with the
+robot's rear leading. The point ``APPROACH_DIST_MM`` along the marker's
+own facing axis is the only standoff that puts the robot on the
+centreline — a line-of-sight standoff (ray from marker through the
 robot) would instead inherit whatever obliquity the robot started with:
 off-axis to begin with, the reverse would miss the charger every time.
+So it is not one placement among several: it is *the* point in front of
+the charger, and it is planned from the charger's pose in the world map
+— which is exact geometry after a dock (the post-dock snap) and is only
+refined by vision in between. An unresolvable facing axis is not a
+reason to dock from somewhere else: the sequence refuses and says so.
 
 The *heading* at the standoff, however, comes from *positions* — the
 bearing back to the marker. Facing the marker from the standoff is exact
 by construction, so the camera is on the marker at every settle and a
-settle can never fail for lack of a detection. The normal is only used
-to *place* the standoff, not to *aim* the robot.
+settle can never fail for lack of a detection. The axis is only used to
+*place* the standoff, not to *aim* the robot.
+
+Replanning: the first standoff is the first good look
+-----------------------------------------------------
+The pose that planned the standoff was measured from a distance, off
+axis, and the fused position carries tens of millimetres of error. The
+settle at the standoff is the first close, head-on look at the marker,
+and it usually improves that pose — which moves the point in front of
+the charger. When it moves by more than ``REPLAN_TOL_MM``, the robot
+does not try to absorb the difference with a turn: it drives the whole
+approach again from the improved pose, so it ends up *on* the point in
+front of the charger rather than near it. This happens once, at the
+first standoff: a second pass would be chasing the fusion filter's own
+noise, and by then the robot is close enough that the residual is inside
+the ``LATERAL_TOL_MM`` the centring step already corrects.
 
 Where the accuracy actually comes from
 --------------------------------------
@@ -105,10 +133,27 @@ class ArucoDocking:
 
     JOB_ARUCO_DOCK: str = "aruco_dock"
 
-    #: Standoff in front of the marker, held on the line of sight. 250 mm
-    #: — far enough that the reverse covers the distance in a straight
-    #: line, near enough that the marker is large and unambiguous in the
-    #: frame (~20 px wide at QVGA).
+    #: Head pitch held during a dock (radians). Level: the marker sits on a
+    #: post at the end of the dock, and a head left tilted by whatever ran
+    #: before (the demo looks down, a cube approach tilts down) leaves it at
+    #: the frame's edge, where the fused pose the standoff is planned from
+    #: is poor.
+    LEVEL_HEAD_ANGLE_RAD: float = 0.0
+    #: Arrival tolerance for the level wait (radians) — the turn tolerance,
+    #: since a head that lands a couple of degrees off is level enough.
+    LEVEL_HEAD_TOL_RAD: float = math.radians(2.0)
+    #: Bound on the level wait; the head takes about a second to travel.
+    LEVEL_HEAD_TIMEOUT_S: float = 4.0
+
+    #: How far the charger's point-in-front may move at the first standoff
+    #: before the approach replans and drives it all again (mm). See
+    #: "Replanning" in the module docstring.
+    REPLAN_TOL_MM: float = 20.0
+
+    #: The point in front of the charger, held along the charger's own
+    #: facing axis at this range. 200 mm — far enough that the reverse
+    #: covers the distance in a straight line, near enough that the marker
+    #: is large and unambiguous in the frame.
     APPROACH_DIST_MM: float = 200.0
     #: Dwell at the standoff until the fused marker pose converges.
     STANDOFF_DWELL_S: float = 3.0
@@ -247,6 +292,8 @@ class ArucoDocking:
     def _run(self, job: MotionToken, marker_id: int) -> None:
         """Dock sequence — runs inside the ``aruco_dock`` motion job."""
         try:
+            if not self._level_head(job):
+                return
             if not self._approach(job, marker_id):
                 return
             if not self._reverse_into_charger(job, marker_id):
@@ -258,73 +305,131 @@ class ArucoDocking:
             logger.exception("ArUco dock error")
 
     # ------------------------------------------------------------------
-    # 1-2. Drive the line of sight, settle, re-aim
+    # 0. Level the head; 1-3. drive the point in front, settle, replan
     # ------------------------------------------------------------------
 
-    def _approach(self, job: MotionToken, marker_id: int) -> bool:
-        """Drive the standoff on the marker's normal, then centre on the marker.
+    def _level_head(self, job: MotionToken) -> bool:
+        """Level the head to ``LEVEL_HEAD_ANGLE_RAD`` and wait for it to arrive.
 
-        The standoff is placed on the marker's outward normal so the robot
-        arrives on the charger's centreline — the reverse then runs straight
-        back into the dock's back posts (see the module docstring). The
-        heading at the standoff is the bearing back to the marker, keeping
-        the camera on it the whole way in.
+        Runs before the approach plans anything, because that plan reads
+        the charger's fused pose: a head left tilted by whatever ran before
+        (the demo looks down, a cube approach tilts down) leaves the marker
+        at the edge of the frame, where the pose is poor. Level, the marker
+        is centred and the PnP solve is well conditioned.
+
+        Returns False when cancelled. A head that does not confirm within
+        ``LEVEL_HEAD_TIMEOUT_S`` is logged and the dock goes on — the
+        marker is either in frame or the sweep looks for it. A client with
+        no head telemetry (test doubles) has nothing to wait on.
+        """
+        cli = self.cli
+        cli.set_head_angle(self.LEVEL_HEAD_ANGLE_RAD, accel=30.0, max_speed=30.0)
+        deadline = time.monotonic() + self.LEVEL_HEAD_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if job.cancelled:
+                logger.info("ArUco dock cancelled")
+                cli.stop_all_motors()
+                return False
+            angle = getattr(cli, "head_angle", None)
+            if angle is None:
+                return True
+            if abs(float(angle.radians) - self.LEVEL_HEAD_ANGLE_RAD) <= self.LEVEL_HEAD_TOL_RAD:
+                logger.info("ArUco dock: head level (%.1f deg)", math.degrees(float(angle.radians)))
+                return True
+            time.sleep(0.05)
+        logger.warning("ArUco dock: head level not confirmed within %.0f s — continuing", self.LEVEL_HEAD_TIMEOUT_S)
+        return True
+
+    def _approach(self, job: MotionToken, marker_id: int) -> bool:
+        """Drive to the point in front of the charger, then centre on the marker.
+
+        The target is the charger's own geometry — its position and facing
+        axis in the world map, plus ``APPROACH_DIST_MM`` along that axis —
+        so the robot arrives on the charger's centreline and the reverse
+        runs straight back into the dock's back posts. There is no
+        line-of-sight variant: this point is the only one the reverse
+        works from (see the module docstring).
+
+        The settle at the standoff is also the first close look at the
+        marker, so it usually improves the pose that planned the standoff.
+        When that moves the point in front of the charger by more than
+        ``REPLAN_TOL_MM``, the whole approach runs again from the improved
+        pose — once, at the first standoff — instead of absorbing the
+        difference with a turn.
         """
         logger.info("ArUco dock: start — %s", self._scene(marker_id))
-        standoff_x, standoff_y, heading = self._standoff_target(marker_id)
-        if standoff_x is None:
-            logger.warning("ArUco dock: no usable view of marker %d — %s", marker_id, self._scene(marker_id))
+        target = self._standoff_target(marker_id)
+        if target is None:
             return False
-        logger.info(
-            "ArUco dock: standoff (%.0f, %.0f) from marker %d, heading %.1f deg — %s",
-            standoff_x,
-            standoff_y,
-            marker_id,
-            math.degrees(heading),
-            self._scene(marker_id),
-        )
-        if not self._go(job, standoff_x, standoff_y, heading):
-            return False
-        logger.info("ArUco dock: at standoff — %s", self._scene(marker_id))
+        for attempt in range(2):
+            standoff_x, standoff_y, heading = target
+            logger.info(
+                "ArUco dock: point in front of the charger (%.0f, %.0f), heading %.1f deg — %s",
+                standoff_x,
+                standoff_y,
+                math.degrees(heading),
+                self._scene(marker_id),
+            )
+            if not self._go(job, standoff_x, standoff_y, heading):
+                return False
+            logger.info("ArUco dock: at the standoff — %s", self._scene(marker_id))
 
-        # Let the world-map EMA absorb the drive before anything measures
-        # off it: the alignment below reads the fused pose, and a settle
-        # that still has the marker moving corrects against a line the
-        # robot is not actually on.
-        if not self._settle_or_search(marker_id, job, self.STANDOFF_DWELL_S):
-            return False
+            # Let the world-map EMA absorb the drive before anything
+            # measures off it: the alignment below reads the fused pose,
+            # and a settle that still has the marker moving corrects
+            # against a line the robot is not actually on.
+            if not self._settle_or_search(marker_id, job, self.STANDOFF_DWELL_S):
+                return False
+
+            if attempt > 0:
+                break
+            replanned = self._standoff_target(marker_id)
+            if replanned is None:
+                return False
+            moved = math.hypot(replanned[0] - standoff_x, replanned[1] - standoff_y)
+            if moved <= self.REPLAN_TOL_MM:
+                break
+            logger.info(
+                "ArUco dock: the point in front of the charger moved %.0f mm while settling — "
+                "restarting the approach — %s",
+                moved,
+                self._scene(marker_id),
+            )
+            target = replanned
 
         # The reverse below is open loop — commit only once the robot's rear
         # axis provably points at the marker.
         return self._align_to_line(job, marker_id)
 
-    def _standoff_target(self, marker_id: int) -> tuple[float | None, float, float]:
-        """Plan the standoff pose on the marker's outward normal.
+    def _standoff_target(self, marker_id: int) -> tuple[float, float, float] | None:
+        """Plan the point in front of the charger.
 
-        The standoff sits on the marker's Z axis (outward-facing normal —
+        The charger's own pose supplies both halves: its world position,
+        and its facing axis — the marker's Z (``rotation_matrix[:, 2]``),
         the direction the marker faces, which is the charger's centreline
-        toward the robot when docked) at ``APPROACH_DIST_MM``. This lands
-        the robot on the charger's centreline so the open-loop reverse
-        drives straight back into the dock's back posts. The heading is
-        the bearing back to the marker, so the camera faces it at the
-        standoff and every settle keeps a detection in view.
+        toward the robot when docked. ``APPROACH_DIST_MM`` along that axis
+        is the point in front of the charger, on its centreline, so the
+        open-loop reverse drives straight back into the dock's back posts.
+        The heading is the bearing back to the marker, so the camera faces
+        it at the standoff and every settle keeps a detection in view.
 
-        The normal is only used to *place* the standoff, not to *aim*:
-        the heading comes from positions (the bearing from the standoff
-        to the marker), which are measured ~20× better than the marker's
-        rotation. Facing the marker from the standoff is exact by
-        construction. The centring step downstream corrects any residual
-        lateral offset from normal error.
+        The axis is only used to *place* the standoff, not to *aim*: the
+        heading comes from positions (the bearing from the standoff to the
+        marker), which are measured ~20× better than the marker's rotation.
+        Facing the marker from the standoff is exact by construction. The
+        centring step downstream corrects any residual lateral offset from
+        axis error.
 
         Returns:
-            ``(x, y, heading)``, or ``(None, 0, 0)`` when the marker is
-            unknown, the normal is degenerate, or the robot is on top of
-            it.
+            ``(x, y, heading)``, or None when the marker is unknown or its
+            facing axis is degenerate — without that axis there is no point
+            in front of the charger to drive to, and docking from somewhere
+            else is what this sequence exists to avoid.
         """
         state = self._get_marker_state(marker_id)
         if state is None:
             logger.warning("ArUco dock: marker %d not in world map — %s", marker_id, self._scene(marker_id))
-            return None, 0.0, 0.0
+            return None
         mx, my = float(state.position[0]), float(state.position[1])
         # The marker's Z axis (rotation_matrix[:, 2]) is its outward normal —
         # the direction the marker faces, i.e. the charger's centreline
@@ -333,25 +438,17 @@ class ArucoDocking:
         ny = float(state.rotation_matrix[1, 2])
         nlen = math.hypot(nx, ny)
         if nlen < 1e-6:
-            # Degenerate normal (marker viewed edge-on or normal unresolved) —
-            # fall back to the line-of-sight direction (marker → robot).
-            rx, ry = self._robot_xy()
-            dx, dy = rx - mx, ry - my
-            rng = math.hypot(dx, dy)
-            if rng < 1e-6:
-                logger.warning("ArUco dock: robot is on marker %d — %s", marker_id, self._scene(marker_id))
-                return None, 0.0, 0.0
-            nx, ny = dx / rng, dy / rng
-        else:
-            nx, ny = nx / nlen, ny / nlen
-        standoff_x = mx + nx * self.APPROACH_DIST_MM
-        standoff_y = my + ny * self.APPROACH_DIST_MM
+            # Degenerate axis (marker viewed edge-on, or the normal never
+            # resolved): there is no point in front of the charger to plan.
+            logger.warning(
+                "ArUco dock: marker %d facing axis unresolved — not docking — %s",
+                marker_id,
+                self._scene(marker_id),
+            )
+            return None
+        standoff_x = mx + nx / nlen * self.APPROACH_DIST_MM
+        standoff_y = my + ny / nlen * self.APPROACH_DIST_MM
         return standoff_x, standoff_y, math.atan2(my - standoff_y, mx - standoff_x)
-
-    def _robot_xy(self) -> tuple[float, float]:
-        """The robot's XY position (mm, world frame)."""
-        pose = self.cli.pose
-        return pose.position.x, pose.position.y
 
     @staticmethod
     def _bearing_to(rp, mx: float, my: float) -> float:
@@ -541,7 +638,7 @@ class ArucoDocking:
         the marker's rotation, so this inherits none of a rotation's
         error. Re-deriving a normal here would reintroduce the
         ill-conditioned estimate the standoff already accepts (see the
-        module docstring — the standoff is on the normal, but the
+        module docstring — the standoff is placed on that axis, but the
         *aim* is from positions).
 
         The correction is a *turn* onto the bearing to the marker: aiming
@@ -615,7 +712,7 @@ class ArucoDocking:
         return False
 
     # ------------------------------------------------------------------
-    # 3. Turn around and reverse into the marker
+    # 4. Turn around and reverse into the marker
     # ------------------------------------------------------------------
 
     def _reverse_into_charger(self, job: MotionToken, marker_id: int) -> bool:
