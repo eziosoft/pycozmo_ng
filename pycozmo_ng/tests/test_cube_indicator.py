@@ -234,6 +234,22 @@ class TestCubeIndicatorTraffic:
         indicator.tick()
         assert cubes.colors_sent() == [{2: corners(CubeIndicator.SEEN_LIGHT)}]
 
+    def test_steady_state_is_re_asserted_after_the_refresh_interval(self) -> None:
+        """A cube's BLE write can be lost; a change-only policy would stick."""
+        indicator, cubes, _, clock = _make(connected=(1,))
+        for _ in range(5):
+            indicator.tick()  # the connect blink finishes; the cube stays dark
+        cubes.sent.clear()
+
+        # Nothing about the cube changes — only the clock.
+        clock.now += CubeIndicator.DEFAULT_REFRESH_INTERVAL_S - 0.1
+        indicator.tick()
+        assert cubes.colors_sent() == []
+
+        clock.now += 0.2
+        indicator.tick()
+        assert cubes.colors_sent() == [{1: corners(CubeIndicator.IDLE_LIGHT)}]
+
     def test_indicator_pauses_keepalive_refresh(self) -> None:
         """Otherwise the keepalive's green repaint overwrites every state."""
         indicator, cubes, _, _ = _make(connected=(1,))

@@ -29,6 +29,7 @@ Connection model:
 
 import threading
 from collections.abc import Callable
+from typing import Any
 
 import pycozmo_ng
 from pycozmo_ng.cubes.cube_tracking_state import CubeTrackingState
@@ -61,16 +62,25 @@ class CubeManager:
         self._lock = threading.Lock()
         self._stop_event: threading.Event | None = None
         self._keepalive_thread: threading.Thread | None = None
-        self._cli = None
+        #: The injected client. Typed loosely because packet handlers are
+        #: called with the Connection and the public API with the Client —
+        #: both are accepted (see :meth:`_send`).
+        self._cli: Any = None
         self._light = green_light
         self._light_refresh = True
         self._on_moved: Callable[[int], None] | None = None
+        #: Serializes ``CubeId`` + ``CubeLights``. The robot paints whichever
+        #: cube the last ``CubeId`` selected, so that pair must never be split
+        #: by another thread's ``CubeId`` (see :meth:`select_cube`).
+        self._led_lock = threading.Lock()
 
     def set_light_refresh(self, enabled: bool) -> None:
         """Enable or disable the keepalive's periodic LED refresh.
 
         Disable while something else owns the LEDs (e.g. the cube indicator),
-        or the keepalive's green refresh will overwrite every frame.
+        or the keepalive's green refresh will overwrite every frame.  A repaint
+        that is already in flight when the flag flips can still land on one
+        cube; that is harmless because the owner re-asserts its own state.
         """
         self._light_refresh = bool(enabled)
         logger_cubes.debug("Keepalive light refresh %s", "enabled" if enabled else "disabled")
@@ -320,7 +330,7 @@ class CubeManager:
             with self._lock:
                 self.ct.object_id_map[cube_id] = object_id
             # Select this cube so subsequent CubeLights apply to it.
-            self._send(cli, pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
+            self.select_cube(cli, object_id)
             logger_cubes.info(
                 "Cube %d connected: object_id=%d (factory_id=0x%08x)",
                 cube_id,
@@ -346,6 +356,29 @@ class CubeManager:
     # Light control
     # ------------------------------------------------------------------
 
+    def select_cube(self, cli, object_id: int) -> None:
+        """Send ``CubeId`` — the cube the next ``CubeLights`` applies to.
+
+        ``CubeLights`` carries no address: the robot paints whichever cube the
+        last ``CubeId`` selected.  So a ``CubeId`` is not a message of its own,
+        it is the first half of a pair, and one arriving between another
+        cube's ``CubeId`` and ``CubeLights`` (three threads can send lights:
+        the indicator, the keepalive, and the public API) paints the wrong cube
+        and leaves the intended one stale.  Every ``CubeId`` therefore goes out
+        under ``_led_lock``, which makes the pair indivisible.
+        """
+        with self._led_lock:
+            self._send(cli, pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
+
+    def paint_cube(self, cli, object_id: int, states) -> None:
+        """Send ``CubeId`` + ``CubeLights`` for one cube as one indivisible pair.
+
+        See :meth:`select_cube` for why they must not be separated.
+        """
+        with self._led_lock:
+            self._send(cli, pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
+            self._send(cli, pycozmo_ng.protocol_encoder.CubeLights(states=tuple(states)))
+
     def set_cube_lights(self, cli, light):
         """Set the same LED state on all four corners of every connected cube.
 
@@ -370,8 +403,7 @@ class CubeManager:
             if object_id is None:
                 continue
             try:
-                self._send(cli, pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
-                self._send(cli, pycozmo_ng.protocol_encoder.CubeLights(states=tuple(states)))
+                self.paint_cube(cli, object_id, states)
             except Exception:  # noqa: BLE001
                 logger_cubes.debug("CubeLights failed for cube %s", cube_id, exc_info=True)
 
@@ -460,14 +492,18 @@ class CubeManager:
     def _send_lights_locked(self):
         """Send CubeId + CubeLights for all connected cubes using self._light."""
         cli = self._cli
-        if cli is None or not self._light_refresh:
+        if cli is None:
             return
         with self._lock:
             cubes = dict(self.ct.object_id_map)
         light = self._light
         for cube_id, object_id in cubes.items():
+            # Checked per cube, not once up front: the indicator can take the
+            # LEDs over mid-loop, and a green repaint of a cube it already
+            # painted is exactly the "stuck light" it is there to prevent.
+            if not self._light_refresh:
+                return
             try:
-                self._send(cli, pycozmo_ng.protocol_encoder.CubeId(object_id=object_id))
-                self._send(cli, pycozmo_ng.protocol_encoder.CubeLights(states=(light, light, light, light)))
+                self.paint_cube(cli, object_id, (light, light, light, light))
             except Exception:  # noqa: BLE001
                 logger_cubes.debug("CubeLights refresh failed for cube %s", cube_id, exc_info=True)

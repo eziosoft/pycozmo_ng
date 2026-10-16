@@ -7,7 +7,8 @@ state that already exists elsewhere — which cubes are connected
 currently see (fused cube poses in :class:`~pycozmo_ng.navigation.world_map.WorldMap`),
 and which one a cube visit is working on
 (:class:`~pycozmo_ng.navigation.cube_visit.CubeVisit`) — and sends only the
-*changes*.
+*changes*, plus a periodic re-assert of the steady state (a cube's BLE write can
+be lost; see :meth:`CubeIndicator.tick`).
 
 Each cube shows the highest-priority state that applies to it:
 
@@ -55,6 +56,8 @@ class CubeIndicator:
             Optional.
         poll_interval_s: Seconds between LED updates.
         seen_window_s: How long a fused cube pose counts as a sighting.
+        refresh_interval_s: How long a steady state may go un-re-sent; see
+            :meth:`tick` for why a change-only policy is not enough.
         clock: Monotonic clock (injectable for tests).
     """
 
@@ -62,6 +65,8 @@ class CubeIndicator:
     DEFAULT_POLL_INTERVAL_S = 0.1
     #: How long a fused cube pose counts as "the robot can see it" (seconds).
     DEFAULT_SEEN_WINDOW_S = 1.0
+    #: How long a steady state may go un-re-sent (seconds). See :meth:`tick`.
+    DEFAULT_REFRESH_INTERVAL_S = 2.0
 
     #: Connect acknowledgement: two flashes, one tick each (on, off, on, off).
     #: Shown once per cube per run — a keepalive reconnect is not a new cube.
@@ -83,6 +88,7 @@ class CubeIndicator:
         *,
         poll_interval_s: float = DEFAULT_POLL_INTERVAL_S,
         seen_window_s: float = DEFAULT_SEEN_WINDOW_S,
+        refresh_interval_s: float = DEFAULT_REFRESH_INTERVAL_S,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._cubes = cubes
@@ -90,6 +96,7 @@ class CubeIndicator:
         self._visit = visit
         self._poll_interval_s = float(poll_interval_s)
         self._seen_window_s = float(seen_window_s)
+        self._refresh_interval_s = float(refresh_interval_s)
         self._clock = clock
         self._cli = None
         #: Cubes whose connection the indicator has already acknowledged.
@@ -100,8 +107,9 @@ class CubeIndicator:
         self._blinked: set[int] = set()
         #: Cube ID -> current blink frame, for cubes mid-blink.
         self._blink: dict[int, int] = {}
-        #: Cube ID -> last LED tuple sent, so untouched cubes cost nothing.
-        self._sent: dict[int, tuple[LightState, ...]] = {}
+        #: Cube ID -> (last LED tuple sent, when). Kept so untouched cubes cost
+        #: nothing between refreshes.
+        self._sent: dict[int, tuple[tuple[LightState, ...], float]] = {}
         self._stop_event: threading.Event | None = None
         self._thread: threading.Thread | None = None
 
@@ -164,11 +172,20 @@ class CubeIndicator:
         return self.IDLE_LIGHT
 
     def tick(self) -> None:
-        """Send every LED state that changed since the last tick.
+        """Send every LED state that changed — and re-assert the steady ones.
 
         Independent of :meth:`start`: the indicator owns the LEDs whenever it
         sends, and stepping the sequence without a robot is how it is tested
         (the manager decides what a send actually does).
+
+        Two things can leave a cube showing the wrong colour, and both are
+        invisible to a change-only policy: the robot relays ``CubeLights`` to
+        the cube over BLE, where a write can simply be dropped (nothing
+        retransmits it — see :meth:`~pycozmo_ng.cubes.manager.CubeManager.select_cube`
+        for the other), and a dropped write used to stick until that cube's
+        state next changed, which for an idle cube is never.  So a steady state
+        is re-sent at least every ``refresh_interval_s``: the cost is two
+        packets, and a wrong LED cannot outlive the next refresh.
         """
         # Own the LEDs: the keepalive's periodic green repaint would overwrite
         # every state we send — and burn battery repainting the same colour.
@@ -178,14 +195,17 @@ class CubeIndicator:
         connected = self._cubes.connected_cubes
         self._note_connections(connected)
 
+        now = self._clock()
         changed = {}
         for cube_id in connected:
             state = (self.light_for(cube_id),) * CORNERS
-            if state != self._sent.get(cube_id):
+            sent = self._sent.get(cube_id)
+            if sent is None or sent[0] != state or now - sent[1] >= self._refresh_interval_s:
                 changed[cube_id] = state
         if changed:
             self._cubes.set_cube_states(self._cli, changed)
-            self._sent.update(changed)
+            for cube_id, state in changed.items():
+                self._sent[cube_id] = (state, now)
 
         self._advance_blink()
 
