@@ -64,7 +64,12 @@ class CubeIndicator:
     #: Seconds between LED updates. Also one blink frame.
     DEFAULT_POLL_INTERVAL_S = 0.1
     #: How long a fused cube pose counts as "the robot can see it" (seconds).
-    DEFAULT_SEEN_WINDOW_S = 1.0
+    #: Measured on hardware: a cube in view refreshes its fused pose every
+    #: 0.13-0.16 s typically, but a cube toward the edge of the frame leaves
+    #: gaps up to ~1.6 s. A 1 s window sat inside that distribution, so such a
+    #: cube pulsed dim blue/dark at the detection rate; 3 s clears it, and a
+    #: cube that is really gone still goes dark within 3 s.
+    DEFAULT_SEEN_WINDOW_S = 3.0
     #: How long a steady state may go un-re-sent (seconds). See :meth:`tick`.
     DEFAULT_REFRESH_INTERVAL_S = 2.0
 
