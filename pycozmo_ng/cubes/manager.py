@@ -234,7 +234,10 @@ class CubeManager:
         """Discover available cubes and build the factory_id mapping.
 
         Does NOT connect cubes — call :meth:`connect_all_cubes` or
-        :meth:`start_keepalive` separately.
+        :meth:`start_keepalive` separately.  This is the explicit, one-off
+        discovery; the keepalive also keeps merging whatever the robot reports
+        (:meth:`merge_available_objects`), so a cube that shows up later still
+        gets connected.
         """
         import time
 
@@ -250,47 +253,58 @@ class CubeManager:
         else:
             logger_cubes.info("Timeout waiting for objects")
 
-        available_objects = dict(cli.available_objects)
-        if not available_objects:
+        if not self.merge_available_objects(cli):
             logger_cubes.warning("No cubes found")
             return
 
-        cube_types = [
-            pycozmo_ng.protocol_encoder.ObjectType.Block_LIGHTCUBE1,
-            pycozmo_ng.protocol_encoder.ObjectType.Block_LIGHTCUBE2,
-            pycozmo_ng.protocol_encoder.ObjectType.Block_LIGHTCUBE3,
-        ]
-
-        available_cubes = []
-        for factory_id, obj in available_objects.items():
-            if obj.object_type in cube_types:
-                available_cubes.append((factory_id, obj.object_type))
-
-        if not available_cubes:
-            logger_cubes.warning("No light cubes found")
-            return
-
-        logger_cubes.info("Available cubes:")
-        for factory_id, obj_type in available_cubes:
-            if obj_type == pycozmo_ng.protocol_encoder.ObjectType.Block_LIGHTCUBE1:
-                detected_cube_id = 1
-            elif obj_type == pycozmo_ng.protocol_encoder.ObjectType.Block_LIGHTCUBE2:
-                detected_cube_id = 2
-            elif obj_type == pycozmo_ng.protocol_encoder.ObjectType.Block_LIGHTCUBE3:
-                detected_cube_id = 3
-            else:
-                continue
-
-            self.ct.cube_factory_id_map[detected_cube_id] = factory_id
-            logger_cubes.info(
-                "Detected cube_id %d -> Factory ID 0x%08x (%s)",
-                detected_cube_id,
-                factory_id,
-                obj_type.name,
-            )
-
-        logger_cubes.info("Discovered %d cube(s)", len(self.ct.cube_factory_id_map))
         logger_cubes.info("Cube factory_id map: %s", self.ct.cube_factory_id_map)
+
+    def merge_available_objects(self, cli) -> list[int]:
+        """Add every cube the robot currently reports to the factory-id map.
+
+        The robot announces a cube with ``ObjectAvailable`` (0xF3) when it hears
+        it over BLE, and that can happen at any time — a cube switched on
+        mid-session, or an announcement lost on the lossy AP. Discovery used to
+        be a one-shot at startup: a cube that was not in the map by then was
+        never connected, and so never lit, for the whole session. The keepalive
+        merges on every tick, which is what makes it keep looking.
+
+        Returns the cube IDs that were added.
+        """
+        # ``available_objects`` lives on the Client, not on the Connection that
+        # packet handlers are called with, so read it defensively.
+        available_objects = getattr(cli, "available_objects", None)
+        if not available_objects:
+            return []
+
+        added: list[int] = []
+        with self._lock:
+            for factory_id, obj in dict(available_objects).items():
+                cube_id = self._cube_id_for_object_type(obj.object_type)
+                if cube_id is None or cube_id in self.ct.cube_factory_id_map:
+                    continue
+                self.ct.cube_factory_id_map[cube_id] = factory_id
+                added.append(cube_id)
+                logger_cubes.info(
+                    "Detected cube_id %d -> Factory ID 0x%08x (%s)",
+                    cube_id,
+                    factory_id,
+                    obj.object_type.name,
+                )
+        if added:
+            logger_cubes.info("Discovered %d cube(s)", len(self.ct.cube_factory_id_map))
+        return added
+
+    @staticmethod
+    def _cube_id_for_object_type(object_type) -> int | None:
+        """Cube ID for a light-cube object type (``Block_LIGHTCUBE1`` -> 1)."""
+        types = pycozmo_ng.protocol_encoder.ObjectType
+        by_type = {
+            types.Block_LIGHTCUBE1: 1,
+            types.Block_LIGHTCUBE2: 2,
+            types.Block_LIGHTCUBE3: 3,
+        }
+        return by_type.get(object_type)
 
     # ------------------------------------------------------------------
     # Persistent multi-connection management
@@ -446,9 +460,13 @@ class CubeManager:
                 return
 
     def _keepalive_tick(self):
-        """One tick: connect any unconnected cubes, refresh CubeId + CubeLights."""
+        """One tick: discover what the robot reports, connect, refresh lights."""
         if self._cli is None:
             return
+
+        # Cubes can turn up at any time (switched on later, or announced on a
+        # lossy link), and the keepalive is the only thing still looking.
+        self.merge_available_objects(self._cli)
 
         with self._lock:
             factory_map = dict(self.ct.cube_factory_id_map)
