@@ -235,6 +235,8 @@ class Brain:
             process_every_n_frames=setup.process_every_n_frames,
             undistort=setup.undistort,
             face_detect_every_n_frames=setup.face_detect_every_n_frames,
+            cube_body_rate_gate_radps=setup.cube_body_rate_gate_radps,
+            cube_head_rate_gate_radps=setup.cube_head_rate_gate_radps,
         )
 
         # Plan A* paths over the occupancy grid (Brain is the composition

@@ -97,6 +97,16 @@ class VisionSetup:
     #: Run face detection every Nth processed frame (higher = less CPU).
     face_detect_every_n_frames: int = 1
 
+    #: Ignore *new* cube detections while the body yaws faster than this
+    #: (rad/s). 0.5236 = 30 deg/s — the firmware's own "rotating too fast"
+    #: threshold; motion blur otherwise turns blurred blobs into cube matches.
+    #: Cubes already in the world map keep updating.
+    cube_body_rate_gate_radps: float = 0.5236
+
+    #: Same gate for head motion (rad/s). 0.1745 = 10 deg/s, again the
+    #: firmware's threshold.
+    cube_head_rate_gate_radps: float = 0.1745
+
     #: Detect the charger's rectangular marker as a first-class object
     #: (own detection path, never a cube ID — COZMO-65).
     enable_charger_detection: bool = True

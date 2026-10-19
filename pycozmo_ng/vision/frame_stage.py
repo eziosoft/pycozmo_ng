@@ -24,6 +24,7 @@ from pycozmo_ng import event
 from pycozmo_ng.display.expressions import Happiness
 from pycozmo_ng.logger import logger_cubes
 from pycozmo_ng.navigation.world_map import WorldMap
+from pycozmo_ng.util import robot
 from pycozmo_ng.vision.annotation import AnnotationEngine
 from pycozmo_ng.vision.cube_detector.detection_pipeline import DetectionPipeline
 from pycozmo_ng.vision.distance_rings import DistanceRings
@@ -72,6 +73,15 @@ class FrameStage:
         self._vision_frame_counter = 0
         self._face_frame_counter = 0
 
+        # Cube motion gate (see ``_cube_motion_gate_active``): while the robot
+        # is turning, motion blur makes blurred blobs match cube templates, so
+        # only cubes already in the world map may be updated.
+        self.cube_body_rate_gate_radps = 0.5236  # 30 deg/s — the firmware's own limit
+        self.cube_head_rate_gate_radps = 0.1745  # 10 deg/s — likewise
+        self._last_head_angle: float | None = None
+        self._last_head_time: float | None = None
+        self._head_rate_radps = 0.0
+
     def configure(
         self,
         *,
@@ -84,6 +94,8 @@ class FrameStage:
         process_every_n_frames: int = 1,
         undistort: bool = False,
         face_detect_every_n_frames: int = 1,
+        cube_body_rate_gate_radps: float = 0.5236,
+        cube_head_rate_gate_radps: float = 0.1745,
     ) -> None:
         """Inject the per-session vision components (from Brain.setup_vision).
 
@@ -98,8 +110,13 @@ class FrameStage:
         self.process_every_n_frames = process_every_n_frames
         self.undistort = undistort
         self.face_detect_every_n_frames = face_detect_every_n_frames
+        self.cube_body_rate_gate_radps = cube_body_rate_gate_radps
+        self.cube_head_rate_gate_radps = cube_head_rate_gate_radps
         self._vision_frame_counter = 0
         self._face_frame_counter = 0
+        self._last_head_angle = None
+        self._last_head_time = None
+        self._head_rate_radps = 0.0
 
     # ------------------------------------------------------------------
     # Per-frame sequence
@@ -109,6 +126,7 @@ class FrameStage:
         """Handle EvtNewRawCameraImage — run the full vision sequence."""
         self._stamp_raw_frame(image)
         self._update_fps()
+        self._update_head_rate(cli)
 
         # Frame skipping for performance
         self._vision_frame_counter += 1
@@ -143,6 +161,14 @@ class FrameStage:
 
             # Detect cubes — pass BGR numpy directly (avoids re-conversion)
             cube_detections = self.detection_pipeline.detect_cubes(img_bgr, head_angle_rad)
+
+            # While the robot turns, motion blur turns blurred blobs into cube
+            # template matches. Trust only cubes the world map already knows;
+            # a phantom must not enter just because the camera is sweeping.
+            if self._cube_motion_gate_active(cli):
+                known = set(self.world_map.get_cubes()) if self.world_map is not None else set()
+                cube_detections = [d for d in cube_detections if d.cube_index in known]
+                self.detection_pipeline.restrict_cubes(known)
 
             # Detect the charger marker — separate path, never a cube ID
             charger_detections = self.detection_pipeline.detect_charger(img_bgr, head_angle_rad)
@@ -212,6 +238,46 @@ class FrameStage:
             self.fs.fps = self.fs.frame_count / elapsed
             self.fs.frame_count = 0
             self.fs.start_time = time.time()
+
+    def _update_head_rate(self, cli) -> None:
+        """Measure the head's angular rate from successive frames.
+
+        Must run before the gate is consulted: it compares against the previous
+        frame's angle and then stores the current one.
+        """
+        head_angle = getattr(cli, "head_angle", None)
+        if head_angle is None:
+            self._head_rate_radps = 0.0
+            return
+        now = time.monotonic()
+        angle = float(head_angle.radians)
+        rate = 0.0
+        if self._last_head_angle is not None and self._last_head_time is not None:
+            elapsed = now - self._last_head_time
+            # Ignore gaps that are not a frame apart (stalls, reconnects).
+            if 0.0 < elapsed <= 0.25:
+                rate = abs(angle - self._last_head_angle) / elapsed
+        self._head_rate_radps = rate
+        self._last_head_angle = angle
+        self._last_head_time = now
+
+    def _cube_motion_gate_active(self, cli) -> bool:
+        """True while the robot turns fast enough to blur cube markers.
+
+        The firmware's own gate (``VisionComponent::WasRotatingTooFast``)
+        discards marker observations above 30 deg/s of body yaw or 10 deg/s of
+        head motion; the same thresholds are used here. Body yaw comes from the
+        wheel speeds (``TRACK_WIDTH`` apart, so differential speed / track width
+        is the yaw rate) — the gyro axes' units are not verified, while wheel
+        speeds are millimetres per second by protocol.
+        """
+        left = getattr(cli, "left_wheel_speed", None)
+        right = getattr(cli, "right_wheel_speed", None)
+        if left is not None and right is not None:
+            body_rate = abs(float(right.mmps) - float(left.mmps)) / robot.TRACK_WIDTH.mm
+            if body_rate > self.cube_body_rate_gate_radps:
+                return True
+        return self._head_rate_radps > self.cube_head_rate_gate_radps
 
     def _publish_annotated(self, cli, annotated_image, cube_detections) -> None:
         """Store the annotated frame + detections and push it to the browser."""

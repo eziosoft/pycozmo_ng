@@ -333,6 +333,15 @@ class DetectionPipeline:
         self.fused_cubes = {}
         logger.info("Cube tracking reset")
 
+    def restrict_cubes(self, allowed: set[int]) -> None:
+        """Drop fused states for cubes outside ``allowed``.
+
+        Used by the motion gate: while the robot turns, only cubes the world
+        map already knows may be updated, so a blurred blob that matched a
+        template cannot enter the fused state (and from there the world map).
+        """
+        self.fused_cubes = {index: state for index, state in self.fused_cubes.items() if index in allowed}
+
 
 def load_marker_templates(marker_dir: str | None = None) -> list[np.ndarray]:
     """Load and preprocess marker templates from disk.

@@ -14,7 +14,7 @@ from unittest.mock import Mock
 import numpy as np
 from PIL import Image
 
-from pycozmo_ng import event
+from pycozmo_ng import event, util
 from pycozmo_ng.display.expressions import Happiness
 from pycozmo_ng.vision.face_identity import FaceIdentity
 from pycozmo_ng.vision.frame_sink import FrameSink
@@ -421,3 +421,80 @@ def test_charger_detections_flow_to_events_and_world_map():
     args = h.world_map.update_charger_measurement.call_args.args
     assert np.allclose(args[1], np.eye(3))  # marker pose, not position-only (COZMO-67)
     assert args[3] == 0.5
+
+
+# ---------------------------------------------------------------------------
+# Cube motion gate — false positives while driving
+# ---------------------------------------------------------------------------
+
+
+def make_driving_cli(left_mmps: float, right_mmps: float, head_angle: float = 0.5):
+    """Client stand-in with wheel speeds (the gate's body-yaw source)."""
+    return make_cli(
+        left_wheel_speed=util.Speed(mmps=left_mmps),
+        right_wheel_speed=util.Speed(mmps=right_mmps),
+        head_angle=SimpleNamespace(radians=head_angle),
+    )
+
+
+def test_motion_gate_drops_unknown_cube_while_turning():
+    """A blurred blob matching a template must not enter the map while turning."""
+    h = make_stage()
+    h.world_map.get_cubes.return_value = {}
+    h.detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=2)]
+
+    # Wheels counter-rotate: 100 mm/s each way over a 45 mm track = 4.4 rad/s.
+    h.stage.on_camera_image(make_driving_cli(-100.0, 100.0), make_image())
+
+    assert h.fs.latest_detections == []
+    h.detection_pipeline.restrict_cubes.assert_called_once_with(set())
+
+
+def test_motion_gate_keeps_known_cube_while_turning():
+    """An already-tracked cube keeps updating — only new IDs are refused."""
+    h = make_stage()
+    h.world_map.get_cubes.return_value = {0: object()}
+    h.detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=0)]
+
+    h.stage.on_camera_image(make_driving_cli(-100.0, 100.0), make_image())
+
+    assert [d.cube_index for d in h.fs.latest_detections] == [0]
+    h.detection_pipeline.restrict_cubes.assert_called_once_with({0})
+
+
+def test_motion_gate_inactive_when_still():
+    h = make_stage()
+    h.world_map.get_cubes.return_value = {}
+    h.detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=1)]
+
+    h.stage.on_camera_image(make_driving_cli(0.0, 0.0), make_image())
+
+    assert [d.cube_index for d in h.fs.latest_detections] == [1]
+    h.detection_pipeline.restrict_cubes.assert_not_called()
+
+
+def test_motion_gate_trips_on_fast_head_motion():
+    """Head tilt blurs the frame too — the firmware gates it at 10 deg/s."""
+    h = make_stage()
+    h.world_map.get_cubes.return_value = {}
+    h.detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=1)]
+
+    # Previous frame 20 ms ago at a different head angle => 0.4 rad / 0.02 s.
+    h.stage._last_head_angle = 0.0
+    h.stage._last_head_time = time.monotonic() - 0.02
+
+    h.stage.on_camera_image(make_driving_cli(0.0, 0.0, head_angle=0.4), make_image())
+
+    assert h.fs.latest_detections == []
+    h.detection_pipeline.restrict_cubes.assert_called_once_with(set())
+
+
+def test_motion_gate_thresholds_are_configurable():
+    h = make_stage(cube_body_rate_gate_radps=10.0)
+    h.world_map.get_cubes.return_value = {}
+    h.detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=1)]
+
+    # 4.4 rad/s is below the raised threshold, so the cube is kept.
+    h.stage.on_camera_image(make_driving_cli(-100.0, 100.0), make_image())
+
+    assert [d.cube_index for d in h.fs.latest_detections] == [1]
