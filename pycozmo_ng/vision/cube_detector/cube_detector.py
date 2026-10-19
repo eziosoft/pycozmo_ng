@@ -19,11 +19,13 @@ def _is_convex_quad(pts: np.ndarray) -> bool:
 
 def _intersect_lines(point_a: np.ndarray, dir_a: np.ndarray, point_b: np.ndarray, dir_b: np.ndarray):
     """Intersection of two lines given as point + direction; ``None`` if parallel."""
-    matrix = np.array([[dir_a[0], -dir_b[0]], [dir_a[1], -dir_b[1]]])
-    determinant = float(np.linalg.det(matrix))
+    # Closed-form 2x2 solve — this runs four times per candidate quad, so a
+    # np.linalg.solve call per corner is needlessly heavy.
+    determinant = float(dir_b[0] * dir_a[1] - dir_a[0] * dir_b[1])
     if abs(determinant) < 1e-9:
         return None
-    t, _ = np.linalg.solve(matrix, point_b - point_a)
+    delta = point_b - point_a
+    t = float((delta[0] * -dir_b[1] + delta[1] * dir_b[0]) / determinant)
     return point_a + t * dir_a
 
 
@@ -290,6 +292,14 @@ class CozmoCubeDetector:
         # Negative templates for symmetric rejection (COZMO-65)
         self.reject_rotated = self._rotate_markers(reject_markers or [])
 
+        # Matching matrices: ``cv2.TM_CCOEFF_NORMED`` on equal-sized patches is
+        # exactly the zero-mean normalised correlation, so every template can be
+        # scored in one matrix-vector product instead of one ``matchTemplate``
+        # call each. On a busy frame that is the difference between 27 ms and a
+        # few ms per frame (72 calls per candidate quad).
+        self._marker_ids, self._marker_rotations, self._marker_matrix = self._build_match_matrix(self.rotated_markers)
+        _reject_ids, _reject_rotations, self._reject_matrix = self._build_match_matrix(self.reject_rotated)
+
         # Perspective transform points
         self.dst_pts = np.array([[0, 0], [31, 0], [31, 31], [0, 31]], dtype=np.float32)
 
@@ -401,19 +411,56 @@ class CozmoCubeDetector:
             rotated.append(rotations)
         return rotated
 
+    @staticmethod
+    def _build_match_matrix(rotated_markers):
+        """Flatten templates into a zero-mean, unit-norm row matrix.
+
+        Rows are ``(marker_id, rotation)`` pairs in scan order, so a single
+        dot product scores a patch against every template and rotation at once.
+        """
+        rows = []
+        ids = []
+        rotations = []
+        for marker_id, marker_rotations in enumerate(rotated_markers):
+            for rotation, template in enumerate(marker_rotations):
+                flat = template.astype(np.float32).ravel()
+                flat = flat - flat.mean()
+                norm = float(np.linalg.norm(flat))
+                if norm > 1e-6:
+                    flat = flat / norm
+                rows.append(flat)
+                ids.append(marker_id)
+                rotations.append(rotation)
+        if not rows:
+            return np.empty(0, dtype=int), np.empty(0, dtype=int), np.empty((0, 1024), dtype=np.float32)
+        return (
+            np.asarray(ids, dtype=int),
+            np.asarray(rotations, dtype=int),
+            np.vstack(rows).astype(np.float32),
+        )
+
+    @staticmethod
+    def _normalized_patch(patch: np.ndarray) -> np.ndarray | None:
+        """Zero-mean, unit-norm flattening of a patch; ``None`` when featureless."""
+        flat = patch.astype(np.float32).ravel()
+        flat = flat - flat.mean()
+        norm = float(np.linalg.norm(flat))
+        if norm <= 1e-6:
+            return None
+        return flat / norm
+
     def _match_reject_markers(self, patch):
         """Best score of the patch against the negative (reject) templates.
 
         Returns -1.0 when no reject markers are configured, so the guard is
         a no-op for callers that did not opt in (COZMO-65).
         """
-        best = -1.0
-        for rotations in self.reject_rotated:
-            for rotated in rotations:
-                res = cv2.matchTemplate(patch, rotated, cv2.TM_CCOEFF_NORMED)
-                score = float(res[0][0])
-                best = max(best, score)
-        return best
+        if self._reject_matrix.shape[0] == 0:
+            return -1.0
+        vector = self._normalized_patch(patch)
+        if vector is None:
+            return -1.0
+        return float(np.max(self._reject_matrix @ vector))
 
     def detect(self, frame):
         """Processes a frame to find cubes."""
@@ -672,23 +719,20 @@ class CozmoCubeDetector:
 
     def _match_marker(self, patch):
         """Compares the patch against known 32x32 bitmaps, checking rotations.
-        Returns: (marker_id, score, rotation_index) where rotation_index is 0-3"""
-        best_score = -1
-        best_id = -1
-        best_rotation = 0
 
-        for i, rotations in enumerate(self.rotated_markers):
-            for rot_idx, rotated in enumerate(rotations):
-                res = cv2.matchTemplate(patch, rotated, cv2.TM_CCOEFF_NORMED)
-                score = float(res[0][0])
-                if score > best_score:
-                    best_score = score
-                    best_id = i
-                    best_rotation = rot_idx
-                    if score > 0.95:  # Early exit for excellent matches
-                        return best_id, best_score, best_rotation
-
-        return best_id, best_score, best_rotation
+        Scores every template in one matrix-vector product: ``TM_CCOEFF_NORMED``
+        on equal-sized images is the zero-mean normalised correlation, so this
+        is the same score ``cv2.matchTemplate`` would return.
+        Returns: (marker_id, score, rotation_index) where rotation_index is 0-3
+        """
+        if self._marker_matrix.shape[0] == 0:
+            return -1, -1.0, 0
+        vector = self._normalized_patch(patch)
+        if vector is None:
+            return -1, -1.0, 0
+        scores = self._marker_matrix @ vector
+        best = int(np.argmax(scores))
+        return int(self._marker_ids[best]), float(scores[best]), int(self._marker_rotations[best])
 
     def _order_points(self, pts):
         """Order points in clockwise order starting from the top-left."""

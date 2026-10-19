@@ -6,6 +6,7 @@ warpPerspective, and that _match_marker efficiently handles template matching.
 
 import cv2
 import numpy as np
+import pytest
 
 from pycozmo_ng.vision.cube_detector.cube_detector import (
     CozmoCubeDetector,
@@ -114,6 +115,35 @@ class TestExtractPatch:
 
 
 class TestMatchMarker:
+    def test_scores_match_match_template(self):
+        """The matrix matcher must return what ``TM_CCOEFF_NORMED`` returns.
+
+        ``_match_marker`` scores every template in one dot product; if the
+        normalisation ever drifts the scores change silently and the detection
+        threshold stops meaning what it says.
+        """
+        markers = load_marker_templates()
+        detector = CozmoCubeDetector(
+            camera_matrix=np.eye(3),
+            dist_coeffs=np.zeros(5),
+            target_markers=markers,
+        )
+        rng = np.random.default_rng(0)
+        patches = [
+            markers[0],
+            np.rot90(markers[3], 2).copy(),
+            rng.integers(0, 255, (32, 32), dtype=np.uint8),
+        ]
+        for patch in patches:
+            marker_id, score, rotation = detector._match_marker(patch)
+            expected = max(
+                (float(cv2.matchTemplate(patch, template, cv2.TM_CCOEFF_NORMED)[0][0]), i, r)
+                for i, rotations in enumerate(detector.rotated_markers)
+                for r, template in enumerate(rotations)
+            )
+            assert (marker_id, rotation) == (expected[1], expected[2])
+            assert score == pytest.approx(expected[0], abs=1e-5)
+
     def test_returns_valid_marker_id(self):
         markers = load_marker_templates()
         detector = CozmoCubeDetector(
