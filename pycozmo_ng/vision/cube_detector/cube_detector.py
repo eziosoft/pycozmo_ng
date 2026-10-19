@@ -4,6 +4,29 @@ import cv2
 import numpy as np
 
 
+def _is_convex_quad(pts: np.ndarray) -> bool:
+    """True when the 4 points form a convex, consistently wound quadrilateral."""
+    signs = []
+    for i in range(4):
+        a, b, c = pts[i], pts[(i + 1) % 4], pts[(i + 2) % 4]
+        ab = b - a
+        bc = c - b
+        # 2-D cross product (np.cross no longer accepts 2-D vectors in NumPy 2).
+        signs.append(float(ab[0] * bc[1] - ab[1] * bc[0]))
+    signs_arr = np.asarray(signs)
+    return bool(np.all(signs_arr > 0) or np.all(signs_arr < 0))
+
+
+def _intersect_lines(point_a: np.ndarray, dir_a: np.ndarray, point_b: np.ndarray, dir_b: np.ndarray):
+    """Intersection of two lines given as point + direction; ``None`` if parallel."""
+    matrix = np.array([[dir_a[0], -dir_b[0]], [dir_a[1], -dir_b[1]]])
+    determinant = float(np.linalg.det(matrix))
+    if abs(determinant) < 1e-9:
+        return None
+    t, _ = np.linalg.solve(matrix, point_b - point_a)
+    return point_a + t * dir_a
+
+
 class CubeFusionTracker:
     """
     Fuses multiple face detections of the same cube into a single coherent cube pose.
@@ -274,6 +297,98 @@ class CozmoCubeDetector:
         self.face_type_lookup = ["wall", "wall", "wall", "wall", "bottom", "top"]
         self.rotation_lookup = [0, 90, 180, 270, 0, 0]
 
+    # -- quad recovery from the contour -------------------------------------
+    #
+    # The printed markers have rounded corners (radius ~20 % of the side), so a
+    # contour vertex sits on the corner arc and is pulled inward by up to
+    # 0.41 * radius (~8 % of the side). Those vertices are also why
+    # ``approxPolyDP`` returns 5-8 points at a tight epsilon, so a
+    # ``len(approx) == 4`` gate silently drops most markers.
+    #
+    # Rather than localising corners, the four *straight edges* are fitted to
+    # the contour points and the corners are taken where adjacent edges
+    # intersect — i.e. the sharp corners are extrapolated past the rounded
+    # arcs. This is the principle the robot firmware uses in
+    # ``VisionMarker::RefineCorners`` / ``RefineQuadrilateral``.
+
+    #: Contour points closer than this fraction of an edge length belong to it.
+    QUAD_EDGE_BAND = 0.2
+    #: Fraction of an edge trimmed at each end (the rounded corners live there).
+    QUAD_EDGE_TRIM = 0.15
+    #: Edge-fitting iterations.
+    QUAD_FIT_ITERATIONS = 3
+    #: Minimum contour points on an edge for a trustworthy line fit.
+    QUAD_MIN_EDGE_POINTS = 6
+    #: Contour points are strided down to this many before fitting — a line fit
+    #: over a few hundred points is as accurate as over thousands, and much
+    #: cheaper on a full-resolution frame.
+    QUAD_MAX_POINTS = 128
+
+    @classmethod
+    def _quad_from_contour(cls, cnt: np.ndarray) -> np.ndarray | None:
+        """Recover the marker's ideal sharp corners from its contour.
+
+        Starts from the min-area rectangle, then repeatedly fits a line to the
+        contour points along each edge (middle span only — the rounded corners
+        carry no usable edge) and replaces the quad with the intersections of
+        adjacent lines.
+
+        Returns ``None`` only when the contour cannot form a quad at all; when a
+        line fit is not trustworthy the min-area rectangle is returned instead,
+        so the marker still gets a (rougher) chance to match.
+        """
+        pts = cnt.reshape(-1, 2).astype(np.float32)
+        if len(pts) < 4 * cls.QUAD_MIN_EDGE_POINTS:
+            return None
+        if len(pts) > cls.QUAD_MAX_POINTS:
+            pts = pts[:: int(np.ceil(len(pts) / cls.QUAD_MAX_POINTS))]
+
+        quad = cv2.boxPoints(cv2.minAreaRect(cnt)).astype(np.float32)
+        if not _is_convex_quad(quad):
+            return None
+        seed_area = abs(cv2.contourArea(quad.reshape(-1, 1, 2)))
+
+        for _ in range(cls.QUAD_FIT_ITERATIONS):
+            lines = []
+            for i in range(4):
+                a, b = quad[i], quad[(i + 1) % 4]
+                edge = b - a
+                length = float(np.linalg.norm(edge))
+                if length < 2.0:
+                    return quad
+                direction = edge / length
+                rel = pts - a
+                along = (rel @ direction) / length
+                across = np.abs(rel[:, 0] * -direction[1] + rel[:, 1] * direction[0])
+                selected = (
+                    (along > cls.QUAD_EDGE_TRIM)
+                    & (along < 1.0 - cls.QUAD_EDGE_TRIM)
+                    & (across < cls.QUAD_EDGE_BAND * length)
+                )
+                if np.count_nonzero(selected) < cls.QUAD_MIN_EDGE_POINTS:
+                    return quad
+                vx, vy, x0, y0 = cv2.fitLine(pts[selected], cv2.DIST_L2, 0, 0.01, 0.01).ravel()
+                lines.append((np.array([x0, y0], dtype=np.float32), np.array([vx, vy], dtype=np.float32)))
+
+            corners = []
+            for i in range(4):
+                corner = _intersect_lines(*lines[i], *lines[(i - 1) % 4])
+                if corner is None or not np.all(np.isfinite(corner)):
+                    return quad
+                corners.append(corner)
+            candidate = np.asarray(corners, dtype=np.float32)
+
+            # Reject a fit that collapsed or exploded.
+            area = abs(cv2.contourArea(candidate.reshape(-1, 1, 2)))
+            if not _is_convex_quad(candidate) or seed_area <= 1e-6 or not (0.5 <= area / seed_area <= 1.6):
+                return quad
+            settled = float(np.max(np.linalg.norm(candidate - quad, axis=1))) < 0.05
+            quad = candidate
+            if settled:
+                break
+
+        return quad
+
     @staticmethod
     def _rotate_markers(markers):
         """Normalize markers and pre-compute all four 90-degree rotations."""
@@ -344,7 +459,9 @@ class CozmoCubeDetector:
         _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
         # Find contours
-        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        # CHAIN_APPROX_NONE: the edge line fit needs the points along the
+        # straight runs, which SIMPLE collapses to their endpoints.
+        contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
 
         # Filter and sort contours by area
         h, w = img.shape[:2]
@@ -354,107 +471,89 @@ class CozmoCubeDetector:
 
         results = []
         for cnt in contours[:20]:  # Check up to 20 largest contours
-            # Approximate polygon
-            peri = cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+            # Recover the ideal sharp corners from the marker's straight edges
+            # (the printed corners are rounded).
+            quad = self._quad_from_contour(cnt)
+            if quad is None:
+                continue
 
-            if len(approx) == 4 and cv2.isContourConvex(approx):
-                _x, _y, rw, rh = cv2.boundingRect(approx)
-                aspect = rw / rh if rh != 0 else 0
-                aspect_min, aspect_max = self.aspect_range
-                if not (aspect_min < aspect < aspect_max):
+            _x, _y, rw, rh = cv2.boundingRect(quad.reshape(4, 1, 2).astype(np.int32))
+            aspect = rw / rh if rh != 0 else 0
+            aspect_min, aspect_max = self.aspect_range
+            if not (aspect_min < aspect < aspect_max):
+                continue
+
+            pts = quad
+
+            patch = self._extract_patch(img, pts)
+            marker_id, score, marker_rotation = self._match_marker(patch)
+
+            if score > self.score_threshold:
+                # Symmetric guard (COZMO-65): another marker family
+                # matches this quad better — it is not ours.
+                if self._match_reject_markers(patch) > score:
                     continue
 
-                patch = self._extract_patch(img, approx)
-                marker_id, score, marker_rotation = self._match_marker(patch)
+                # Drop clips: a quad touching the image border is truncated
+                # and its solvePnP pose is garbage.
+                px, py = pts[:, 0], pts[:, 1]
+                if px.min() < 2 or py.min() < 2 or px.max() > w - 3 or py.max() > h - 3:
+                    continue
 
-                if score > self.score_threshold:
-                    # Symmetric guard (COZMO-65): another marker family
-                    # matches this quad better — it is not ours.
-                    if self._match_reject_markers(patch) > score:
-                        continue
+                # Order points by angle from center (stable across all rotations)
+                center = pts.mean(axis=0)
 
-                    pts = approx.reshape(4, 2).astype(np.float32)
+                # Calculate angle of each point from center
+                angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
 
-                    # Drop clips: a quad touching the image border is truncated
-                    # and its solvePnP pose is garbage.
-                    px, py = pts[:, 0], pts[:, 1]
-                    if px.min() < 2 or py.min() < 2 or px.max() > w - 3 or py.max() > h - 3:
-                        continue
+                # Sort by angle to get clockwise ordering
+                sorted_indices = np.argsort(angles)
+                pts = pts[sorted_indices]
 
-                    # Sub-pixel corner refinement: contour corners are integer
-                    # quantized; refining before solvePnP cuts pose jitter a lot.
-                    try:
-                        refined = cv2.cornerSubPix(
-                            img,
-                            pts,
-                            (5, 5),
-                            (-1, -1),
-                            (
-                                cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
-                                30,
-                                0.01,
-                            ),
-                        )
-                        if np.all(np.isfinite(refined)):
-                            pts = refined
-                    except cv2.error:
-                        pass
+                # Find which corner is closest to top-left (min x+y)
+                sums = pts.sum(axis=1)
+                top_left_idx = np.argmin(sums)
 
-                    # Order points by angle from center (stable across all rotations)
-                    center = pts.mean(axis=0)
+                # Roll so top-left is at index 0
+                pts = np.roll(pts, -top_left_idx, axis=0)
 
-                    # Calculate angle of each point from center
-                    angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
+                # Apply marker_rotation correction
+                if marker_rotation != 0:
+                    pts = np.roll(pts, marker_rotation, axis=0)
 
-                    # Sort by angle to get clockwise ordering
-                    sorted_indices = np.argsort(angles)
-                    pts = pts[sorted_indices]
+                ordered_pts = pts
+                ordered_pts_int = ordered_pts.astype(np.int32)
 
-                    # Find which corner is closest to top-left (min x+y)
-                    sums = pts.sum(axis=1)
-                    top_left_idx = np.argmin(sums)
+                # Solve PnP for pose estimation.
+                success, rvec, tvec = self._solve_pose(ordered_pts)
+                if success:
+                    # Get cube orientation info
+                    cube_index, face_type, rotation_deg = self._get_cube_orientation(marker_id)
 
-                    # Roll so top-left is at index 0
-                    pts = np.roll(pts, -top_left_idx, axis=0)
+                    # Convert to position and rotation matrix
+                    position = tvec.flatten()
+                    rotation_matrix, _ = cv2.Rodrigues(rvec)
 
-                    # Apply marker_rotation correction
-                    if marker_rotation != 0:
-                        pts = np.roll(pts, marker_rotation, axis=0)
+                    results.append(
+                        {
+                            "id": marker_id,
+                            "score": score,
+                            "rvec": rvec,
+                            "tvec": tvec,
+                            "corners": ordered_pts_int.reshape(4, 1, 2),
+                            "ordered_corners": ordered_pts_int,
+                            "marker_rotation": marker_rotation,
+                            "cube_index": cube_index,
+                            "face_type": face_type,
+                            "rotation": rotation_deg,
+                            "position": position,
+                            "rotation_matrix": rotation_matrix,
+                        }
+                    )
 
-                    ordered_pts = pts
-                    ordered_pts_int = ordered_pts.astype(np.int32)
-
-                    # Solve PnP for pose estimation.
-                    success, rvec, tvec = self._solve_pose(ordered_pts)
-                    if success:
-                        # Get cube orientation info
-                        cube_index, face_type, rotation_deg = self._get_cube_orientation(marker_id)
-
-                        # Convert to position and rotation matrix
-                        position = tvec.flatten()
-                        rotation_matrix, _ = cv2.Rodrigues(rvec)
-
-                        results.append(
-                            {
-                                "id": marker_id,
-                                "score": score,
-                                "rvec": rvec,
-                                "tvec": tvec,
-                                "corners": approx,
-                                "ordered_corners": ordered_pts_int,
-                                "marker_rotation": marker_rotation,
-                                "cube_index": cube_index,
-                                "face_type": face_type,
-                                "rotation": rotation_deg,
-                                "position": position,
-                                "rotation_matrix": rotation_matrix,
-                            }
-                        )
-
-                        # Early exit if we found enough markers
-                        if self.max_detections is not None and len(results) >= self.max_detections:
-                            return results
+                    # Early exit if we found enough markers
+                    if self.max_detections is not None and len(results) >= self.max_detections:
+                        return results
         return results
 
     def _solve_pose(self, image_points):
@@ -503,8 +602,11 @@ class CozmoCubeDetector:
 
         candidates.sort(key=lambda c: c[0])
         err, rvec, tvec = candidates[0]
-        if err > 3.0:
-            return False, None, None
+        if not np.isfinite(err) or err > 3.0:
+            return self._solve_pose_iterative(image_points)
+        if not np.all(np.isfinite(rvec)) or not np.all(np.isfinite(tvec)):
+            # IPPE_SQUARE degenerates on perfectly symmetric input.
+            return self._solve_pose_iterative(image_points)
 
         # Both IPPE solutions project identically, so disambiguate by the face
         # direction: the visible marker's +z normal points back at the camera
@@ -513,6 +615,35 @@ class CozmoCubeDetector:
         normal = cv2.Rodrigues(rvec)[0][:, 2]
         if np.dot(normal, tvec.flatten()) > 0.0 and len(candidates) > 1:
             _, rvec, tvec = candidates[1]
+        return True, rvec, tvec
+
+    def _solve_pose_iterative(self, image_points):
+        """Fallback pose for quads IPPE cannot handle.
+
+        ``IPPE_SQUARE`` is the primary solver, but it degenerates on a
+        near-perfect square — exactly what the edge-fitted quad produces on a
+        frontal marker — reporting a large (or NaN) reprojection error for a
+        zero-error quad. The generic solver has no such degeneracy, so it takes
+        over when IPPE fails, and its own reprojection error is checked here.
+        """
+        try:
+            success, rvec, tvec = cv2.solvePnP(
+                self.obj_points,
+                image_points,
+                self.camera_matrix,
+                self.dist_coeffs,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+            )
+        except (cv2.error, TypeError, ValueError):
+            return False, None, None
+        if not success or rvec is None or tvec is None:
+            return False, None, None
+        if not np.all(np.isfinite(rvec)) or not np.all(np.isfinite(tvec)):
+            return False, None, None
+        projected, _ = cv2.projectPoints(self.obj_points, rvec, tvec, self.camera_matrix, self.dist_coeffs)
+        error = float(np.mean(np.linalg.norm(projected.reshape(4, 2) - image_points, axis=1)))
+        if not np.isfinite(error) or error > 3.0:
+            return False, None, None
         return True, rvec, tvec
 
     def _extract_patch(self, img, quad):

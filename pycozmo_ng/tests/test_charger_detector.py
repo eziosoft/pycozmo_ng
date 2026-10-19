@@ -173,12 +173,17 @@ class TestChargerDetector:
 class TestCubeDetectorRejection:
     """The original bug, and the guard that fixes it (COZMO-65)."""
 
-    def test_without_reject_markers_marker_is_phantom_cube(self, marker_frame, cube_templates):
-        """Documents the regression: the marker used to match a cube template."""
+    def test_without_reject_markers_marker_is_not_a_cube(self, marker_frame, cube_templates):
+        """The charger marker is not claimed as a cube, even without the guard.
+
+        Historically the unguarded detector phantom-detected the marker as a
+        cube (that is what prompted COZMO-65). Since the quad is now recovered
+        from the marker's straight edges instead of rounded contour vertices,
+        the marker no longer matches a cube template, so the guard is defence
+        in depth rather than the only thing preventing the false positive.
+        """
         detector = make_cube_detector(cube_templates)
-        results = detector.detect(marker_frame)
-        assert results, "expected the unguarded cube detector to phantom-detect the marker"
-        assert 0 <= results[0]["cube_index"] <= 2  # it claimed a cube ID
+        assert detector.detect(marker_frame) == []
 
     def test_with_reject_markers_marker_is_not_a_cube(self, marker_frame, cube_templates, charger_template):
         detector = make_cube_detector(cube_templates, charger_template)
