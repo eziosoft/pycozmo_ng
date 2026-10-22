@@ -276,6 +276,7 @@ class Brain:
         )
         self.cli.add_handler(event.EvtRobotStateUpdated, self._on_robot_state)
         self.cli.add_handler(event.EvtRobotPickedUpChange, self._on_picked_up)
+        self.cli.add_handler(event.EvtCliffDetectedChange, self._on_cliff_detected)
 
         logger_cubes.info(
             f"Vision pipeline initialized (processing every "
@@ -393,6 +394,26 @@ class Brain:
     def _on_picked_up(self, c, state):
         if state:
             self.world_map.reset_path()
+
+    # ------------------------------------------------------------------
+    # Cliff handler
+    # ------------------------------------------------------------------
+
+    def _on_cliff_detected(self, c, state) -> None:
+        """Stop all software motion when the robot firmware sees a cliff.
+
+        With stop-on-cliff enabled at the firmware level (Client sends
+        EnableStopOnCliff during init), the robot's ProxSensors module already
+        halts the wheels itself — this handler also cancels Brain-side motion
+        jobs (navigate, dock, approach, closed-loop drive) so nothing that
+        drives via DriveWheels keeps commanding speed against a stopped frame.
+        Fires on status-bit transitions; only the rising edge is acted on.
+        """
+        if not state:
+            return
+        logger.warning("Cliff detected — cancelling motion jobs and stopping motors.")
+        if self.navigator is not None:
+            self.navigator.stop()
 
     # ------------------------------------------------------------------
     # Web streamer lifecycle

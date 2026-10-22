@@ -46,10 +46,13 @@ class Client(event.Dispatcher):
         enable_animations: bool = True,
         enable_procedural_face: bool = True,
         tts_rate: int = 150,
+        stop_on_cliff: bool = True,
     ) -> None:
         super().__init__()
         # Whether to automatically initialize the robot when connection is established.
         self.auto_initialize = bool(auto_initialize)
+        # Whether to enable firmware stop-on-cliff during robot initialization.
+        self.stop_on_cliff = bool(stop_on_cliff)
 
         self.conn = conn.Connection(robot_addr, protocol_log_messages)
         self.conn.add_child_dispatcher(self)
@@ -147,6 +150,14 @@ class Client(event.Dispatcher):
         self.conn.send(pkt)
         # Set timestamp to 0. Also enables RobotState and ObjectAvailable events. Requires Enable (0x25).
         pkt = protocol_encoder.SyncTime()
+        self.conn.send(pkt)
+
+        # Enable firmware stop-on-cliff (0x60): the robot's ProxSensors module
+        # stops the wheels when the cliff sensors read a drop while driving.
+        # The route down (RTIP → body controller) is the same one the engine
+        # uses (`Robot::SendMessage` of the `enableStopOnCliff` message);
+        # without it the flag stays in whatever state the firmware booted in.
+        pkt = protocol_encoder.EnableStopOnCliff(enable=self.stop_on_cliff)
         self.conn.send(pkt)
 
         # TODO: Proper waiting for motor calibration to complete.
