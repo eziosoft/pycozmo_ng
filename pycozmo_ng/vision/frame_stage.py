@@ -230,6 +230,9 @@ class FrameStage:
         self.fs.latest_raw_frame = image
         self.fs.frame_count += 1
         self.fs.last_frame_time = time.time()
+        # The raw MJPEG stream mirrors the camera exactly — it runs for
+        # every frame, independent of the vision gates below.
+        self.sink.push_raw_frame(image)
 
     def _update_fps(self) -> None:
         """Update the FPS counter in frame state (once per raw frame)."""

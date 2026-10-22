@@ -31,12 +31,17 @@ class RecordingFrameSink:
 
     def __init__(self, order: list | None = None) -> None:
         self.order: list[str] = order if order is not None else []
+        self.raw: list = []
         self.annotated: list = []
         self.floor: list = []
         self.faces: list = []
         self.occupancy: list = []
         self.grids: list = []
         self.broadcasts = 0
+
+    def push_raw_frame(self, image) -> None:
+        self.order.append("raw")
+        self.raw.append(image)
 
     def push_annotated_frame(self, image) -> None:
         self.order.append("publish")
@@ -181,6 +186,7 @@ def test_full_sequence_updates_every_sink():
     # Raw frame stamped
     assert h.fs.latest_raw_frame is image
     assert h.fs.frame_count == 1
+    assert h.sink.raw == [image]  # raw MJPEG stream mirrors the camera
 
     # Detection ran with the robot's head angle
     h.detection_pipeline.detect_cubes.assert_called_once()
@@ -212,7 +218,7 @@ def test_full_sequence_updates_every_sink():
 
 
 def test_steps_run_in_order():
-    """annotate → publish → dispatch → feed world map → floor."""
+    """stamp+push raw → annotate → publish → dispatch → feed world map → floor."""
     h = make_stage()
     order = h.sink.order
     h.annotation_engine.detect_and_annotate.side_effect = log_call(order, "annotate", make_image())
@@ -223,6 +229,7 @@ def test_steps_run_in_order():
     h.stage.on_camera_image(make_cli(), make_image())
 
     assert order == [
+        "raw",
         "annotate",
         "publish",
         "dispatch",
@@ -236,7 +243,7 @@ def test_steps_run_in_order():
 
 
 def test_unconfigured_stage_is_inert():
-    """Before configure() a frame is stamped but nothing downstream runs."""
+    """Before configure() a frame is stamped (and raw-pushed) but nothing downstream runs."""
     sink = RecordingFrameSink()
     stage = FrameStage(FrameState(), Mock(), sink)
     cli = make_cli()
@@ -246,6 +253,7 @@ def test_unconfigured_stage_is_inert():
 
     assert stage.fs.latest_raw_frame is image
     assert stage.fs.frame_count == 1
+    assert sink.raw == [image]  # raw stream needs no vision setup
     assert sink.annotated == []
     assert sink.broadcasts == 0
 
@@ -258,6 +266,8 @@ def test_frame_gate_skips_processing_but_still_stamps():
     h.detection_pipeline.detect_cubes.assert_not_called()
     assert h.fs.latest_raw_frame is not None  # raw frame still recorded
     assert h.fs.frame_count == 1
+    assert len(h.sink.raw) == 1  # …and still streamed raw
+    assert h.sink.annotated == []
 
     h.stage.on_camera_image(cli, make_image())  # frame 2 — processed
     h.detection_pipeline.detect_cubes.assert_called_once()

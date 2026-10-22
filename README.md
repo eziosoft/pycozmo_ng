@@ -167,7 +167,7 @@ Controls in the browser:
 | Camera panel                 | Gain, exposure, resolution, head light             |
 | Say box                      | Speak text through the robot (offline TTS)         |
 
-Endpoints: `/` (viewer), `/annotated-video`, `/floor-video` (MJPEG), `/aruco-texture?id=N` (marker textures).
+Endpoints: `/` (viewer), `/raw-video`, `/annotated-video`, `/floor-video` (MJPEG), `/aruco-texture?id=N` (marker textures).
 
 ## The MCP endpoint for LLM clients
 

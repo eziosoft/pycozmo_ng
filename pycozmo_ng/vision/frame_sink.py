@@ -27,6 +27,10 @@ __all__ = ["FrameSink"]
 class FrameSink(Protocol):
     """What a display adapter must offer the frame stage."""
 
+    def push_raw_frame(self, image) -> None:
+        """Publish the raw camera frame (MJPEG stream)."""
+        ...
+
     def push_annotated_frame(self, image) -> None:
         """Publish the annotated camera frame (MJPEG stream)."""
         ...

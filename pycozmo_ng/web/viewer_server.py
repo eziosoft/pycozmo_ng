@@ -54,7 +54,7 @@ class WebViewerServer:
       one call via ``server.router.set_actions(...)``)
     - :class:`WSServer` — WebSocket + HTTP lifecycle
     - :class:`FileServer` — static file serving
-    - :class:`MjpegEndpoint` — annotated/floor MJPEG streams
+    - :class:`MjpegEndpoint` — raw/annotated/floor MJPEG streams
     - :class:`OccupancyDelivery` — when the occupancy grid PNG is sent
     - :func:`build_state_json` — world→scene state serialization
     """
@@ -78,6 +78,8 @@ class WebViewerServer:
         self._dirty = False  # state changed since last broadcast
 
         # Camera frame sources (image, frame_id) — thread-safe via GIL
+        self._latest_raw_image = None
+        self._raw_image_id: int = 0
         self._latest_annotated_image = None
         self._annotated_image_id: int = 0
         self._latest_floor_image = None
@@ -105,12 +107,16 @@ class WebViewerServer:
         self._aruco_texture = ArucoTextureEndpoint()
 
         # MJPEG endpoints — closures that return (image, frame_id)
+        def _get_raw_frame():
+            return self._latest_raw_image, self._raw_image_id
+
         def _get_annotated_frame():
             return self._latest_annotated_image, self._annotated_image_id
 
         def _get_floor_frame():
             return self._latest_floor_image, self._floor_image_id
 
+        self._mjpeg_raw = MjpegEndpoint(_get_raw_frame)
         self._mjpeg_annotated = MjpegEndpoint(_get_annotated_frame)
         self._mjpeg_floor = MjpegEndpoint(_get_floor_frame)
 
@@ -140,6 +146,11 @@ class WebViewerServer:
             loop.call_soon_threadsafe(self._broadcast_queue.put_nowait, True)
         except RuntimeError:
             pass
+
+    def push_raw_frame(self, image):
+        """Publish the latest raw camera frame for MJPEG streaming."""
+        self._latest_raw_image = image
+        self._raw_image_id += 1
 
     def push_annotated_frame(self, image):
         """Publish the latest annotated camera frame for MJPEG streaming."""
@@ -262,6 +273,7 @@ class WebViewerServer:
     def _register_http_routes(self, app) -> None:
         """Mount FileServer + MjpegEndpoint routes on the aiohttp app."""
         app.router.add_get("/", self._file_server.serve_index)
+        app.router.add_get("/raw-video", self._mjpeg_raw.handle)
         app.router.add_get("/annotated-video", self._mjpeg_annotated.handle)
         app.router.add_get("/floor-video", self._mjpeg_floor.handle)
         # Must precede the /{filename} catch-all, which would swallow it.
