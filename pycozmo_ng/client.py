@@ -300,6 +300,24 @@ class Client(event.Dispatcher):
             self._process_completed_image()
             self._reset_partial_state()
 
+    def _image_timestamp(self) -> int:
+        """Timestamp of the just-completed image.
+
+        The engine reads the image timestamp straight from
+        ``ImageChunk.frame_timestamp`` — ``EncodedImage::AddChunk`` copies
+        that wire field (the first u32 of 0xF2) into ``EncodedImage`` when
+        the last chunk arrives, and ``RollingShutterCorrector`` anchors on
+        it. Firmware 2458 leaves the field at 0, so that anchor would never
+        advance and every frame's sample window collapses. Fall back to a
+        millisecond monotonic host clock at frame completion: the relative
+        per-band offsets the corrector derives stay valid, and consecutive
+        frames keep rising anchors.
+        """
+        timestamp = self._partial_image_timestamp
+        if timestamp:
+            return timestamp
+        return time.monotonic_ns() // 1_000_000
+
     def _discard_partial_image(self) -> None:
         """Discard an incomplete camera frame (e.g. from AP frame loss)."""
         self._reset_partial_state()
@@ -329,7 +347,7 @@ class Client(event.Dispatcher):
             image = image.resize(size)
 
         self._latest_image = image
-        self.last_image_timestamp = self._partial_image_timestamp
+        self.last_image_timestamp = self._image_timestamp()
         self.last_image_id = self._partial_image_id
 
         self.dispatch(event.EvtNewRawCameraImage, self, image)

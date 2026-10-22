@@ -11,6 +11,7 @@ from itertools import pairwise
 import numpy as np
 import pytest
 
+from pycozmo_ng.client import Client
 from pycozmo_ng.vision.rolling_shutter import (
     FRAME_READOUT_MS,
     MAX_HISTORY_SAMPLES,
@@ -199,3 +200,21 @@ class TestCorrectEndToEnd:
         image = make_image()
         assert corrector.correct(image, None, IMAGE_ID) is image
         assert corrector.correct(image, int(FRAME_TS), IMAGE_ID) is not image
+
+
+class TestClientImageTimestamp:
+    """`Client._image_timestamp` — the corrector's frame anchor."""
+
+    def test_zero_wire_timestamp_falls_back_to_a_monotonic_anchor(self):
+        """Firmware 2458 leaves `frame_timestamp` at 0; the anchor must rise."""
+        cli = Client()
+        cli._partial_image_timestamp = 0
+        first = cli._image_timestamp()
+        second = cli._image_timestamp()
+        assert first > 0
+        assert second >= first
+
+    def test_populated_wire_timestamp_is_kept(self):
+        cli = Client()
+        cli._partial_image_timestamp = 12_345
+        assert cli._image_timestamp() == 12_345
