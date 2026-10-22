@@ -15,6 +15,7 @@ tests pin the contract navigation relies on:
 import time
 from unittest.mock import MagicMock
 
+from pycozmo_ng import robot
 from pycozmo_ng.navigation.motion_controller import MotionController
 from pycozmo_ng.navigation.remote_control import RemoteControl
 
@@ -168,5 +169,78 @@ class TestLeaseGating:
             rc.update_keys({"w"})
             assert _wait_until(lambda: cli.drive_wheels.call_count > 0)
             assert rc._motion.lease_owner == RemoteControl.LEASE_OWNER
+        finally:
+            rc.stop()
+
+
+class TestCliffGate:
+    """COZMO-74: the firmware stops the wheels on a cliff, but the poll
+    loop keeps re-sending DriveWheels for a held key, which resumes them.
+    Forward must stay zeroed while the CLIFF_DETECTED status bit is set."""
+
+    def test_forward_blocked_while_cliff_detected(self):
+        motion = MotionController()
+        rc, cli = _make(motion)
+        cli.robot_status = robot.RobotStatusFlag.CLIFF_DETECTED
+        rc.start()
+        try:
+            rc.update_keys({"w"})
+            assert _wait_until(lambda: cli.drive_wheels.call_count > 0)
+            for call in cli.drive_wheels.call_args_list:
+                assert call.kwargs == {"lwheel_speed": 0, "rwheel_speed": 0}
+        finally:
+            rc.stop()
+
+    def test_reverse_still_allowed_on_cliff(self):
+        motion = MotionController()
+        rc, cli = _make(motion)
+        cli.robot_status = robot.RobotStatusFlag.CLIFF_DETECTED
+        rc.start()
+        try:
+            rc.update_keys({"s"})
+            assert _wait_until(lambda: cli.drive_wheels.call_count > 0)
+            assert cli.drive_wheels.call_args.kwargs["lwheel_speed"] < 0
+            assert cli.drive_wheels.call_args.kwargs["rwheel_speed"] < 0
+        finally:
+            rc.stop()
+
+    def test_rotation_still_allowed_on_cliff(self):
+        motion = MotionController()
+        rc, cli = _make(motion)
+        cli.robot_status = robot.RobotStatusFlag.CLIFF_DETECTED
+        rc.start()
+        try:
+            rc.update_keys({"d"})
+            assert _wait_until(lambda: cli.drive_wheels.call_count > 0)
+            lw = cli.drive_wheels.call_args.kwargs["lwheel_speed"]
+            rw = cli.drive_wheels.call_args.kwargs["rwheel_speed"]
+            assert lw > 0 > rw  # in-place spin, no forward component
+        finally:
+            rc.stop()
+
+    def test_forward_resumes_when_cliff_clears(self):
+        motion = MotionController()
+        rc, cli = _make(motion)
+        rc.start()
+        try:
+            cli.robot_status = robot.RobotStatusFlag.CLIFF_DETECTED
+            rc.update_keys({"w"})
+            assert _wait_until(lambda: cli.drive_wheels.call_count > 0)
+            assert _wait_until(lambda: cli.drive_wheels.call_args.kwargs["lwheel_speed"] == 0)
+
+            cli.robot_status = 0
+            assert _wait_until(lambda: cli.drive_wheels.call_args.kwargs["lwheel_speed"] > 0)
+        finally:
+            rc.stop()
+
+    def test_mock_client_without_status_does_not_engage_the_gate(self):
+        """Not every client mock carries robot_status; the gate must fail open."""
+        cli = MagicMock(spec=["drive_wheels", "move_head", "move_lift", "stop_all_motors"])
+        rc = RemoteControl(cli, motion=MotionController(), tick_hz=100.0, idle_stop_sec=1.0)
+        rc.start()
+        try:
+            rc.update_keys({"w"})
+            assert _wait_until(lambda: cli.drive_wheels.call_count > 0)
+            assert cli.drive_wheels.call_args.kwargs["lwheel_speed"] > 0
         finally:
             rc.stop()

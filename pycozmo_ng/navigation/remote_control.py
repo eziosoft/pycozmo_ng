@@ -123,6 +123,8 @@ class RemoteControl:
         # Drive keys seen on the previous tick — the edge that takes the
         # lease. Written only by the _run thread.
         self._prev_drive: set[str] = set()
+        # True while the cliff gate is squatting on a held forward key.
+        self._cliff_blocked = False
 
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -210,9 +212,35 @@ class RemoteControl:
                 logger.exception("RemoteControl tick failed")
             self._stop_event.wait(period)
 
+    def _cliff_detected(self) -> bool:
+        """Whether the robot's firmware currently reports a cliff under it.
+
+        The poll loop reads this every tick, so it must survive a mock or
+        legacy client without a usable ``robot_status`` value.
+        """
+        status = getattr(self._cli, "robot_status", 0)
+        if not isinstance(status, int):
+            return False
+        return bool(status & robot.RobotStatusFlag.CLIFF_DETECTED)
+
     def _apply_drive(self, keys: set[str]) -> None:
         forward = ("w" in keys) - ("s" in keys)
         rotate = ("d" in keys) - ("a" in keys)
+
+        # Cliff gate: the firmware's stop-on-cliff halts the wheels but
+        # these direct DriveWheels commands resume them, so forward is
+        # zeroed here as long as the status bit is set. Reverse and
+        # rotation stay available so the robot can back away from the
+        # edge; the key can be re-applied once the cliff status clears.
+        if forward > 0 and self._cliff_detected():
+            if not self._cliff_blocked:
+                logger.warning("Cliff detected — forward drive blocked, reverse/rotation still allowed.")
+            self._cliff_blocked = True
+            forward = 0
+        elif not self._cliff_detected() and self._cliff_blocked:
+            self._cliff_blocked = False
+            logger.info("Cliff cleared — forward drive re-enabled.")
+
         if forward or rotate:
             lw = forward * self._wheel_speed + rotate * self._rotate_speed
             rw = forward * self._wheel_speed - rotate * self._rotate_speed
