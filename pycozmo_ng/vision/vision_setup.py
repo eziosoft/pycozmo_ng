@@ -116,6 +116,13 @@ class VisionSetup:
     #: JSON config file (PYCOZMO_NG_ARUCO_CONFIG), not from here.
     enable_aruco_detection: bool = True
 
+    #: Correct rolling-shutter skew inside camera frames using the robot's
+    #: per-band IMU samples (``imageGyro`` 0xF4) — port of the engine's
+    #: ``RollingShutterCorrector`` (65 ms read-out, per-band rate
+    #: integration, band-wise horizontal warp). Frames pass through
+    #: unchanged while no ``imageGyro`` data arrives.
+    rolling_shutter_correction: bool = True
+
     #: Draw translucent ground-distance zones (orange floor tint) plus a
     #: white centre line to the far boundary on the annotated frame — the
     #: cue for a human viewer and for an LLM reading get_frame(annotated=True).

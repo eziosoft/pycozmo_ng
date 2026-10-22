@@ -33,6 +33,7 @@ from pycozmo_ng.vision.face_identity import FaceFrame, FaceIdentity
 from pycozmo_ng.vision.frame_sink import FrameSink
 from pycozmo_ng.vision.frame_state import FrameState
 from pycozmo_ng.vision.occupancy_map.floor_pipeline import FloorPipeline
+from pycozmo_ng.vision.rolling_shutter import RollingShutterCorrector
 
 
 class FrameStage:
@@ -62,6 +63,9 @@ class FrameStage:
         self.distance_rings: DistanceRings | None = None
         self.event_dispatcher: DetectionEventDispatcher | None = None
         self.floor_pipeline: FloorPipeline | None = None
+        # Rolling-shutter corrector (fed by imageGyro packets) — None until
+        # configure() injects it; None = correction disabled.
+        self.rolling_shutter: RollingShutterCorrector | None = None
         # Face presence identity; replaced by the composition root's
         # instance on configure() (fresh ID numbering per vision session).
         self.face_identity = FaceIdentity()
@@ -91,6 +95,7 @@ class FrameStage:
         event_dispatcher: DetectionEventDispatcher,
         face_identity: FaceIdentity,
         floor_pipeline: FloorPipeline | None = None,
+        rolling_shutter: RollingShutterCorrector | None = None,
         process_every_n_frames: int = 1,
         undistort: bool = False,
         face_detect_every_n_frames: int = 1,
@@ -107,6 +112,7 @@ class FrameStage:
         self.event_dispatcher = event_dispatcher
         self.face_identity = face_identity
         self.floor_pipeline = floor_pipeline
+        self.rolling_shutter = rolling_shutter
         self.process_every_n_frames = process_every_n_frames
         self.undistort = undistort
         self.face_detect_every_n_frames = face_detect_every_n_frames
@@ -142,6 +148,14 @@ class FrameStage:
             # Single PIL→numpy→BGR conversion (reused by all downstream)
             img_array = np.array(image)
             img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+
+            # Rolling-shutter correction (engine RollingShutterCorrector):
+            # each 2-row band was exposed at a different time during the
+            # ~65 ms sensor read-out; in-frame IMU samples give the angular
+            # rate over that window, integrated per band and warped
+            # horizontally so detectors see a re-aligned image.
+            if self.rolling_shutter is not None:
+                img_bgr = self.rolling_shutter.correct(img_bgr, cli.last_image_timestamp, cli.last_image_id)
 
             # Undistort the image using camera calibration (if enabled)
             if self.undistort:

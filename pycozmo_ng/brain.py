@@ -223,6 +223,20 @@ class Brain:
                 floor_edge_margin_px=setup.floor_edge_margin_px,
             )
 
+        # Rolling-shutter corrector (COZMO-73) — fed by the robot's
+        # imageGyro (0xF4) samples before the frame stage runs detection.
+        self.rolling_shutter_corrector = None
+        rolling_shutter = None
+        if setup.rolling_shutter_correction:
+            from pycozmo_ng.vision.rolling_shutter import RollingShutterCorrector
+
+            self.rolling_shutter_corrector = RollingShutterCorrector()
+            self.cli.add_handler(
+                protocol_encoder.ImageImuData,
+                self.rolling_shutter_corrector.on_image_imu_data,
+            )
+            rolling_shutter = self.rolling_shutter_corrector
+
         # Hand every per-session vision component to the frame stage in
         # one call — it owns the whole camera-frame sequence from here.
         self.frame_stage.configure(
@@ -232,6 +246,7 @@ class Brain:
             event_dispatcher=self.event_dispatcher,
             face_identity=self.face_identity,
             floor_pipeline=self.floor_pipeline,
+            rolling_shutter=rolling_shutter,
             process_every_n_frames=setup.process_every_n_frames,
             undistort=setup.undistort,
             face_detect_every_n_frames=setup.face_detect_every_n_frames,

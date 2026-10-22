@@ -94,6 +94,8 @@ class Client(event.Dispatcher):
         self.client_drop_count = 0
         # Camera state
         self.last_image_timestamp = None
+        # Rolling-shutter correctors read the frame's id to stamp IMU samples
+        self.last_image_id = None
         # Object state
         self.available_objects: dict[int, object.Object] = {}
         self.connected_objects: dict[int, dict[str, Any]] = {}
@@ -328,6 +330,7 @@ class Client(event.Dispatcher):
 
         self._latest_image = image
         self.last_image_timestamp = self._partial_image_timestamp
+        self.last_image_id = self._partial_image_id
 
         self.dispatch(event.EvtNewRawCameraImage, self, image)
 
