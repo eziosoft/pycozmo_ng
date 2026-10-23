@@ -70,9 +70,20 @@ expression). One small interface — `configure(...)` (once per vision setup)
 and `on_camera_image(...)` (once per frame); `Brain` only constructs and
 wires it. Stable deps (state containers, world map, the frame sink below)
 come from the constructor, detectors from `configure()`.
+The sequence itself is an implementation detail, split into step
+collaborators behind that interface: **Frame tracker**
+(`frame_tracker.py`, class `FrameTracker` — raw-frame stamping and FPS
+bookkeeping), **Frame publisher** (`frame_publisher.py`, class
+`FramePublisher` — annotated frame + detections into `FrameState` and the
+sink), **Cube motion gate** (`cube_motion_gate.py`, class `CubeMotionGate` —
+head-rate observation and the turn-blur gate), and **World map feeder**
+(`world_map_feeder.py`, class `WorldMapFeeder` — per-frame measurements into
+`WorldMap`, per-kind forgetting policy, then the browser wake-up). A new
+feature lands in the step that owns it, not in the stage.
 _Avoid_: FrameHandler, WebStreamer, WebBridge (deleted); calling Brain the
 place where frames are processed; typing the constructor against
-`WebViewerServer` (its display calls leaked across the seam — deleted).
+`WebViewerServer` (its display calls leaked across the seam — deleted);
+putting a new per-frame concern back inline in `on_camera_image`.
 
 **Frame sink** (`pycozmo_ng/vision/frame_sink.py`, protocol `FrameSink`):
 The display-side seam behind `FrameStage`: everything the frame stage

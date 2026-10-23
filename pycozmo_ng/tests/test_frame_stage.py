@@ -346,7 +346,7 @@ def test_face_identity_survives_skipped_face_frames():
 def test_fps_updates_after_one_second():
     h = make_stage()
     h.fs.start_time = time.time() - 2.0
-    h.fs.frame_count = 9  # _stamp_raw_frame adds one → 10 over 2 s
+    h.fs.frame_count = 9  # FrameTracker.stamp adds one → 10 over 2 s
 
     h.stage.on_camera_image(make_cli(), make_image())
 
@@ -490,8 +490,7 @@ def test_motion_gate_trips_on_fast_head_motion():
     h.detection_pipeline.detect_cubes.return_value = [SimpleNamespace(cube_index=1)]
 
     # Previous frame 20 ms ago at a different head angle => 0.4 rad / 0.02 s.
-    h.stage._last_head_angle = 0.0
-    h.stage._last_head_time = time.monotonic() - 0.02
+    h.stage.cube_motion_gate.observe_head(0.0, now=time.monotonic() - 0.02)
 
     h.stage.on_camera_image(make_driving_cli(0.0, 0.0, head_angle=0.4), make_image())
 

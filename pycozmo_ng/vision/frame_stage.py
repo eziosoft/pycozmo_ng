@@ -10,8 +10,11 @@ stable dependencies (frame state, world map, web sink) arrive via the
 constructor, and the per-session vision components created by
 ``Brain.setup_vision`` arrive through :meth:`configure`.
 
-Replaces the old three-module relay chain ``Brain._on_camera_image`` →
-``FrameHandler`` + ``WebStreamer`` + ``WebBridge.update_web_viewer``.
+The sequence is the stage's implementation detail: :meth:`on_camera_image`
+coordinates single-responsibility step collaborators — :class:`FrameTracker`
+(frame lifecycle), :class:`CubeMotionGate` (turn gating), :class:`FramePublisher`
+(annotated-frame publish), :class:`WorldMapFeeder` (measurement ingest) —
+behind the small interface (``configure()`` + ``on_camera_image()``).
 """
 
 import time
@@ -27,13 +30,17 @@ from pycozmo_ng.navigation.world_map import WorldMap
 from pycozmo_ng.util import robot
 from pycozmo_ng.vision.annotation import AnnotationEngine
 from pycozmo_ng.vision.cube_detector.detection_pipeline import DetectionPipeline
+from pycozmo_ng.vision.cube_motion_gate import CubeMotionGate
 from pycozmo_ng.vision.distance_rings import DistanceRings
 from pycozmo_ng.vision.events import DetectionEventDispatcher
-from pycozmo_ng.vision.face_identity import FaceFrame, FaceIdentity
+from pycozmo_ng.vision.face_identity import FaceIdentity
+from pycozmo_ng.vision.frame_publisher import FramePublisher
 from pycozmo_ng.vision.frame_sink import FrameSink
 from pycozmo_ng.vision.frame_state import FrameState
+from pycozmo_ng.vision.frame_tracker import FrameTracker
 from pycozmo_ng.vision.occupancy_map.floor_pipeline import FloorPipeline
 from pycozmo_ng.vision.rolling_shutter import RollingShutterCorrector
+from pycozmo_ng.vision.world_map_feeder import WorldMapFeeder
 
 
 class FrameStage:
@@ -70,21 +77,19 @@ class FrameStage:
         # instance on configure() (fresh ID numbering per vision session).
         self.face_identity = FaceIdentity()
 
+        # Step collaborators — the per-frame sequence's implementation, wired
+        # to the stable seams above.
+        self.frame_tracker = FrameTracker(frame_state, sink)
+        self.frame_publisher = FramePublisher(frame_state, sink)
+        self.cube_motion_gate = CubeMotionGate()
+        self.world_map_feeder = WorldMapFeeder(self.detection_pipeline, world_map, sink)
+
         # Frame gating — configure() overrides
         self.process_every_n_frames = 1
         self.undistort = False
         self.face_detect_every_n_frames = 1
         self._vision_frame_counter = 0
         self._face_frame_counter = 0
-
-        # Cube motion gate (see ``_cube_motion_gate_active``): while the robot
-        # is turning, motion blur makes blurred blobs match cube templates, so
-        # only cubes already in the world map may be updated.
-        self.cube_body_rate_gate_radps = 0.5236  # 30 deg/s — the firmware's own limit
-        self.cube_head_rate_gate_radps = 0.1745  # 10 deg/s — likewise
-        self._last_head_angle: float | None = None
-        self._last_head_time: float | None = None
-        self._head_rate_radps = 0.0
 
     def configure(
         self,
@@ -116,13 +121,13 @@ class FrameStage:
         self.process_every_n_frames = process_every_n_frames
         self.undistort = undistort
         self.face_detect_every_n_frames = face_detect_every_n_frames
-        self.cube_body_rate_gate_radps = cube_body_rate_gate_radps
-        self.cube_head_rate_gate_radps = cube_head_rate_gate_radps
+        self.cube_motion_gate = CubeMotionGate(
+            body_rate_gate_radps=cube_body_rate_gate_radps,
+            head_rate_gate_radps=cube_head_rate_gate_radps,
+        )
+        self.world_map_feeder = WorldMapFeeder(self.detection_pipeline, self.world_map, self.sink)
         self._vision_frame_counter = 0
         self._face_frame_counter = 0
-        self._last_head_angle = None
-        self._last_head_time = None
-        self._head_rate_radps = 0.0
 
     # ------------------------------------------------------------------
     # Per-frame sequence
@@ -130,9 +135,14 @@ class FrameStage:
 
     def on_camera_image(self, cli, image) -> None:
         """Handle EvtNewRawCameraImage — run the full vision sequence."""
-        self._stamp_raw_frame(image)
-        self._update_fps()
-        self._update_head_rate(cli)
+        self.frame_tracker.stamp(image)
+        self.frame_tracker.update_fps()
+
+        # Head-rate observation runs before the frame gate: the motion gate
+        # reads it on the frames that actually get processed.
+        head_angle = getattr(cli, "head_angle", None)
+        head_angle_rad = float(head_angle.radians) if head_angle is not None else 0.0
+        self.cube_motion_gate.observe_head(head_angle_rad, time.monotonic())
 
         # Frame skipping for performance
         self._vision_frame_counter += 1
@@ -142,9 +152,6 @@ class FrameStage:
             return
 
         try:
-            # Get current head angle from robot state
-            head_angle_rad = cli.head_angle.radians if hasattr(cli, "head_angle") else 0.0
-
             # Single PIL→numpy→BGR conversion (reused by all downstream)
             img_array = np.array(image)
             img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
@@ -179,7 +186,14 @@ class FrameStage:
             # While the robot turns, motion blur turns blurred blobs into cube
             # template matches. Trust only cubes the world map already knows;
             # a phantom must not enter just because the camera is sweeping.
-            if self._cube_motion_gate_active(cli):
+            left = getattr(cli, "left_wheel_speed", None)
+            right = getattr(cli, "right_wheel_speed", None)
+            body_yaw_rate_radps = (
+                abs(float(right.mmps) - float(left.mmps)) / robot.TRACK_WIDTH.mm
+                if left is not None and right is not None
+                else 0.0
+            )
+            if self.cube_motion_gate.is_blurred(body_yaw_rate_radps):
                 known = set(self.world_map.get_cubes()) if self.world_map is not None else set()
                 cube_detections = [d for d in cube_detections if d.cube_index in known]
                 self.detection_pipeline.restrict_cubes(known)
@@ -214,7 +228,7 @@ class FrameStage:
             )
 
             # Store frame + detections, stamp them, push to the MJPEG sink
-            self._publish_annotated(cli, annotated_image, cube_detections)
+            self.frame_publisher.publish(annotated_image, cube_detections)
 
             # Dispatch cube/face/charger/aruco events
             if self.event_dispatcher is not None:
@@ -227,7 +241,7 @@ class FrameStage:
             self._update_face_expression(cli, face_detections, face_due)
 
             # Feed measurements into the world map, then wake the browser
-            self._feed_world_map(cli, face_detections, face_frame, charger_detections, aruco_detections)
+            self.world_map_feeder.feed(cli, face_detections, face_frame, charger_detections, aruco_detections)
 
             # Floor projection + occupancy (optional)
             self._process_floor(cli, img_bgr, head_angle_rad)
@@ -236,74 +250,8 @@ class FrameStage:
             logger_cubes.error(f"Error processing camera image: {e}", exc_info=True)
 
     # ------------------------------------------------------------------
-    # Implementation
+    # Implementation details
     # ------------------------------------------------------------------
-
-    def _stamp_raw_frame(self, image) -> None:
-        """Record the raw frame (runs for every frame, even skipped ones)."""
-        self.fs.latest_raw_frame = image
-        self.fs.frame_count += 1
-        self.fs.last_frame_time = time.time()
-        # The raw MJPEG stream mirrors the camera exactly — it runs for
-        # every frame, independent of the vision gates below.
-        self.sink.push_raw_frame(image)
-
-    def _update_fps(self) -> None:
-        """Update the FPS counter in frame state (once per raw frame)."""
-        elapsed = time.time() - self.fs.start_time
-        if elapsed > 1.0:
-            self.fs.fps = self.fs.frame_count / elapsed
-            self.fs.frame_count = 0
-            self.fs.start_time = time.time()
-
-    def _update_head_rate(self, cli) -> None:
-        """Measure the head's angular rate from successive frames.
-
-        Must run before the gate is consulted: it compares against the previous
-        frame's angle and then stores the current one.
-        """
-        head_angle = getattr(cli, "head_angle", None)
-        if head_angle is None:
-            self._head_rate_radps = 0.0
-            return
-        now = time.monotonic()
-        angle = float(head_angle.radians)
-        rate = 0.0
-        if self._last_head_angle is not None and self._last_head_time is not None:
-            elapsed = now - self._last_head_time
-            # Ignore gaps that are not a frame apart (stalls, reconnects).
-            if 0.0 < elapsed <= 0.25:
-                rate = abs(angle - self._last_head_angle) / elapsed
-        self._head_rate_radps = rate
-        self._last_head_angle = angle
-        self._last_head_time = now
-
-    def _cube_motion_gate_active(self, cli) -> bool:
-        """True while the robot turns fast enough to blur cube markers.
-
-        The firmware's own gate (``VisionComponent::WasRotatingTooFast``)
-        discards marker observations above 30 deg/s of body yaw or 10 deg/s of
-        head motion; the same thresholds are used here. Body yaw comes from the
-        wheel speeds (``TRACK_WIDTH`` apart, so differential speed / track width
-        is the yaw rate) — the gyro axes' units are not verified, while wheel
-        speeds are millimetres per second by protocol.
-        """
-        left = getattr(cli, "left_wheel_speed", None)
-        right = getattr(cli, "right_wheel_speed", None)
-        if left is not None and right is not None:
-            body_rate = abs(float(right.mmps) - float(left.mmps)) / robot.TRACK_WIDTH.mm
-            if body_rate > self.cube_body_rate_gate_radps:
-                return True
-        return self._head_rate_radps > self.cube_head_rate_gate_radps
-
-    def _publish_annotated(self, cli, annotated_image, cube_detections) -> None:
-        """Store the annotated frame + detections and push it to the browser."""
-        self.fs.latest_annotated_frame = annotated_image
-        with self.fs.detections_lock:
-            self.fs.latest_detections = cube_detections
-
-        if annotated_image is not None:
-            self.sink.push_annotated_frame(annotated_image)
 
     def _update_face_expression(self, cli, face_detections, face_due: bool) -> None:
         """Mirror face detection onto the procedural face (Happiness)."""
@@ -315,89 +263,6 @@ class FrameStage:
         elif face_due:
             # Only clear when we actually ran detection and found nothing
             anim_ctrl.clear_face_expression()
-
-    def _feed_world_map(
-        self,
-        cli,
-        face_detections,
-        face_frame: FaceFrame,
-        charger_detections=None,
-        aruco_detections=None,
-    ) -> None:
-        """Feed cube, face, charger, ArUco, and procedural-face measurements into the world map.
-
-        Face identities that ended this frame are dropped from the map.
-        The charger and ArUco markers are stationary — their poses are
-        fused but never forgotten.
-        """
-        if not self.detection_pipeline or self.world_map is None:
-            return
-
-        head_angle = cli.head_angle.radians if cli is not None else 0.0
-
-        # Read the session camera lateral offset (frozen by robot-center calibration)
-        robot_center = self.detection_pipeline.robot_center_calibration
-        lateral_offset = robot_center.offset_mm if robot_center is not None else 0.0
-
-        for m in self.detection_pipeline.get_cube_measurements():
-            self.world_map.update_cube_measurement(
-                m["cube_index"],
-                m["position"],
-                m["rotation_matrix"],
-                m["confidence"],
-                head_angle,
-                m.get("num_faces"),
-                camera_lateral_offset_mm=lateral_offset,
-                rotation_source=m.get("rotation_source"),
-            )
-
-        # Feed face measurements (identity assigned earlier this frame),
-        # then drop presence epochs that ended.
-        for det in face_detections:
-            self.world_map.update_face_measurement(
-                det.face_id,
-                det.position_mm,
-                det.confidence,
-                head_angle,
-                camera_lateral_offset_mm=lateral_offset,
-                label=f"Face {det.face_id}",
-            )
-        if face_frame.ended is not None:
-            self.world_map.forget_face(face_frame.ended)
-
-        # Feed charger marker measurements (single static landmark — no
-        # forgetting on visibility loss, COZMO-65; pose carries the dock
-        # facing for alignment, COZMO-67).
-        for det in charger_detections or []:
-            self.world_map.update_charger_measurement(
-                det.position_mm,
-                det.rotation_matrix,
-                det.confidence,
-                head_angle,
-                camera_lateral_offset_mm=lateral_offset,
-            )
-
-        # Feed ArUco marker measurements (static printed landmarks keyed
-        # by ID — no forgetting on visibility loss, like the charger).
-        for det in aruco_detections or []:
-            self.world_map.update_aruco_measurement(
-                det.marker_id,
-                det.position_mm,
-                det.rotation_matrix,
-                det.confidence,
-                head_angle,
-                det.size_mm,
-                camera_lateral_offset_mm=lateral_offset,
-            )
-
-        # Push procedural face image to the browser
-        anim_ctrl = getattr(cli, "anim_controller", None)
-        if anim_ctrl is not None:
-            face_im = getattr(anim_ctrl, "latest_face_image", None)
-            if face_im is not None:
-                self.sink.push_face_image(face_im)
-
-        self.sink.broadcast()
 
     def _process_floor(self, cli, img_bgr, head_angle_rad: float) -> None:
         """Project the floor, dispatch the event, publish image + occupancy."""
